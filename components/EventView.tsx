@@ -9,13 +9,18 @@ import { TrashIcon, PlusIcon } from './Icons';
 interface EventViewProps {
   event: Event;
   // accept optional initial tab and groupId when invoked
-  onSelectTournament: (tournament: Tournament, initialTab?: 'standings' | 'matches' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players', initialGroupId?: string[...]
+  onSelectTournament: (
+    tournament: Tournament,
+    initialTab?: 'standings' | 'matches' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'slot',
+    initialGroupId?: string
+  ) => void;
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   isOrganizer: boolean;
   loggedInPlayerId?: string;
 }
 
 const makeId = () => `${Date.now()}${Math.floor(Math.random() * 10000)}`;
+const generateSlotId = () => 'slot_' + Math.random().toString(36).slice(2, 10);
 
 const EventView: React.FC<EventViewProps> = ({
   event,
@@ -39,6 +44,14 @@ const EventView: React.FC<EventViewProps> = ({
   const [editingTournament, setEditingTournament] = useState<Tournament | null>(null);
   const [editTournamentName, setEditTournamentName] = useState<string>('');
   const [editTournamentLoading, setEditTournamentLoading] = useState<boolean>(false);
+
+  // STATE per gestione slot (home - GLOBAL SLOTS) (visible only all'organizzatore)
+  const [slotInput, setSlotInput] = useState<{ start: string; location: string; field: string }>({
+    start: "",
+    location: "",
+    field: ""
+  });
+  const [slotError, setSlotError] = useState<string | null>(null);
 
   useEffect(() => {
     setRulesDraft(event.rules ?? "");
@@ -213,10 +226,116 @@ const EventView: React.FC<EventViewProps> = ({
     return ta - tb;
   });
 
+  // ========== FUNZIONI per aggiungere / rimuovere slot GLOBALI (visibili in home per l'organizzatore)
+  const handleAddGlobalSlot = async () => {
+    setSlotError(null);
+    if (!slotInput.start || isNaN(Date.parse(slotInput.start))) {
+      setSlotError("Inserisci una data e ora valida.");
+      return;
+    }
+    if (!slotInput.location?.trim()) {
+      setSlotError("Inserisci il luogo/campo.");
+      return;
+    }
+
+    const slotToAdd: TimeSlot = {
+      id: generateSlotId(),
+      start: slotInput.start,
+      location: slotInput.location.trim(),
+      field: slotInput.field?.trim() ?? ""
+    };
+
+    const updatedGlobalSlots = [...(event.globalTimeSlots ?? []), slotToAdd];
+
+    // update local UI immediately
+    setEvents(prevEvents =>
+      prevEvents.map(ev =>
+        ev.id === event.id
+          ? { ...ev, globalTimeSlots: updatedGlobalSlots }
+          : ev
+      )
+    );
+
+    // persist
+    try {
+      await updateDoc(doc(db, "events", event.id), {
+        globalTimeSlots: updatedGlobalSlots
+      });
+      // clear inputs
+      setSlotInput({ start: "", location: "", field: "" });
+    } catch (err) {
+      console.error("Errore aggiunta slot globale", err);
+      setSlotError("Errore salvataggio slot.");
+    }
+  };
+
+  const handleDeleteGlobalSlot = async (slotId: string) => {
+    if (!confirm("Sei sicuro di voler eliminare questo slot?")) return;
+    const updatedGlobalSlots = (event.globalTimeSlots || []).filter(s => s.id !== slotId);
+
+    // update UI
+    setEvents(prevEvents =>
+      prevEvents.map(ev =>
+        ev.id === event.id
+          ? { ...ev, globalTimeSlots: updatedGlobalSlots }
+          : ev
+      )
+    );
+
+    // persist
+    try {
+      await updateDoc(doc(db, "events", event.id), {
+        globalTimeSlots: updatedGlobalSlots
+      });
+    } catch (err) {
+      console.error("Errore eliminazione slot globale", err);
+    }
+  };
+  // ==============================================
+
+  // =========================
+  // AUTO-CLEANUP: rimuove automaticamente gli slot passati (giorni precedenti)
+  // =========================
+  useEffect(() => {
+    if (!isOrganizer) return; // solo organizzatore può cancellare automaticamente
+    const slots = event.globalTimeSlots ?? [];
+    if (!Array.isArray(slots) || slots.length === 0) return;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const futureSlots = slots.filter(s => {
+      if (!s?.start) return true; // mantieni se start non valido (evitiamo cancellazioni accidentali)
+      const t = new Date(s.start);
+      if (isNaN(t.getTime())) return true; // mantieni slot con data non valida
+      // mantieni se la data è >= inizio del giorno corrente
+      return t.getTime() >= todayStart.getTime();
+    });
+
+    if (futureSlots.length === slots.length) {
+      // nessuno slot passato da rimuovere
+      return;
+    }
+
+    // aggiorna localmente e su Firestore
+    setEvents(prev =>
+      prev.map(ev => ev.id === event.id ? { ...ev, globalTimeSlots: futureSlots } : ev)
+    );
+
+    // Persistiamo la lista aggiornata (rimuovendo gli slot passati)
+    (async () => {
+      try {
+        await updateDoc(doc(db, "events", event.id), {
+          globalTimeSlots: futureSlots
+        });
+        console.info(`[EventView] Rimosse ${slots.length - futureSlots.length} slot passati per evento ${event.id}`);
+      } catch (err) {
+        console.error("Errore durante la rimozione automatica degli slot passati", err);
+      }
+    })();
+  }, [event.globalTimeSlots, isOrganizer, event.id, setEvents]);
+
   // =========================
   // AUTO-CLEANUP MATCHES: re-imposta a pending le prenotazioni scadute (giorni passati)
-  // Questo effetto esegue la conversione dei match "scheduled" la cui scheduledTime è precedente all'inizio del giorno corrente.
-  // Solo l'organizzatore esegue questa operazione.
   // =========================
   useEffect(() => {
     if (!isOrganizer) return;
@@ -259,10 +378,10 @@ const EventView: React.FC<EventViewProps> = ({
 
     if (!changed) return;
 
-    // update local UI
+    // update UI immediately
     setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, tournaments: updatedTournaments } : ev));
 
-    // persist changes
+    // persist changes (revert expired scheduled matches to pending)
     (async () => {
       try {
         await updateDoc(doc(db, "events", event.id), {
@@ -275,12 +394,7 @@ const EventView: React.FC<EventViewProps> = ({
     })();
   }, [event.tournaments, isOrganizer, event.id, setEvents]);
 
-  // ==============================================
-  // Lista delle prenotazioni da mostrare all'organizzatore:
-  // - solo match con status 'scheduled'
-  // - scheduledTime deve essere >= inizio del giorno corrente (upcoming)
-  // - non mostrare match completati o con scheduledTime passato
-  // ==============================================
+  // Lista delle prenotazioni da mostrare all'organizzatore: solo match con status 'scheduled' >= today start
   const getBookedSlotsEntries = () => {
     const slots = event.globalTimeSlots ?? [];
     const entries: {
@@ -296,6 +410,7 @@ const EventView: React.FC<EventViewProps> = ({
     (event.tournaments || []).forEach(t => {
       (t.groups || []).forEach(g => {
         (g.matches || []).forEach((m: Match) => {
+          // show only upcoming scheduled matches (not completed) and scheduledTime >= todayStart
           if (m.status === 'scheduled' && m.scheduledTime) {
             const s = new Date(m.scheduledTime);
             if (isNaN(s.getTime())) return;
@@ -311,16 +426,17 @@ const EventView: React.FC<EventViewProps> = ({
     // ordine cronologico per scheduledTime
     entries.sort((a, b) => {
       const ta = a.match.scheduledTime ? new Date(a.match.scheduledTime).getTime() : 0;
-      const tb = b.match.scheduledTime ? new Date(b.match.scheduledTime).getTime() : 0;
+      const tb = b.match.scheduledTime ? new Date(b.match.scheduledTime!).getTime() : 0;
       return ta - tb;
     });
 
     return entries;
   };
 
-  const handleCancelBookedMatch = async (matchId: string, tournamentId: string) => {
+  const handleCancelBookedMatch = async (matchId: string, tournamentId: string, groupName?: string) => {
     if (!confirm("Sei sicuro di voler annullare la prenotazione di questa partita?")) return;
 
+    // costruisci nuova struttura di tournaments aggiornando solo la partita target
     const updatedTournaments = (event.tournaments || []).map(t => {
       if (t.id !== tournamentId) return t;
       return {
@@ -342,7 +458,7 @@ const EventView: React.FC<EventViewProps> = ({
       };
     });
 
-    // update local UI
+    // update UI
     setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, tournaments: updatedTournaments } : ev));
 
     // persist
@@ -462,6 +578,13 @@ const EventView: React.FC<EventViewProps> = ({
                       title="Apri il tab Consolazione"
                     >
                       Consolazione
+                    </button>
+                    <button
+                      onClick={() => onSelectTournament(tournament, 'slot', myGroupId)}
+                      className="text-sm bg-tertiary/60 text-white px-3 py-1 rounded hover:bg-tertiary transition"
+                      title="Apri il tab Slot Disponibili"
+                    >
+                      Slot Disponibili
                     </button>
                   </div>
 
