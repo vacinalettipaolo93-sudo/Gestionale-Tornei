@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { type Event, type Tournament, type TimeSlot } from '../types';
+import { type Event, type Tournament, type TimeSlot, type Match } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
 import TimeSlots from './TimeSlots';
 import AvailableSlotsList from './AvailableSlotsList';
@@ -293,6 +293,75 @@ const EventView: React.FC<EventViewProps> = ({
   };
 
   // ==============================================
+  // NEW: elenco slot prenotati (programmate) visibili all'organizzatore nella home evento
+  const getBookedSlotsEntries = () => {
+    const slots = event.globalTimeSlots ?? [];
+    const entries: {
+      slot?: TimeSlot | undefined;
+      match: Match;
+      tournament: Tournament;
+      groupName?: string;
+    }[] = [];
+
+    (event.tournaments || []).forEach(t => {
+      (t.groups || []).forEach(g => {
+        (g.matches || []).forEach((m: Match) => {
+          if (m.slotId && m.scheduledTime && (m.status === 'scheduled' || m.status === 'completed')) {
+            const slot = slots.find(s => s.id === m.slotId);
+            entries.push({ slot, match: m, tournament: t, groupName: g.name });
+          }
+        });
+      });
+    });
+
+    // ordine cronologico per scheduledTime
+    entries.sort((a, b) => {
+      const ta = a.match.scheduledTime ? new Date(a.match.scheduledTime).getTime() : 0;
+      const tb = b.match.scheduledTime ? new Date(b.match.scheduledTime).getTime() : 0;
+      return ta - tb;
+    });
+
+    return entries;
+  };
+
+  const handleCancelBookedMatch = async (matchId: string, tournamentId: string, groupName?: string) => {
+    if (!confirm("Sei sicuro di voler annullare la prenotazione di questa partita?")) return;
+
+    // costruisci nuova struttura di tournaments aggiornando solo la partita target
+    const updatedTournaments = (event.tournaments || []).map(t => {
+      if (t.id !== tournamentId) return t;
+      return {
+        ...t,
+        groups: (t.groups || []).map(g => ({
+          ...g,
+          matches: (g.matches || []).map(m => {
+            if (m.id !== matchId) return m;
+            return {
+              ...m,
+              status: 'pending',
+              scheduledTime: null,
+              slotId: null,
+              location: '',
+              field: ''
+            };
+          })
+        }))
+      };
+    });
+
+    // update local UI
+    setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, tournaments: updatedTournaments } : ev));
+
+    // persist
+    try {
+      await updateDoc(doc(db, "events", event.id), {
+        tournaments: updatedTournaments
+      });
+    } catch (err) {
+      console.error("Errore annullamento prenotazione", err);
+    }
+  };
+  // ==============================================
 
   return (
     <div>
@@ -516,6 +585,60 @@ const EventView: React.FC<EventViewProps> = ({
                       </div>
                     </li>
                   ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Lista slot prenotati (partite programmate) - organizzatore */}
+            <div className="bg-[#212737] rounded-xl shadow-lg p-5 mb-6 w-full max-w-xl">
+              <h4 className="font-bold text-[#3AF2C5] text-lg mb-3">Slot prenotati (Partite)</h4>
+              {getBookedSlotsEntries().length === 0 ? (
+                <p className="text-gray-400 font-bold">Nessuna partita prenotata.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {getBookedSlotsEntries().map((entry, idx) => {
+                    const match = entry.match;
+                    const slot = entry.slot;
+                    const playersText = `${match.player1Id || 'Giocatore 1'} vs ${match.player2Id || 'Giocatore 2'}`;
+                    const displayTime = match.scheduledTime ? new Date(match.scheduledTime).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : (slot ? new Date(slot.start).toLocaleString('it-IT') : '—');
+                    return (
+                      <li key={`${match.id}-${idx}`} className="flex items-center justify-between border-b border-gray-800 pb-2">
+                        <div>
+                          <div className="font-bold text-white">{displayTime}</div>
+                          <div className="text-sm text-text-secondary">
+                            <span className="text-accent font-semibold">{entry.tournament.name}</span>
+                            {entry.groupName && <span className="mx-2">|</span>}
+                            {entry.groupName && <span>{entry.groupName}</span>}
+                          </div>
+                          <div className="text-sm text-white">
+                            {/* try to show player names if available in event.players */}
+                            {(() => {
+                              const p1 = event.players?.find(p => p.id === match.player1Id)?.name ?? match.player1Id;
+                              const p2 = event.players?.find(p => p.id === match.player2Id)?.name ?? match.player2Id;
+                              return `${p1} vs ${p2}`;
+                            })()}
+                          </div>
+                          <div className="text-sm text-tertiary">
+                            {slot ? `${slot.location}${slot.field ? ' — ' + slot.field : ''}` : (match.location || '')}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => onSelectTournament(entry.tournament, 'matches', undefined)}
+                            className="btn-tertiary px-3 py-1 rounded font-semibold"
+                          >
+                            Vai al torneo
+                          </button>
+                          <button
+                            onClick={() => handleCancelBookedMatch(match.id, entry.tournament.id, entry.groupName)}
+                            className="btn-danger px-3 py-1 rounded font-semibold bg-red-600 text-white"
+                          >
+                            Annulla pren.
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
