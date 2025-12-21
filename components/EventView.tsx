@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { type Event, type Tournament, type TimeSlot, type Match } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
 import TimeSlots from './TimeSlots';
-import AvailableSlotsList from './AvailableSlotsList';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
 import { TrashIcon, PlusIcon } from './Icons';
@@ -17,6 +16,8 @@ interface EventViewProps {
 }
 
 const makeId = () => `${Date.now()}${Math.floor(Math.random() * 10000)}`;
+
+const generateSlotId = () => 'slot_' + Math.random().toString(36).slice(2, 10);
 
 const EventView: React.FC<EventViewProps> = ({
   event,
@@ -430,9 +431,6 @@ const EventView: React.FC<EventViewProps> = ({
           })}
         </div>
       </div>
-
-      {/* Sezione slot disponibili globale (lettura per tutti) */}
-      <AvailableSlotsList event={event} />
 
       {/* SLOT ORARI GLOBALI (solo organizzatore) */}
       {isOrganizer && event.globalTimeSlots && (
