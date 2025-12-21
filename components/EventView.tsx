@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { type Event, type Tournament, type TimeSlot, type Match } from '../types';
+import { type Event, type Tournament, type TimeSlot } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
 import TimeSlots from './TimeSlots';
+import AvailableSlotsList from './AvailableSlotsList';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
 import { TrashIcon, PlusIcon } from './Icons';
@@ -215,71 +216,6 @@ const EventView: React.FC<EventViewProps> = ({
     return ta - tb;
   });
 
-  // ----------------------------
-  // BOOKED SLOTS: helper + handlers
-  // ----------------------------
-  const getBookedSlotsEntries = () => {
-    const slots = event.globalTimeSlots ?? [];
-    const entries: { slot?: TimeSlot; match: Match; tournament: Tournament; groupName?: string }[] = [];
-
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    (event.tournaments || []).forEach(t => {
-      (t.groups || []).forEach(g => {
-        (g.matches || []).forEach((m: Match) => {
-          if (m.status === 'scheduled' && m.scheduledTime) {
-            const s = new Date(m.scheduledTime);
-            if (isNaN(s.getTime())) return;
-            if (s.getTime() >= todayStart.getTime()) {
-              const slot = slots.find(slt => slt.id === m.slotId);
-              entries.push({ slot, match: m, tournament: t, groupName: g.name });
-            }
-          }
-        });
-      });
-    });
-
-    entries.sort((a, b) => {
-      const ta = a.match.scheduledTime ? new Date(a.match.scheduledTime).getTime() : 0;
-      const tb = b.match.scheduledTime ? new Date(b.match.scheduledTime).getTime() : 0;
-      return ta - tb;
-    });
-
-    return entries;
-  };
-
-  const handleCancelBookedMatch = async (matchId: string, tournamentId: string) => {
-    if (!confirm("Sei sicuro di voler annullare la prenotazione di questa partita?")) return;
-
-    const updatedTournaments = (event.tournaments || []).map(t => {
-      if (t.id !== tournamentId) return t;
-      return {
-        ...t,
-        groups: (t.groups || []).map(g => ({
-          ...g,
-          matches: (g.matches || []).map(m => {
-            if (m.id !== matchId) return m;
-            return { ...m, status: 'pending', scheduledTime: undefined, slotId: undefined, location: undefined, field: undefined };
-          })
-        }))
-      };
-    });
-
-    // update local UI
-    setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, tournaments: updatedTournaments } : ev));
-
-    // persist
-    try {
-      await updateDoc(doc(db, "events", event.id), {
-        tournaments: updatedTournaments
-      });
-    } catch (err) {
-      console.error("Errore annullamento prenotazione", err);
-    }
-  };
-  // ----------------------------
-
   return (
     <div>
       <div className="bg-primary p-6 rounded-xl shadow-lg mb-8">
@@ -432,6 +368,9 @@ const EventView: React.FC<EventViewProps> = ({
         </div>
       </div>
 
+      {/* Sezione slot disponibili globale (lettura per tutti) */}
+      <AvailableSlotsList event={event} />
+
       {/* SLOT ORARI GLOBALI (solo organizzatore) */}
       {isOrganizer && event.globalTimeSlots && (
         <div className="mb-10">
@@ -447,66 +386,6 @@ const EventView: React.FC<EventViewProps> = ({
           />
         </div>
       )}
-
-      {/* ---------------------- */}
-      {/* Sezione: Partite prenotate (organizzatore) */}
-      {/* aggiunta: mostra lista partite prenotate (future) con due bottoni:
-          - Vai al torneo (onSelectTournament con 'matches')
-          - Annulla pren. (reimposta match a pending e aggiorna Firestore)
-      */}
-      {isOrganizer && (
-        <div className="mb-10">
-          <h2 className="text-2xl font-bold mb-4 text-white">Partite Prenotate (future)</h2>
-          <div className="bg-tertiary rounded-xl p-5">
-            {(() => {
-              const entries = getBookedSlotsEntries();
-              if (!entries.length) {
-                return <p className="text-text-secondary">Nessuna partita prenotata futura.</p>;
-              }
-              return (
-                <ul className="space-y-3">
-                  {entries.map((entry, idx) => {
-                    const m = entry.match;
-                    const slot = entry.slot;
-                    const displayTime = m.scheduledTime ? new Date(m.scheduledTime).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : (slot ? new Date(slot.start).toLocaleString('it-IT') : '—');
-                    const p1 = event.players?.find(p => p.id === m.player1Id)?.name ?? m.player1Id;
-                    const p2 = event.players?.find(p => p.id === m.player2Id)?.name ?? m.player2Id;
-                    return (
-                      <li key={`${m.id}-${idx}`} className="flex items-center justify-between border-b border-gray-700 pb-2">
-                        <div>
-                          <div className="font-bold text-white">{displayTime}</div>
-                          <div className="text-sm text-text-secondary">
-                            <span className="text-accent font-semibold">{entry.tournament.name}</span>
-                            {entry.groupName && <span className="mx-2">|</span>}
-                            {entry.groupName && <span>{entry.groupName}</span>}
-                          </div>
-                          <div className="text-white mt-1">{p1} vs {p2}</div>
-                          <div className="text-sm text-tertiary">{slot ? `${slot.location}${slot.field ? ' — ' + slot.field : ''}` : (m.location || '')}</div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => onSelectTournament(entry.tournament, 'matches', undefined)}
-                            className="px-3 py-1 rounded bg-tertiary text-white"
-                          >
-                            Vai al torneo
-                          </button>
-                          <button
-                            onClick={() => handleCancelBookedMatch(m.id, entry.tournament.id)}
-                            className="px-3 py-1 rounded bg-red-600 text-white"
-                          >
-                            Annulla pren.
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-      {/* ---------------------- */}
 
       {/* REGOLAMENTO (solo organizzatore) */}
       {isOrganizer && (
@@ -563,7 +442,7 @@ const EventView: React.FC<EventViewProps> = ({
 
       {/* ----------------- MODAL: AGGIUNGI TORNEO ----------------- */}
       {isAddTournamentOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify_center z-50">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
             <h4 className="text-lg font-bold mb-4 text-accent">Aggiungi Nuovo Torneo</h4>
             <form onSubmit={handleAddTournament} className="space-y-4">
