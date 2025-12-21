@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { type Event, type Tournament, type Match, type TimeSlot } from '../types';
+import { type Event, type Tournament, type TimeSlot, type Match } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
 import TimeSlots from './TimeSlots';
+import AvailableSlotsList from './AvailableSlotsList';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
 import { TrashIcon, PlusIcon } from './Icons';
@@ -9,17 +10,14 @@ import { TrashIcon, PlusIcon } from './Icons';
 interface EventViewProps {
   event: Event;
   // accept optional initial tab and groupId when invoked
-  onSelectTournament: (
-    tournament: Tournament,
-    initialTab?: 'standings' | 'matches' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'slot',
-    initialGroupId?: string
-  ) => void;
+  onSelectTournament: (tournament: Tournament, initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players', initialGroupId?: string) => void;
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   isOrganizer: boolean;
   loggedInPlayerId?: string;
 }
 
 const makeId = () => `${Date.now()}${Math.floor(Math.random() * 10000)}`;
+
 const generateSlotId = () => 'slot_' + Math.random().toString(36).slice(2, 10);
 
 const EventView: React.FC<EventViewProps> = ({
@@ -426,7 +424,7 @@ const EventView: React.FC<EventViewProps> = ({
     // ordine cronologico per scheduledTime
     entries.sort((a, b) => {
       const ta = a.match.scheduledTime ? new Date(a.match.scheduledTime).getTime() : 0;
-      const tb = b.match.scheduledTime ? new Date(b.match.scheduledTime!).getTime() : 0;
+      const tb = b.match.scheduledTime ? new Date(b.match.scheduledTime).getTime() : 0;
       return ta - tb;
     });
 
@@ -623,8 +621,88 @@ const EventView: React.FC<EventViewProps> = ({
         </div>
       </div>
 
-      {/* SLOT ORARI GLOBALI (solo organizzatore) */}
-      {isOrganizer && event.globalTimeSlots && (
+      {/* AGGIUNTA: Gestione slot GLOBALI nella home evento (organizzatore) + lista disponibile per tutti */}
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold mb-4 text-white">Slot Orari Globali</h2>
+
+        {/* Sezione per organizzatore: aggiungi nuovo slot */}
+        {isOrganizer && (
+          <div className="mb-6">
+            <h3 className="text-xl font-semibold text-accent mb-3">Gestione slot orari globali</h3>
+            <div className="bg-[#212737] rounded-xl p-5 mb-4 shadow-lg w-full max-w-md flex flex-col gap-3">
+              <h4 className="font-bold text-[#3AF2C5] text-lg mb-1">Aggiungi nuovo slot</h4>
+
+              <input
+                type="datetime-local"
+                value={slotInput.start}
+                onChange={e => setSlotInput(prev => ({ ...prev, start: e.target.value }))}
+                className="input mb-2 bg-[#22283A] text-white font-bold placeholder:text-white placeholder:font-bold"
+                placeholder="Data e ora"
+              />
+              <input
+                type="text"
+                value={slotInput.location}
+                onChange={e => setSlotInput(prev => ({ ...prev, location: e.target.value }))}
+                placeholder="Luogo"
+                className="input mb-2 bg-[#22283A] text-white font-bold placeholder:text-white placeholder:font-bold"
+              />
+              <input
+                type="text"
+                value={slotInput.field}
+                onChange={e => setSlotInput(prev => ({ ...prev, field: e.target.value }))}
+                placeholder="Campo"
+                className="input mb-2 bg-[#22283A] text-white font-bold placeholder:text-white placeholder:font-bold"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleAddGlobalSlot}
+                  className="btn-accent self-start px-5 py-1 rounded font-semibold"
+                >
+                  Aggiungi slot
+                </button>
+                {slotError && <span className="text-red-600 font-semibold">{slotError}</span>}
+              </div>
+            </div>
+
+            {/* Lista slot disponibili con possibilità di eliminare (organizzatore) */}
+            <div className="bg-[#212737] rounded-xl shadow-lg p-5 mb-6 w-full max-w-xl">
+              <h4 className="font-bold text-[#3AF2C5] text-lg mb-3">Slot disponibili</h4>
+              {(!event.globalTimeSlots || event.globalTimeSlots.length === 0) ? (
+                <p className="text-gray-400 font-bold">Nessuno slot libero.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {sortedGlobalTimeSlots.map(slot => (
+                    <li key={slot.id} className="flex items-center justify-between border-b border-gray-800 pb-2">
+                      <div>
+                        <span className="font-bold text-white">{new Date(slot.start).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>{" "}
+                        <span className="text-white">-</span>{" "}
+                        <span className="text-accent font-bold">{slot.location}</span>{" "}
+                        <span className="text-white">-</span>{" "}
+                        <span className="text-red-500 font-bold">{slot.field}</span>
+                      </div>
+                      <div>
+                        <button
+                          className="btn-tertiary px-3 py-1 rounded font-semibold"
+                          onClick={() => handleDeleteGlobalSlot(slot.id)}
+                        >
+                          Elimina
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Lista slot disponibile visibile a tutti (lettura) */}
+        <AvailableSlotsList event={event} />
+      </div>
+
+      {/* SLOT ORARI GLOBALI (solo organizzatore) - se vuoi mantenere anche il componente TimeSlots originale (legacy) */}
+      {/* mantenuto per retrocompatibilità: non visibile se già gestito sopra */}
+      {false && isOrganizer && event.globalTimeSlots && (
         <div className="mb-10">
           <h2 className="text-2xl font-bold mb-4 text-white">Slot Orari Globali</h2>
           <TimeSlots
@@ -639,7 +717,7 @@ const EventView: React.FC<EventViewProps> = ({
         </div>
       )}
 
-      {/* Sezione: elenco prenotazioni (organizzatore) - mostra solo partite programmate future */}
+      {/* Sezione: elenco partite prenotate future (organizzatore) - mostra solo partite programmate future */}
       {isOrganizer && (
         <div className="mb-10">
           <h2 className="text-2xl font-bold mb-4 text-white">Partite Prenotate (future)</h2>
