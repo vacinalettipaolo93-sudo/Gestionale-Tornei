@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { type Event, type Tournament } from '../types';
+import { type Event, type Tournament, type TimeSlot } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
 import TimeSlots from './TimeSlots';
 import { db } from "../firebase";
@@ -16,6 +16,7 @@ interface EventViewProps {
 }
 
 const makeId = () => `${Date.now()}${Math.floor(Math.random() * 10000)}`;
+const generateSlotId = () => 'slot_' + Math.random().toString(36).slice(2, 10);
 
 const EventView: React.FC<EventViewProps> = ({
   event,
@@ -221,6 +222,114 @@ const EventView: React.FC<EventViewProps> = ({
     return ta - tb;
   });
 
+  // ========== FUNZIONI per aggiungere / rimuovere slot GLOBALI (visibili in home per l'organizzatore)
+  const handleAddGlobalSlot = async () => {
+    setSlotError(null);
+    if (!slotInput.start || isNaN(Date.parse(slotInput.start))) {
+      setSlotError("Inserisci una data e ora valida.");
+      return;
+    }
+    if (!slotInput.location?.trim()) {
+      setSlotError("Inserisci il luogo/campo.");
+      return;
+    }
+
+    const slotToAdd: TimeSlot = {
+      id: generateSlotId(),
+      start: slotInput.start,
+      location: slotInput.location.trim(),
+      field: slotInput.field?.trim() ?? ""
+    };
+
+    const updatedGlobalSlots = [...(event.globalTimeSlots ?? []), slotToAdd];
+
+    // update local UI immediately
+    setEvents(prevEvents =>
+      prevEvents.map(ev =>
+        ev.id === event.id
+          ? { ...ev, globalTimeSlots: updatedGlobalSlots }
+          : ev
+      )
+    );
+
+    // persist
+    try {
+      await updateDoc(doc(db, "events", event.id), {
+        globalTimeSlots: updatedGlobalSlots
+      });
+      // clear inputs
+      setSlotInput({ start: "", location: "", field: "" });
+    } catch (err) {
+      console.error("Errore aggiunta slot globale", err);
+      setSlotError("Errore salvataggio slot.");
+    }
+  };
+
+  const handleDeleteGlobalSlot = async (slotId: string) => {
+    if (!confirm("Sei sicuro di voler eliminare questo slot?")) return;
+    const updatedGlobalSlots = (event.globalTimeSlots || []).filter(s => s.id !== slotId);
+
+    // update UI
+    setEvents(prevEvents =>
+      prevEvents.map(ev =>
+        ev.id === event.id
+          ? { ...ev, globalTimeSlots: updatedGlobalSlots }
+          : ev
+      )
+    );
+
+    // persist
+    try {
+      await updateDoc(doc(db, "events", event.id), {
+        globalTimeSlots: updatedGlobalSlots
+      });
+    } catch (err) {
+      console.error("Errore eliminazione slot globale", err);
+    }
+  };
+  // ==============================================
+
+  // =========================
+  // AUTO-CLEANUP: rimuove automaticamente gli slot passati (giorni precedenti)
+  // =========================
+  useEffect(() => {
+    if (!isOrganizer) return; // solo organizzatore può cancellare automaticamente
+    const slots = event.globalTimeSlots ?? [];
+    if (!Array.isArray(slots) || slots.length === 0) return;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const futureSlots = slots.filter(s => {
+      if (!s?.start) return true; // mantieni se start non valido (evitiamo cancellazioni accidentali)
+      const t = new Date(s.start);
+      if (isNaN(t.getTime())) return true; // mantieni slot con data non valida
+      // mantieni se la data è >= inizio del giorno corrente
+      return t.getTime() >= todayStart.getTime();
+    });
+
+    if (futureSlots.length === slots.length) {
+      // nessuno slot passato da rimuovere
+      return;
+    }
+
+    // aggiorna localmente e su Firestore
+    setEvents(prev =>
+      prev.map(ev => ev.id === event.id ? { ...ev, globalTimeSlots: futureSlots } : ev)
+    );
+
+    // Persistiamo la lista aggiornata (rimuovendo gli slot passati)
+    (async () => {
+      try {
+        await updateDoc(doc(db, "events", event.id), {
+          globalTimeSlots: futureSlots
+        });
+        console.info(`[EventView] Rimosse ${slots.length - futureSlots.length} slot passati per evento ${event.id}`);
+      } catch (err) {
+        console.error("Errore durante la rimozione automatica degli slot passati", err);
+      }
+    })();
+  }, [event.globalTimeSlots, isOrganizer, event.id, setEvents]);
+
   return (
     <div>
       <div className="bg-primary p-6 rounded-xl shadow-lg mb-8">
@@ -373,6 +482,31 @@ const EventView: React.FC<EventViewProps> = ({
         </div>
       </div>
 
+      {/* Lista slot disponibili (visibile a tutti). Campo mostrato in rosso per utenti e organizzatore */}
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold mb-4 text-white">Slot Disponibili</h2>
+        <div className="bg-[#212737] rounded-xl shadow-lg p-5 mb-6 w-full max-w-xl">
+          {(!event.globalTimeSlots || event.globalTimeSlots.length === 0) ? (
+            <p className="text-gray-400 font-bold">Nessuno slot libero.</p>
+          ) : (
+            <ul className="space-y-2">
+              {sortedGlobalTimeSlots.map(slot => (
+                <li key={slot.id} className="flex items-center justify-between border-b border-gray-800 pb-2">
+                  <div>
+                    <span className="font-bold text-white">{new Date(slot.start).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>{" "}
+                    <span className="text-white">-</span>{" "}
+                    <span className="text-accent font-bold">{slot.location}</span>{" "}
+                    <span className="text-white">-</span>{" "}
+                    <span className="text-red-500 font-bold">{slot.field}</span>
+                  </div>
+                  {/* non mostriamo tasto elimina qui (questa lista è solo lettura per tutti) */}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
       {/* SLOT ORARI GLOBALI (solo organizzatore) */}
       {isOrganizer && event.globalTimeSlots && (
         <div className="mb-10">
@@ -444,7 +578,7 @@ const EventView: React.FC<EventViewProps> = ({
 
       {/* ----------------- MODAL: AGGIUNGI TORNEO ----------------- */}
       {isAddTournamentOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify_center z-50">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
             <h4 className="text-lg font-bold mb-4 text-accent">Aggiungi Nuovo Torneo</h4>
             <form onSubmit={handleAddTournament} className="space-y-4">
