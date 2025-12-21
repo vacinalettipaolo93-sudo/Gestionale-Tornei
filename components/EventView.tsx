@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { type Event, type Tournament, type TimeSlot } from '../types';
+import { type Event, type Tournament } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
 import TimeSlots from './TimeSlots';
-import AvailableSlotsList from './AvailableSlotsList';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
 import { TrashIcon, PlusIcon } from './Icons';
@@ -374,31 +373,6 @@ const EventView: React.FC<EventViewProps> = ({
         </div>
       </div>
 
-      {/* Lista slot disponibili (visibile a tutti). Campo mostrato in rosso per utenti e organizzatore */}
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold mb-4 text-white">Slot Disponibili</h2>
-        <div className="bg-[#212737] rounded-xl shadow-lg p-5 mb-6 w-full max-w-xl">
-          {(!event.globalTimeSlots || event.globalTimeSlots.length === 0) ? (
-            <p className="text-gray-400 font-bold">Nessuno slot libero.</p>
-          ) : (
-            <ul className="space-y-2">
-              {sortedGlobalTimeSlots.map((slot: TimeSlot) => (
-                <li key={slot.id} className="flex items-center justify-between border-b border-gray-800 pb-2">
-                  <div>
-                    <span className="font-bold text-white">{new Date(slot.start).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>{" "}
-                    <span className="text-white">-</span>{" "}
-                    <span className="text-accent font-bold">{slot.location}</span>{" "}
-                    <span className="text-white">-</span>{" "}
-                    {/* Campo in rosso per tutti */}
-                    <span className="text-red-500 font-bold">{slot.field}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-
       {/* SLOT ORARI GLOBALI (solo organizzatore) */}
       {isOrganizer && event.globalTimeSlots && (
         <div className="mb-10">
@@ -470,7 +444,7 @@ const EventView: React.FC<EventViewProps> = ({
 
       {/* ----------------- MODAL: AGGIUNGI TORNEO ----------------- */}
       {isAddTournamentOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify_center z-50">
           <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
             <h4 className="text-lg font-bold mb-4 text-accent">Aggiungi Nuovo Torneo</h4>
             <form onSubmit={handleAddTournament} className="space-y-4">
