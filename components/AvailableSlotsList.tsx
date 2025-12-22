@@ -49,7 +49,8 @@ const AvailableSlotsList: React.FC<Props> = ({
               <div>
                 <span className="font-bold">{formatSlot(slot)}</span>
                 {slot.location && <span className="ml-2 text-accent">{slot.location}</span>}
-                {slot.field && <span className="ml-2 text-tertiary">{slot.field}</span>}
+                {/* Cambiata solo la classe del campo (field) da text-tertiary a text-red-500 */}
+                {slot.field && <span className="ml-2 text-red-500">{slot.field}</span>}
               </div>
               {onClickBook && matchesPending?.length > 0 ? (
                 <button
