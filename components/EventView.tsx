@@ -9,7 +9,11 @@ import { TrashIcon, PlusIcon } from './Icons';
 interface EventViewProps {
   event: Event;
   // accept optional initial tab and groupId when invoked
-  onSelectTournament: (tournament: Tournament, initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players', initialGroupId[...]
+  onSelectTournament: (
+    tournament: Tournament,
+    initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players',
+    initialGroupId?: string
+  ) => void;
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   isOrganizer: boolean;
   loggedInPlayerId?: string;
@@ -468,7 +472,15 @@ const EventView: React.FC<EventViewProps> = ({
                   {entries.map((entry, idx) => {
                     const m = entry.match;
                     const slot = entry.slot;
-                    const displayTime = m.scheduledTime ? new Date(m.scheduledTime).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) :[...]
+                    const displayTime = m.scheduledTime
+                      ? new Date(m.scheduledTime).toLocaleString('it-IT', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })
+                      : '';
                     const p1 = event.players?.find(p => p.id === m.player1Id)?.name ?? m.player1Id;
                     const p2 = event.players?.find(p => p.id === m.player2Id)?.name ?? m.player2Id;
                     return (
@@ -481,6 +493,7 @@ const EventView: React.FC<EventViewProps> = ({
                             {entry.groupName && <span>{entry.groupName}</span>}
                           </div>
                           <div className="text-white mt-1">{p1} vs {p2}</div>
+                          {/* Cambiato solo il colore di questa scritta da grigio a rosso */}
                           <div className="text-sm text-red-500">{slot ? `${slot.location}${slot.field ? ' — ' + slot.field : ''}` : (m.location || '')}</div>
                         </div>
                         <div className="flex items-center gap-3">
