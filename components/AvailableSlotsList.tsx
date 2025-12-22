@@ -1,3 +1,4 @@
+// (updated) components/AvailableSlotsList.tsx
 import React from 'react';
 import { type Event, type Tournament, type TimeSlot, type Match } from '../types';
 
@@ -5,7 +6,8 @@ interface Props {
   event: Event;
   tournament?: Tournament;
   userId?: string;
-  onClickBook?: (slot: TimeSlot) => void; // solo nel torneo, permette la prenotazione
+  // pass triggerRect so parent can anchor modal precisely
+  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void; // solo nel torneo, permette la prenotazione
   matchesPending?: Match[];
 }
 
@@ -55,10 +57,11 @@ const AvailableSlotsList: React.FC<Props> = ({
                 <button
                   className="bg-accent hover:bg-highlight text-white px-4 py-2 rounded font-bold transition"
                   onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                    // focus the button so anchoring logic (document.activeElement) finds the trigger
+                    // provide the exact trigger rect to parent so modal can anchor properly
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                     (e.currentTarget as HTMLElement).focus();
                     e.stopPropagation();
-                    onClickBook(slot);
+                    onClickBook(slot, rect);
                   }}
                 >
                   Prenota
