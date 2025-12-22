@@ -1,3 +1,4 @@
+// (updated) components/TournamentView.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { type Event, type Tournament, type Match, type TimeSlot, type Player } from '../types';
 import StandingsTable from './StandingsTable';
@@ -70,7 +71,12 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         m.status === "pending" &&
         (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId))
     : [];
-  const handleClickBookSlot = (slot: TimeSlot) => setSlotToBook(slot);
+  // NOTE: handlers below accept optional triggerRect to anchor modals
+
+  const handleClickBookSlot = (slot: TimeSlot, triggerRect?: DOMRect | null) => {
+    setSlotToBook(slot);
+    setSlotToBookTriggerRect(triggerRect ?? null);
+  };
 
   const handleConfirmBookSlot = async (matchId: string) => {
     const match = selectedGroup?.matches.find(m => m.id === matchId);
@@ -95,6 +101,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
     setSlotToBook(null);
+    setSlotToBookTriggerRect(null);
   };
 
   function getAllBookedSlotIds(): string[] {
@@ -127,8 +134,10 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   };
 
   // risultato (modifica / salva)
-  const handleEditResult = (match: Match) => {
+  // note: accept triggerRect so modal can anchor where user clicked
+  const handleEditResult = (match: Match, triggerRect?: DOMRect | null) => {
     setEditingMatch(match);
+    setEditingTriggerRect(triggerRect ?? null);
     setScore1(match.score1 !== null ? String(match.score1) : "");
     setScore2(match.score2 !== null ? String(match.score2) : "");
   };
@@ -142,11 +151,16 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
     setEditingMatch(null);
+    setEditingTriggerRect(null);
     setScore1("");
     setScore2("");
   }
 
   // elimina risultato
+  const handleDeleteResult = (match: Match, triggerRect?: DOMRect | null) => {
+    setDeletingMatch(match);
+    setDeletingTriggerRect(triggerRect ?? null);
+  };
   async function deleteMatchResult(match: Match) {
     if (!selectedGroup) return;
     const updatedMatch: Match = { ...match, score1: null, score2: null, status: "pending" };
@@ -157,11 +171,13 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
     setDeletingMatch(null);
+    setDeletingTriggerRect(null);
   }
 
   // booking
-  const handleBookMatch = (match: Match) => {
+  const handleBookMatch = (match: Match, triggerRect?: DOMRect | null) => {
     setBookingMatch(match);
+    setBookingTriggerRect(triggerRect ?? null);
     setSelectedSlotId("");
     setBookingError("");
   };
@@ -202,13 +218,15 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
     setBookingMatch(null);
+    setBookingTriggerRect(null);
     setSelectedSlotId("");
     setBookingError("");
   }
 
   // reschedule
-  const handleRescheduleMatch = (match: Match) => {
+  const handleRescheduleMatch = (match: Match, triggerRect?: DOMRect | null) => {
     setReschedulingMatch(match);
+    setRescheduleTriggerRect(triggerRect ?? null);
     setRescheduleSlotId("");
   };
   async function saveRescheduleMatch(match: Match) {
@@ -239,11 +257,12 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
     setReschedulingMatch(null);
+    setRescheduleTriggerRect(null);
     setRescheduleSlotId("");
     setBookingError("");
   }
 
-  // cancel booking
+  // cancel booking (immediate handler)
   async function handleCancelBooking(match: Match) {
     if (!selectedGroup) return;
     const updatedMatch: Match = { ...match, status: "pending", scheduledTime: null, slotId: null, location: "", field: "" };
@@ -256,21 +275,26 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   }
 
   // --- MODAL ANCHORING LOGIC ADDED BELOW ---
-  // We track refs and inline styles for each modal so they open near the element
-  // that triggered them (fallback to centered modal on small viewports).
-  // NOTE: we only change positioning/markup, NOT the functional logic.
-
+  // Refs for modals
   const editingModalRef = useRef<HTMLDivElement | null>(null);
   const bookingModalRef = useRef<HTMLDivElement | null>(null);
   const rescheduleModalRef = useRef<HTMLDivElement | null>(null);
   const deletingModalRef = useRef<HTMLDivElement | null>(null);
   const slotToBookModalRef = useRef<HTMLDivElement | null>(null);
 
+  // inline styles for anchored modals
   const [editingModalStyle, setEditingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [bookingModalStyle, setBookingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [rescheduleModalStyle, setRescheduleModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [deletingModalStyle, setDeletingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [slotToBookModalStyle, setSlotToBookModalStyle] = useState<React.CSSProperties | undefined>(undefined);
+
+  // store trigger rects when provided by caller
+  const [editingTriggerRect, setEditingTriggerRect] = useState<DOMRect | null>(null);
+  const [bookingTriggerRect, setBookingTriggerRect] = useState<DOMRect | null>(null);
+  const [rescheduleTriggerRect, setRescheduleTriggerRect] = useState<DOMRect | null>(null);
+  const [deletingTriggerRect, setDeletingTriggerRect] = useState<DOMRect | null>(null);
+  const [slotToBookTriggerRect, setSlotToBookTriggerRect] = useState<DOMRect | null>(null);
 
   // compute anchored style given trigger & modal rects
   function computeAnchorStyle(triggerRect: DOMRect, modalRect: DOMRect) {
@@ -313,17 +337,19 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     };
   }
 
-  // helper to anchor a given modalRef using document.activeElement as trigger
-  function anchorModal(modalRef: React.RefObject<HTMLDivElement>, setStyle: (s?: React.CSSProperties) => void) {
+  // helper to anchor a given modalRef using either provided triggerRect or document.activeElement
+  function anchorModal(modalRef: React.RefObject<HTMLDivElement>, setStyle: (s?: React.CSSProperties) => void, providedTriggerRect?: DOMRect | null) {
     const modalEl = modalRef.current;
     if (!modalEl) return;
 
-    // wait for modal to be visible & sized
     requestAnimationFrame(() => {
       const modalRect = modalEl.getBoundingClientRect();
+      if (providedTriggerRect) {
+        setStyle(computeAnchorStyle(providedTriggerRect, modalRect));
+        return;
+      }
       const active = document.activeElement as HTMLElement | null;
       if (!active || active === document.body || active === document.documentElement) {
-        // no reliable trigger: fallback to center on larger screens as well
         const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
         if (vw <= 480) {
           setStyle({
@@ -333,7 +359,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
             transform: 'translate(-50%, -50%)'
           });
         } else {
-          // position near middle-top area (not centered) to avoid full center if no trigger
           setStyle({
             position: 'fixed',
             top: '20%',
@@ -348,11 +373,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     });
   }
 
-  // reposition on open for each modal
+  // reposition on open for each modal (use provided trigger rect if available)
   useEffect(() => {
     if (editingMatch) {
-      anchorModal(editingModalRef, setEditingModalStyle);
-      const onScroll = () => anchorModal(editingModalRef, setEditingModalStyle);
+      anchorModal(editingModalRef, setEditingModalStyle, editingTriggerRect);
+      const onScroll = () => anchorModal(editingModalRef, setEditingModalStyle, editingTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
       return () => {
@@ -361,13 +386,14 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       };
     } else {
       setEditingModalStyle(undefined);
+      setEditingTriggerRect(null);
     }
-  }, [editingMatch]);
+  }, [editingMatch, editingTriggerRect]);
 
   useEffect(() => {
     if (bookingMatch) {
-      anchorModal(bookingModalRef, setBookingModalStyle);
-      const onScroll = () => anchorModal(bookingModalRef, setBookingModalStyle);
+      anchorModal(bookingModalRef, setBookingModalStyle, bookingTriggerRect);
+      const onScroll = () => anchorModal(bookingModalRef, setBookingModalStyle, bookingTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
       return () => {
@@ -376,13 +402,14 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       };
     } else {
       setBookingModalStyle(undefined);
+      setBookingTriggerRect(null);
     }
-  }, [bookingMatch]);
+  }, [bookingMatch, bookingTriggerRect]);
 
   useEffect(() => {
     if (reschedulingMatch) {
-      anchorModal(rescheduleModalRef, setRescheduleModalStyle);
-      const onScroll = () => anchorModal(rescheduleModalRef, setRescheduleModalStyle);
+      anchorModal(rescheduleModalRef, setRescheduleModalStyle, rescheduleTriggerRect);
+      const onScroll = () => anchorModal(rescheduleModalRef, setRescheduleModalStyle, rescheduleTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
       return () => {
@@ -391,13 +418,14 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       };
     } else {
       setRescheduleModalStyle(undefined);
+      setRescheduleTriggerRect(null);
     }
-  }, [reschedulingMatch]);
+  }, [reschedulingMatch, rescheduleTriggerRect]);
 
   useEffect(() => {
     if (deletingMatch) {
-      anchorModal(deletingModalRef, setDeletingModalStyle);
-      const onScroll = () => anchorModal(deletingModalRef, setDeletingModalStyle);
+      anchorModal(deletingModalRef, setDeletingModalStyle, deletingTriggerRect);
+      const onScroll = () => anchorModal(deletingModalRef, setDeletingModalStyle, deletingTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
       return () => {
@@ -406,13 +434,14 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       };
     } else {
       setDeletingModalStyle(undefined);
+      setDeletingTriggerRect(null);
     }
-  }, [deletingMatch]);
+  }, [deletingMatch, deletingTriggerRect]);
 
   useEffect(() => {
     if (slotToBook && myPendingMatches.length > 0) {
-      anchorModal(slotToBookModalRef, setSlotToBookModalStyle);
-      const onScroll = () => anchorModal(slotToBookModalRef, setSlotToBookModalStyle);
+      anchorModal(slotToBookModalRef, setSlotToBookModalStyle, slotToBookTriggerRect);
+      const onScroll = () => anchorModal(slotToBookModalRef, setSlotToBookModalStyle, slotToBookTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
       return () => {
@@ -421,14 +450,16 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       };
     } else {
       setSlotToBookModalStyle(undefined);
+      setSlotToBookTriggerRect(null);
     }
-  }, [slotToBook, myPendingMatches.length]);
+  }, [slotToBook, myPendingMatches.length, slotToBookTriggerRect]);
 
   // End anchoring logic
-  // --- original modal classes kept but wrapper changed to allow anchored positioning ---
   const modalBackdrop = "fixed inset-0 bg-black/70 z-50";
   const modalBox = "bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary";
 
+  // --- rest of component rendering (unchanged) ---
+  // ... (the JSX below is the same as before, but when rendering MatchList we pass the updated handlers)
   return (
     <div>
       {/* Tabs menu */}
@@ -449,7 +480,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Partite
         </button>
-        {/* AGGIUNTA: Tab Slot Disponibili */}
         <button onClick={() => setActiveTab('slot')}
           className={`px-4 py-2 rounded-full ${activeTab === 'slot'
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
@@ -567,10 +597,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               onPlayerContact={handlePlayerContact}
               onRescheduleMatch={handleRescheduleMatch}
               onCancelBooking={handleCancelBooking}
-              onDeleteResult={match => setDeletingMatch(match)}
+              onDeleteResult={(m, rect) => handleDeleteResult(m, rect)}
               viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
             />
 
+            {/* Editing modal (anchored) */}
             {editingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -602,12 +633,12 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                     </div>
                     <div className="flex gap-2 justify-end pt-3">
                       <button
-                        onClick={() => setEditingMatch(null)}
+                        onClick={() => { setEditingMatch(null); setEditingTriggerRect(null); }}
                         className="bg-tertiary px-4 py-2 rounded"
                       >Annulla</button>
                       <button
                         disabled={score1 === "" || score2 === ""}
-                        onClick={async () => { await saveMatchResult(editingMatch); setEditingMatch(null); }}
+                        onClick={async () => { if (editingMatch) { await saveMatchResult(editingMatch); } }}
                         className="bg-highlight text-white px-4 py-2 rounded"
                       >Salva</button>
                     </div>
@@ -616,7 +647,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Booking modal */}
+            {/* Booking modal (anchored) */}
             {bookingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -642,7 +673,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                     {bookingError && <div className="text-red-500 font-bold">{bookingError}</div>}
                     <div className="flex gap-2 justify-end pt-3">
                       <button
-                        onClick={() => { setBookingMatch(null); setBookingError(""); setSelectedSlotId(""); }}
+                        onClick={() => { setBookingMatch(null); setBookingTriggerRect(null); setBookingError(""); setSelectedSlotId(""); }}
                         className="bg-tertiary px-4 py-2 rounded"
                       >
                         Annulla
@@ -663,7 +694,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Reschedule modal */}
+            {/* Reschedule modal (anchored) */}
             {reschedulingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -689,7 +720,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                     {bookingError && <div className="text-red-500 font-bold">{bookingError}</div>}
                     <div className="flex gap-2 justify-end pt-3">
                       <button
-                        onClick={() => { setReschedulingMatch(null); setRescheduleSlotId(""); setBookingError(""); }}
+                        onClick={() => { setReschedulingMatch(null); setRescheduleTriggerRect(null); setRescheduleSlotId(""); setBookingError(""); }}
                         className="bg-tertiary px-4 py-2 rounded"
                       >
                         Annulla
@@ -710,7 +741,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Delete result confirmation modal */}
+            {/* Delete result confirmation modal (anchored) */}
             {deletingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -725,7 +756,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                   </p>
                   <div className="flex gap-2 justify-end pt-3">
                     <button
-                      onClick={() => setDeletingMatch(null)}
+                      onClick={() => { setDeletingMatch(null); setDeletingTriggerRect(null); }}
                       className="bg-tertiary px-4 py-2 rounded"
                     >Annulla</button>
                     <button
@@ -768,13 +799,17 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                       <button
                         key={m.id}
                         className="w-full bg-accent hover:bg-highlight text-white rounded-lg px-4 py-2 mb-2 font-bold"
-                        onClick={() => handleConfirmBookSlot(m.id)}
+                        onClick={(e) => {
+                          // pass the rect of the clicked button as anchor
+                          (e.currentTarget as HTMLElement).focus();
+                          handleConfirmBookSlot(m.id);
+                        }}
                       >
                         {event.players.find(p => p.id === m.player1Id)?.name} vs {event.players.find(p => p.id === m.player2Id)?.name}
                       </button>
                     ))}
                   </div>
-                  <button onClick={() => setSlotToBook(null)} className="mt-4 bg-tertiary px-4 py-2 rounded">Annulla</button>
+                  <button onClick={() => { setSlotToBook(null); setSlotToBookTriggerRect(null); }} className="mt-4 bg-tertiary px-4 py-2 rounded">Annulla</button>
                 </div>
               </div>
             )}
