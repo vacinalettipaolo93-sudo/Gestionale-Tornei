@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { type Event, type Tournament, type Match, type TimeSlot, type Player } from '../types';
 import StandingsTable from './StandingsTable';
 import MatchList from './MatchList';
@@ -23,6 +24,23 @@ interface TournamentViewProps {
   initialSelectedGroupId?: string;
   onPlayerContact?: (player: Player | { phone?: string }) => void;
 }
+
+/**
+ * Small portal wrapper: render children into a container appended to document.body.
+ * We create the container once per mount and remove on unmount.
+ */
+const Portal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  if (!elRef.current) elRef.current = document.createElement('div');
+  useEffect(() => {
+    const el = elRef.current!;
+    document.body.appendChild(el);
+    return () => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    };
+  }, []);
+  return createPortal(children, elRef.current!);
+};
 
 const TournamentView: React.FC<TournamentViewProps> = ({
   event, tournament, setEvents, isOrganizer, loggedInPlayerId,
@@ -297,6 +315,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
     const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
 
+    // mobile fallback: center
     if (vw <= 480) {
       return {
         position: 'fixed' as const,
@@ -309,12 +328,15 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     let top = triggerRect.bottom + margin;
     let left = triggerRect.left;
 
+    // try to place below; if not enough space, place above
     if (top + modalRect.height > vh - margin) {
       top = triggerRect.top - modalRect.height - margin;
     }
 
+    // clamp vertically
     top = Math.max(margin, Math.min(top, vh - modalRect.height - margin));
 
+    // horizontal overflow correction
     if (left + modalRect.width > vw - margin) {
       left = Math.max(margin, vw - modalRect.width - margin);
     }
@@ -348,10 +370,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           modalEl.style.left = (styleObj.left as string) || '';
           modalEl.style.transform = (styleObj.transform as string) || 'none';
         } catch (err) {
-          // fallback: set as cssText
           modalEl.style.cssText = `position: ${styleObj.position}; top: ${styleObj.top}; left: ${styleObj.left}; transform: ${styleObj.transform};`;
         }
-        // keep a React state copy too (optional)
         setStyle(styleObj);
         return;
       }
@@ -392,7 +412,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         window.removeEventListener('resize', onScroll);
       };
     } else {
-      // clear inline style when modal closed
       if (editingModalRef.current) editingModalRef.current.style.cssText = '';
       setEditingModalStyle(undefined);
       setEditingTriggerRect(null);
@@ -612,170 +631,99 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
             />
 
+            {/* Modals rendered via Portal so they are not inside transformed parents */}
             {editingMatch && (
-              <div className={modalBackdrop} role="dialog" aria-modal="true">
-                <div
-                  ref={editingModalRef}
-                  style={editingModalStyle}
-                  className={modalBox}
-                >
-                  <h4 className="mb-4 font-bold text-lg text-accent">Modifica Risultato</h4>
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-col">
-                      <label className="font-bold mb-1 text-white">Risultato per {event.players.find(p => p.id === editingMatch.player1Id)?.name}</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={score1}
-                        onChange={e => setScore1(e.target.value)}
-                        className="border px-3 py-2 rounded font-bold text-white bg-primary"
-                      />
-                    </div>
-                    <div className="flex flex-col">
-                      <label className="font-bold mb-1 text-white">Risultato per {event.players.find(p => p.id === editingMatch.player2Id)?.name}</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={score2}
-                        onChange={e => setScore2(e.target.value)}
-                        className="border px-3 py-2 rounded font-bold text-white bg-primary"
-                      />
-                    </div>
-                    <div className="flex gap-2 justify-end pt-3">
-                      <button
-                        onClick={() => { setEditingMatch(null); setEditingTriggerRect(null); }}
-                        className="bg-tertiary px-4 py-2 rounded"
-                      >Annulla</button>
-                      <button
-                        disabled={score1 === "" || score2 === ""}
-                        onClick={async () => { if (editingMatch) { await saveMatchResult(editingMatch); } }}
-                        className="bg-highlight text-white px-4 py-2 rounded"
-                      >Salva</button>
+              <Portal>
+                <div className={modalBackdrop} role="dialog" aria-modal="true">
+                  <div ref={editingModalRef} style={editingModalStyle} className={modalBox}>
+                    <h4 className="mb-4 font-bold text-lg text-accent">Modifica Risultato</h4>
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col">
+                        <label className="font-bold mb-1 text-white">Risultato per {event.players.find(p => p.id === editingMatch.player1Id)?.name}</label>
+                        <input type="number" min="0" value={score1} onChange={e => setScore1(e.target.value)} className="border px-3 py-2 rounded font-bold text-white bg-primary"/>
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="font-bold mb-1 text-white">Risultato per {event.players.find(p => p.id === editingMatch.player2Id)?.name}</label>
+                        <input type="number" min="0" value={score2} onChange={e => setScore2(e.target.value)} className="border px-3 py-2 rounded font-bold text-white bg-primary"/>
+                      </div>
+                      <div className="flex gap-2 justify-end pt-3">
+                        <button onClick={() => { setEditingMatch(null); setEditingTriggerRect(null); }} className="bg-tertiary px-4 py-2 rounded">Annulla</button>
+                        <button disabled={score1 === "" || score2 === ""} onClick={async () => { if (editingMatch) { await saveMatchResult(editingMatch); } }} className="bg-highlight text-white px-4 py-2 rounded">Salva</button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </Portal>
             )}
 
-            {/* Booking modal */}
             {bookingMatch && (
-              <div className={modalBackdrop} role="dialog" aria-modal="true">
-                <div
-                  ref={bookingModalRef}
-                  style={bookingModalStyle}
-                  className={modalBox}
-                >
-                  <h4 className="mb-4 font-bold text-lg text-accent">Prenota Partita</h4>
-                  <div className="flex flex-col gap-4">
-                    <label className="font-bold mb-1 text-white">Scegli uno slot libero:</label>
-                    <select
-                      value={selectedSlotId}
-                      onChange={e => { setSelectedSlotId(e.target.value); setBookingError(""); }}
-                      className="border px-3 py-2 rounded font-bold text-white bg-primary"
-                    >
-                      <option value="">Seleziona uno slot</option>
-                      {getAvailableSlots().map(slot => (
-                        <option key={slot.id} value={slot.id}>
-                          {new Date(slot.start).toLocaleString("it-IT")}{slot.location ? ` - ${slot.location}` : ""}{slot.field ? ` - ${slot.field}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    {bookingError && <div className="text-red-500 font-bold">{bookingError}</div>}
-                    <div className="flex gap-2 justify-end pt-3">
-                      <button
-                        onClick={() => { setBookingMatch(null); setBookingTriggerRect(null); setBookingError(""); setSelectedSlotId(""); }}
-                        className="bg-tertiary px-4 py-2 rounded"
-                      >
-                        Annulla
-                      </button>
-                      <button
-                        disabled={!selectedSlotId}
-                        onClick={async () => { if (bookingMatch) { await saveMatchBooking(bookingMatch); } }}
-                        className="bg-highlight text-white px-4 py-2 rounded"
-                      >
-                        Prenota
-                      </button>
+              <Portal>
+                <div className={modalBackdrop} role="dialog" aria-modal="true">
+                  <div ref={bookingModalRef} style={bookingModalStyle} className={modalBox}>
+                    <h4 className="mb-4 font-bold text-lg text-accent">Prenota Partita</h4>
+                    <div className="flex flex-col gap-4">
+                      <label className="font-bold mb-1 text-white">Scegli uno slot libero:</label>
+                      <select value={selectedSlotId} onChange={e => { setSelectedSlotId(e.target.value); setBookingError(""); }} className="border px-3 py-2 rounded font-bold text-white bg-primary">
+                        <option value="">Seleziona uno slot</option>
+                        {getAvailableSlots().map(slot => (
+                          <option key={slot.id} value={slot.id}>
+                            {new Date(slot.start).toLocaleString("it-IT")}{slot.location ? ` - ${slot.location}` : ""}{slot.field ? ` - ${slot.field}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {bookingError && <div className="text-red-500 font-bold">{bookingError}</div>}
+                      <div className="flex gap-2 justify-end pt-3">
+                        <button onClick={() => { setBookingMatch(null); setBookingTriggerRect(null); setBookingError(""); setSelectedSlotId(""); }} className="bg-tertiary px-4 py-2 rounded">Annulla</button>
+                        <button disabled={!selectedSlotId} onClick={async () => { if (bookingMatch) { await saveMatchBooking(bookingMatch); } }} className="bg-highlight text-white px-4 py-2 rounded">Prenota</button>
+                      </div>
                     </div>
-                    {getAvailableSlots().length === 0 &&
-                      <p className="text-text-secondary mt-2">Nessuno slot disponibile, chiedi all'organizzatore di aggiungere slot!</p>
-                    }
                   </div>
                 </div>
-              </div>
+              </Portal>
             )}
 
-            {/* Reschedule modal */}
             {reschedulingMatch && (
-              <div className={modalBackdrop} role="dialog" aria-modal="true">
-                <div
-                  ref={rescheduleModalRef}
-                  style={rescheduleModalStyle}
-                  className={modalBox}
-                >
-                  <h4 className="mb-4 font-bold text-lg text-accent">Modifica Prenotazione</h4>
-                  <div className="flex flex-col gap-4">
-                    <label className="font-bold mb-1 text-white">Scegli uno slot libero:</label>
-                    <select
-                      value={rescheduleSlotId}
-                      onChange={e => { setRescheduleSlotId(e.target.value); setBookingError(""); }}
-                      className="border px-3 py-2 rounded font-bold text-white bg-primary"
-                    >
-                      <option value="">Seleziona uno slot</option>
-                      {getAvailableSlots().map(slot => (
-                        <option key={slot.id} value={slot.id}>
-                          {new Date(slot.start).toLocaleString("it-IT")}{slot.location ? ` - ${slot.location}` : ""}{slot.field ? ` - ${slot.field}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    {bookingError && <div className="text-red-500 font-bold">{bookingError}</div>}
-                    <div className="flex gap-2 justify-end pt-3">
-                      <button
-                        onClick={() => { setReschedulingMatch(null); setRescheduleTriggerRect(null); setRescheduleSlotId(""); setBookingError(""); }}
-                        className="bg-tertiary px-4 py-2 rounded"
-                      >
-                        Annulla
-                      </button>
-                      <button
-                        disabled={!rescheduleSlotId}
-                        onClick={async () => { if (reschedulingMatch) { await saveRescheduleMatch(reschedulingMatch); } }}
-                        className="bg-highlight text-white px-4 py-2 rounded"
-                      >
-                        Salva
-                      </button>
+              <Portal>
+                <div className={modalBackdrop} role="dialog" aria-modal="true">
+                  <div ref={rescheduleModalRef} style={rescheduleModalStyle} className={modalBox}>
+                    <h4 className="mb-4 font-bold text-lg text-accent">Modifica Prenotazione</h4>
+                    <div className="flex flex-col gap-4">
+                      <label className="font-bold mb-1 text-white">Scegli uno slot libero:</label>
+                      <select value={rescheduleSlotId} onChange={e => { setRescheduleSlotId(e.target.value); setBookingError(""); }} className="border px-3 py-2 rounded font-bold text-white bg-primary">
+                        <option value="">Seleziona uno slot</option>
+                        {getAvailableSlots().map(slot => (
+                          <option key={slot.id} value={slot.id}>
+                            {new Date(slot.start).toLocaleString("it-IT")}{slot.location ? ` - ${slot.location}` : ""}{slot.field ? ` - ${slot.field}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {bookingError && <div className="text-red-500 font-bold">{bookingError}</div>}
+                      <div className="flex gap-2 justify-end pt-3">
+                        <button onClick={() => { setReschedulingMatch(null); setRescheduleTriggerRect(null); setRescheduleSlotId(""); setBookingError(""); }} className="bg-tertiary px-4 py-2 rounded">Annulla</button>
+                        <button disabled={!rescheduleSlotId} onClick={async () => { if (reschedulingMatch) { await saveRescheduleMatch(reschedulingMatch); } }} className="bg-highlight text-white px-4 py-2 rounded">Salva</button>
+                      </div>
                     </div>
-                    {getAvailableSlots().length === 0 &&
-                      <p className="text-text-secondary mt-2">Nessuno slot disponibile, chiedi all'organizzatore di aggiungere slot!</p>
-                    }
                   </div>
                 </div>
-              </div>
+              </Portal>
             )}
 
-            {/* Delete result confirmation modal */}
             {deletingMatch && (
-              <div className={modalBackdrop} role="dialog" aria-modal="true">
-                <div
-                  ref={deletingModalRef}
-                  style={deletingModalStyle}
-                  className={modalBox}
-                >
-                  <h4 className="mb-4 font-bold text-lg text-red-600">Elimina risultato partita</h4>
-                  <p className="mb-6 font-bold text-white">Sei sicuro di voler eliminare il risultato della partita tra&nbsp;
-                    <strong>{event.players.find(p => p.id === deletingMatch.player1Id)?.name}</strong> e&nbsp;
-                    <strong>{event.players.find(p => p.id === deletingMatch.player2Id)?.name}</strong>?
-                  </p>
-                  <div className="flex gap-2 justify-end pt-3">
-                    <button
-                      onClick={() => { setDeletingMatch(null); setDeletingTriggerRect(null); }}
-                      className="bg-tertiary px-4 py-2 rounded"
-                    >Annulla</button>
-                    <button
-                      onClick={async () => { if (deletingMatch) { await deleteMatchResult(deletingMatch); } }}
-                      className="bg-red-600 text-white px-4 py-2 rounded"
-                    >Elimina</button>
+              <Portal>
+                <div className={modalBackdrop} role="dialog" aria-modal="true">
+                  <div ref={deletingModalRef} style={deletingModalStyle} className={modalBox}>
+                    <h4 className="mb-4 font-bold text-lg text-red-600">Elimina risultato partita</h4>
+                    <p className="mb-6 font-bold text-white">Sei sicuro di voler eliminare il risultato della partita tra&nbsp;
+                      <strong>{event.players.find(p => p.id === deletingMatch.player1Id)?.name}</strong> e&nbsp;
+                      <strong>{event.players.find(p => p.id === deletingMatch.player2Id)?.name}</strong>?
+                    </p>
+                    <div className="flex gap-2 justify-end pt-3">
+                      <button onClick={() => { setDeletingMatch(null); setDeletingTriggerRect(null); }} className="bg-tertiary px-4 py-2 rounded">Annulla</button>
+                      <button onClick={async () => { if (deletingMatch) { await deleteMatchResult(deletingMatch); } }} className="bg-red-600 text-white px-4 py-2 rounded">Elimina</button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Portal>
             )}
           </div>
         )}
@@ -791,40 +739,38 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               matchesPending={myPendingMatches}
             />
             {slotToBook && myPendingMatches.length > 0 && (
-              <div className={modalBackdrop} role="dialog" aria-modal="true">
-                <div
-                  ref={slotToBookModalRef}
-                  style={slotToBookModalStyle}
-                  className="bg-secondary p-6 rounded-xl shadow-lg w-full max-w-sm border border-tertiary"
-                >
-                  <h4 className="mb-4 font-bold text-lg text-accent">Prenota Slot</h4>
-                  <div className="mb-2">
-                    <span className="font-semibold">Slot:</span> {new Date(slotToBook.start).toLocaleString('it-IT')}
-                    {slotToBook.location && <> – <span className="font-semibold">{slotToBook.location}</span></>}
-                    {slotToBook.field && <> – <span>{slotToBook.field}</span></>}
+              <Portal>
+                <div className={modalBackdrop} role="dialog" aria-modal="true">
+                  <div ref={slotToBookModalRef} style={slotToBookModalStyle} className="bg-secondary p-6 rounded-xl shadow-lg w-full max-w-sm border border-tertiary">
+                    <h4 className="mb-4 font-bold text-lg text-accent">Prenota Slot</h4>
+                    <div className="mb-2">
+                      <span className="font-semibold">Slot:</span> {new Date(slotToBook.start).toLocaleString('it-IT')}
+                      {slotToBook.location && <> – <span className="font-semibold">{slotToBook.location}</span></>}
+                      {slotToBook.field && <> – <span>{slotToBook.field}</span></>}
+                    </div>
+                    <div className="flex flex-col gap-4 mt-2">
+                      <span className="font-semibold mb-2">Scegli partita da prenotare:</span>
+                      {myPendingMatches.map(m => (
+                        <button
+                          key={m.id}
+                          className="w-full bg-accent hover:bg-highlight text-white rounded-lg px-4 py-2 mb-2 font-bold"
+                          onClick={(e) => {
+                            const el = e.currentTarget as HTMLElement;
+                            el.focus();
+                            const rect = el.getBoundingClientRect();
+                            e.stopPropagation();
+                            setSlotToBookTriggerRect(rect);
+                            handleConfirmBookSlot(m.id);
+                          }}
+                        >
+                          {event.players.find(p => p.id === m.player1Id)?.name} vs {event.players.find(p => p.id === m.player2Id)?.name}
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => { setSlotToBook(null); setSlotToBookTriggerRect(null); }} className="mt-4 bg-tertiary px-4 py-2 rounded">Annulla</button>
                   </div>
-                  <div className="flex flex-col gap-4 mt-2">
-                    <span className="font-semibold mb-2">Scegli partita da prenotare:</span>
-                    {myPendingMatches.map(m => (
-                      <button
-                        key={m.id}
-                        className="w-full bg-accent hover:bg-highlight text-white rounded-lg px-4 py-2 mb-2 font-bold"
-                        onClick={(e) => {
-                          const el = e.currentTarget as HTMLElement;
-                          el.focus();
-                          const rect = el.getBoundingClientRect();
-                          e.stopPropagation();
-                          setSlotToBookTriggerRect(rect);
-                          handleConfirmBookSlot(m.id);
-                        }}
-                      >
-                        {event.players.find(p => p.id === m.player1Id)?.name} vs {event.players.find(p => p.id === m.player2Id)?.name}
-                      </button>
-                    ))}
-                  </div>
-                  <button onClick={() => { setSlotToBook(null); setSlotToBookTriggerRect(null); }} className="mt-4 bg-tertiary px-4 py-2 rounded">Annulla</button>
                 </div>
-              </div>
+              </Portal>
             )}
           </>
         )}
