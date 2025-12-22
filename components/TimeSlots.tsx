@@ -186,7 +186,7 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                     <span className="text-white">-</span>{" "}
                     <span className="text-accent font-bold">{slot.location}</span>{" "}
                     <span className="text-white">-</span>{" "}
-                    <span className="text-tertiary font-bold">{slot.field}</span>
+                    <span className="text-red-500 font-bold">{slot.field}</span>
                   </div>
                   <div>
                     {isOrganizer && (
