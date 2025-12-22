@@ -11,7 +11,6 @@ interface TimeSlotsProps {
   loggedInPlayerId?: string;
   selectedGroupId?: string;
   globalTimeSlots: TimeSlot[];
-  // added callback to navigate to a tournament view (optional)
   onSelectTournament?: (tournament: Tournament, initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players', initialGroupId?: string) => void;
 }
 
@@ -136,37 +135,6 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
       });
     };
 
-    // Cancella prenotazione di una partita (reimposta a pending) — usato per gli slot prenotati
-    const handleCancelBookedMatch = async (matchId: string, tournamentId: string) => {
-      if (!confirm("Sei sicuro di voler annullare la prenotazione di questa partita?")) return;
-
-      const updatedTournaments = (event.tournaments || []).map(t => {
-        if (t.id !== tournamentId) return t;
-        return {
-          ...t,
-          groups: (t.groups || []).map(g => ({
-            ...g,
-            matches: (g.matches || []).map(m => {
-              if (m.id !== matchId) return m;
-              return { ...m, status: 'pending', scheduledTime: undefined, slotId: undefined, location: undefined, field: undefined };
-            })
-          }))
-        };
-      });
-
-      // update local UI
-      setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, tournaments: updatedTournaments } : ev));
-
-      // persist
-      try {
-        await updateDoc(doc(db, "events", event.id), {
-          tournaments: updatedTournaments
-        });
-      } catch (err) {
-        console.error("Errore annullamento prenotazione", err);
-      }
-    };
-
     return (
       <div>
         <h2 className="text-2xl font-bold mb-4 text-accent">Slot Orari Globali</h2>
@@ -220,7 +188,8 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                     <span className="text-white">-</span>{" "}
                     <span className="text-accent font-bold">{slot.location}</span>{" "}
                     <span className="text-white">-</span>{" "}
-                    <span className="text-tertiary font-bold">{slot.field}</span>
+                    {/* campo: ora in rosso */}
+                    <span className="text-red-500 font-bold">{slot.field}</span>
                   </div>
                   <div>
                     {isOrganizer && (
@@ -264,35 +233,34 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                   const player1 = event.players.find(p => p.id === match.player1Id)?.name || match.player1Id;
                   const player2 = event.players.find(p => p.id === match.player2Id)?.name || match.player2Id;
                   return (
-                    <li key={slot.id} className="flex items-center justify-between px-2 py-2 rounded bg-[#22283A] mb-2">
-                      <div>
-                        <span className="font-bold text-white">
-                          {formatDateTime(slot.start)} - <span className="text-accent">{slot.location}</span> - <span className="text-red-500">{slot.field}</span>
-                        </span>
-                        <div className="font-bold text-accent mt-1">Partita programmata:</div>
-                        <div className="text-white font-bold">
-                          {player1} vs {player2} ({tournament.name}, girone: {group.name})
+                    <li key={slot.id} className="flex flex-col px-2 py-2 rounded bg-[#22283A] mb-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="font-bold text-white">
+                            {formatDateTime(slot.start)} - <span className="text-accent">{slot.location}</span> - <span className="text-red-500">{slot.field}</span>
+                          </span>
+                          <div className="font-bold text-accent mt-1">
+                            Partita programmata:
+                          </div>
+                          <div className="text-white font-bold">
+                            {player1} vs {player2}
+                            {" "}({tournament.name}, girone: {group.name})
+                          </div>
+                          <div className="text-sm text-gray-300">
+                            Stato: Programmata
+                          </div>
                         </div>
-                        <div className="text-sm text-gray-300">Stato: Programmata</div>
-                      </div>
 
-                      {/* AZIONI: Vai al torneo / Annulla prenotazione (solo organizzatore) */}
-                      <div className="flex flex-col items-end gap-2">
-                        {isOrganizer && onSelectTournament && (
-                          <button
-                            className="px-3 py-1 rounded bg-tertiary text-white"
-                            onClick={() => onSelectTournament(tournament, 'matches', group.id)}
-                          >
-                            Vai al torneo
-                          </button>
-                        )}
-                        {isOrganizer && (
-                          <button
-                            className="px-3 py-1 rounded bg-red-600 text-white"
-                            onClick={() => handleCancelBookedMatch(match.id, tournament.id)}
-                          >
-                            Annulla pren.
-                          </button>
+                        {/* Bottone: Vai al torneo (se fornita la callback) */}
+                        {onSelectTournament && (
+                          <div className="ml-4 flex flex-col gap-2">
+                            <button
+                              className="px-3 py-1 rounded bg-tertiary text-white"
+                              onClick={() => onSelectTournament(tournament, 'matches', group.id)}
+                            >
+                              Vai al torneo
+                            </button>
+                          </div>
                         )}
                       </div>
                     </li>
