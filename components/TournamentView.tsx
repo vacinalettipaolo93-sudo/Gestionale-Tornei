@@ -71,14 +71,14 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId))
     : [];
 
-  // --- TRIGGER RECTS for anchored modals ---
+  // --- TRIGGER RECTS for anchored modals (minimal additions) ---
   const [editingTriggerRect, setEditingTriggerRect] = useState<DOMRect | null>(null);
   const [bookingTriggerRect, setBookingTriggerRect] = useState<DOMRect | null>(null);
   const [rescheduleTriggerRect, setRescheduleTriggerRect] = useState<DOMRect | null>(null);
   const [deletingTriggerRect, setDeletingTriggerRect] = useState<DOMRect | null>(null);
   const [slotToBookTriggerRect, setSlotToBookTriggerRect] = useState<DOMRect | null>(null);
 
-  // Handlers now accept optional triggerRect and store it when opening modals
+  // Handlers updated to accept optional triggerRect (they store it for anchoring)
   const handleClickBookSlot = (slot: TimeSlot, triggerRect?: DOMRect | null) => {
     setSlotToBook(slot);
     setSlotToBookTriggerRect(triggerRect ?? null);
@@ -161,8 +161,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setScore2("");
   }
 
-  // elimina risultato (confirmation) — now uses a handler to open modal with triggerRect
-  const handleDeleteResult = (match: Match, triggerRect?: DOMRect | null) => {
+  // elimina risultato — split open vs confirm (open accepts triggerRect)
+  const handleOpenDeleteResult = (match: Match, triggerRect?: DOMRect | null) => {
     setDeletingMatch(match);
     setDeletingTriggerRect(triggerRect ?? null);
   };
@@ -228,7 +228,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setBookingError("");
   }
 
-  // reschedule — opens modal with optional triggerRect
+  // reschedule — opens modal (accepts triggerRect)
   const handleRescheduleMatch = (match: Match, triggerRect?: DOMRect | null) => {
     setReschedulingMatch(match);
     setRescheduleTriggerRect(triggerRect ?? null);
@@ -279,7 +279,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
   }
 
-  // --- MODAL ANCHORING LOGIC ---
+  // --- MODAL ANCHORING LOGIC ADDED BELOW ---
+  // We track refs and inline styles for each modal so they open near the element
+  // that triggered them (fallback to centered modal on small viewports).
+  // NOTE: we only change positioning/markup, NOT the functional logic.
+
   const editingModalRef = useRef<HTMLDivElement | null>(null);
   const bookingModalRef = useRef<HTMLDivElement | null>(null);
   const rescheduleModalRef = useRef<HTMLDivElement | null>(null);
@@ -292,6 +296,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const [deletingModalStyle, setDeletingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [slotToBookModalStyle, setSlotToBookModalStyle] = useState<React.CSSProperties | undefined>(undefined);
 
+  // compute anchored style given trigger & modal rects
   function computeAnchorStyle(triggerRect: DOMRect, modalRect: DOMRect) {
     const margin = 8;
     const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
@@ -341,9 +346,12 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     requestAnimationFrame(() => {
       const modalRect = modalEl.getBoundingClientRect();
 
-      // prefer provided trigger rect (more reliable)
-      if (providedTriggerRect) {
-        setStyle(computeAnchorStyle(providedTriggerRect, modalRect));
+      // Prefer provided trigger rect, otherwise fallback to global last click, otherwise active element
+      const globalLastClickRect = (window as any).__lastClickRect as DOMRect | undefined;
+      const triggerToUse = providedTriggerRect ?? globalLastClickRect ?? null;
+
+      if (triggerToUse) {
+        setStyle(computeAnchorStyle(triggerToUse, modalRect));
         return;
       }
 
@@ -598,7 +606,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               onPlayerContact={handlePlayerContact}
               onRescheduleMatch={handleRescheduleMatch}
               onCancelBooking={handleCancelBooking}
-              onDeleteResult={handleDeleteResult}
+              onDeleteResult={handleOpenDeleteResult}
               viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
             />
 
@@ -647,6 +655,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
+            {/* Booking modal */}
             {bookingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -693,6 +702,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
+            {/* Reschedule modal */}
             {reschedulingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -739,6 +749,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
+            {/* Delete result confirmation modal */}
             {deletingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
