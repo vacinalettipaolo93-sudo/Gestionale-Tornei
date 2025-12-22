@@ -1,4 +1,3 @@
-// (updated) components/AvailableSlotsList.tsx
 import React from 'react';
 import { type Event, type Tournament, type TimeSlot, type Match } from '../types';
 
@@ -6,8 +5,8 @@ interface Props {
   event: Event;
   tournament?: Tournament;
   userId?: string;
-  // pass triggerRect so parent can anchor modal precisely
-  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void; // solo nel torneo, permette la prenotazione
+  // now accept optional triggerRect so parent can anchor modal precisely
+  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void;
   matchesPending?: Match[];
 }
 
@@ -25,7 +24,6 @@ const AvailableSlotsList: React.FC<Props> = ({
   onClickBook,
   matchesPending = [],
 }) => {
-  // compute booked slots (valgono in tutto l'evento)
   const bookedIds = event.tournaments
     .flatMap(t => t.groups || [])
     .flatMap(g => g.matches || [])
@@ -36,9 +34,6 @@ const AvailableSlotsList: React.FC<Props> = ({
     slot => !bookedIds.includes(slot.id)
   );
 
-  // Se siamo nel TournamentView:
-  // prenota solo se c'è almeno una partita pending dell'utente
-  // Altrimenti lista solo
   return (
     <div className="bg-secondary p-5 rounded-xl shadow-lg max-w-2xl mx-auto my-8">
       <h3 className="text-lg font-bold mb-4 text-accent">Slot Disponibili</h3>
@@ -57,9 +52,10 @@ const AvailableSlotsList: React.FC<Props> = ({
                 <button
                   className="bg-accent hover:bg-highlight text-white px-4 py-2 rounded font-bold transition"
                   onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                    // provide the exact trigger rect to parent so modal can anchor properly
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    (e.currentTarget as HTMLElement).focus();
+                    // focus + pass rect to parent so modal can anchor exactly at click point
+                    const el = e.currentTarget as HTMLElement;
+                    el.focus();
+                    const rect = el.getBoundingClientRect();
                     e.stopPropagation();
                     onClickBook(slot, rect);
                   }}
