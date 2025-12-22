@@ -255,8 +255,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
   }
 
-  // --- MODAL ANCHORING LOGIC ---
-  // We'll open modals near the clicked button when possible, fallback to centered modal on small screens.
+  // --- MODAL ANCHORING LOGIC ADDED BELOW ---
+  // We track refs and inline styles for each modal so they open near the element
+  // that triggered them (fallback to centered modal on small viewports).
+  // NOTE: we only change positioning/markup, NOT the functional logic.
+
   const editingModalRef = useRef<HTMLDivElement | null>(null);
   const bookingModalRef = useRef<HTMLDivElement | null>(null);
   const rescheduleModalRef = useRef<HTMLDivElement | null>(null);
@@ -269,6 +272,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const [deletingModalStyle, setDeletingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [slotToBookModalStyle, setSlotToBookModalStyle] = useState<React.CSSProperties | undefined>(undefined);
 
+  // compute anchored style given trigger & modal rects
   function computeAnchorStyle(triggerRect: DOMRect, modalRect: DOMRect) {
     const margin = 8;
     const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
@@ -309,14 +313,17 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     };
   }
 
+  // helper to anchor a given modalRef using document.activeElement as trigger
   function anchorModal(modalRef: React.RefObject<HTMLDivElement>, setStyle: (s?: React.CSSProperties) => void) {
     const modalEl = modalRef.current;
     if (!modalEl) return;
 
+    // wait for modal to be visible & sized
     requestAnimationFrame(() => {
       const modalRect = modalEl.getBoundingClientRect();
       const active = document.activeElement as HTMLElement | null;
       if (!active || active === document.body || active === document.documentElement) {
+        // no reliable trigger: fallback to center on larger screens as well
         const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
         if (vw <= 480) {
           setStyle({
@@ -326,6 +333,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
             transform: 'translate(-50%, -50%)'
           });
         } else {
+          // position near middle-top area (not centered) to avoid full center if no trigger
           setStyle({
             position: 'fixed',
             top: '20%',
@@ -340,6 +348,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     });
   }
 
+  // reposition on open for each modal
   useEffect(() => {
     if (editingMatch) {
       anchorModal(editingModalRef, setEditingModalStyle);
@@ -416,6 +425,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   }, [slotToBook, myPendingMatches.length]);
 
   // End anchoring logic
+  // --- original modal classes kept but wrapper changed to allow anchored positioning ---
   const modalBackdrop = "fixed inset-0 bg-black/70 z-50";
   const modalBox = "bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary";
 
@@ -439,7 +449,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Partite
         </button>
-        {/* Slot tab */}
+        {/* AGGIUNTA: Tab Slot Disponibili */}
         <button onClick={() => setActiveTab('slot')}
           className={`px-4 py-2 rounded-full ${activeTab === 'slot'
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
@@ -561,7 +571,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
             />
 
-            {/* Editing modal (anchored) */}
             {editingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -607,7 +616,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Booking modal (anchored) */}
+            {/* Booking modal */}
             {bookingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -654,7 +663,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Reschedule modal (anchored) */}
+            {/* Reschedule modal */}
             {reschedulingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -701,7 +710,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Delete result confirmation modal (anchored) */}
+            {/* Delete result confirmation modal */}
             {deletingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -795,7 +804,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         {activeTab === 'groups' && isOrganizer && (
           <GroupManagement event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} />
         )}
-        {activeTab === 'players' and isOrganizer && (
+        {activeTab === 'players' && isOrganizer && (
           <PlayerManagement event={event} setEvents={setEvents} isOrganizer={isOrganizer} onPlayerContact={handlePlayerContact} />
         )}
         {activeTab === 'settings' && isOrganizer && (
