@@ -142,20 +142,17 @@ const MatchCard: React.FC<{
       }
     : null;
 
-  // RIMPIAZZO: calcola data/ora locali a partire da scheduledTime (evita problemi di timezone)
+  // compute local date/time
   const localDateObj = match.scheduledTime ? new Date(match.scheduledTime) : null;
 
-  // rawDate per messaggi (formato dd-mm-yyyy)
   const rawDate = localDateObj
     ? `${String(localDateObj.getDate()).padStart(2, '0')}-${String(localDateObj.getMonth() + 1).padStart(2, '0')}-${localDateObj.getFullYear()}`
     : '';
 
-  // rawTime per messaggi (formato HH:MM, locale)
   const rawTime = localDateObj
     ? `${String(localDateObj.getHours()).padStart(2, '0')}:${String(localDateObj.getMinutes()).padStart(2, '0')}`
     : '';
 
-  // ISO locali per ICS / Google Calendar (YYYY-MM-DD and HH:MM)
   const localDateIso = localDateObj
     ? `${localDateObj.getFullYear()}-${String(localDateObj.getMonth() + 1).padStart(2, '0')}-${String(localDateObj.getDate()).padStart(2, '0')}`
     : '';
@@ -166,7 +163,6 @@ const MatchCard: React.FC<{
   return (
     <div className="bg-secondary p-4 rounded-lg shadow">
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-        {/* Player 1 - SINISTRA */}
         <div className="flex items-center gap-3 justify-start">
           <img src={player1.avatar} alt={player1.name} className="w-10 h-10 rounded-full object-cover" />
           <button
@@ -178,7 +174,6 @@ const MatchCard: React.FC<{
           </button>
         </div>
 
-        {/* Score centrale */}
         <div className="flex flex-col items-center">
           {match.score1 != null && match.score2 != null ? (
             <div className="text-2xl font-bold text-center">
@@ -201,7 +196,6 @@ const MatchCard: React.FC<{
           )}
         </div>
 
-        {/* Player 2 - DESTRA */}
         <div className="flex items-center gap-3 justify-end">
           <button
             type="button"
@@ -263,13 +257,7 @@ const MatchCard: React.FC<{
         {match.status === 'scheduled' && canManageBooking && onCancelBooking && (
           <button
             type="button"
-            onClick={(e) => {
-              const el = e.currentTarget as HTMLElement;
-              el.focus();
-              const rect = el.getBoundingClientRect();
-              e.stopPropagation();
-              onCancelBooking(match);
-            }}
+            onClick={(e) => { e.stopPropagation(); onCancelBooking && onCancelBooking(match); }}
             className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
             Annulla pren.
@@ -283,7 +271,7 @@ const MatchCard: React.FC<{
               el.focus();
               const rect = el.getBoundingClientRect();
               e.stopPropagation();
-              onDeleteResult(match, rect);
+              if (typeof onDeleteResult === 'function') onDeleteResult(match, rect);
             }}
             className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
@@ -291,7 +279,7 @@ const MatchCard: React.FC<{
           </button>
         )}
       </div>
-      {/* AGGIUNTA: bottoni calendario e whatsapp disponibili solo per match prenotato e visibile a uno dei due giocatori */}
+
       {match.status === 'scheduled' && isParticipant && scheduledInfo && (
         <div className="flex gap-2 mt-4 justify-center">
           <button
@@ -299,7 +287,6 @@ const MatchCard: React.FC<{
             onClick={() => {
               const eventName = 'Partita torneo';
               const opponentName = loggedInPlayerId === player1.id ? player2.name : player1.name;
-              // scarica .ics usando data/ora locali (ISO)
               downloadIcsForMatch({ eventName, opponentName, date: localDateIso, startTime: localTimeIso });
             }}
           >
@@ -337,7 +324,6 @@ const MatchCard: React.FC<{
           </a>
         </div>
       )}
-      {/* /FINE AGGIUNTA */}
     </div>
   );
 };
@@ -371,18 +357,17 @@ const MatchList: React.FC<MatchListProps> = ({
   };
 
   const pendingMatches = filteredMatches('pending');
-  
-  // --- FILTRI MIGLIORATI: "partite programmate" mostra solo se slotId + scheduledTime è valorizzato ---
+
+  // scheduled only if slotId + scheduledTime
   const scheduledMatches = group.matches.filter(m =>
     m.status === 'scheduled' &&
     m.slotId &&
     m.scheduledTime &&
     (filter === 'all' || (!!loggedInPlayerId && (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId)))
   );
-  
+
   const completedMatches = group.matches.filter(m => m.score1 != null && m.score2 != null);
 
-  // Optional: ordina le liste per scheduledTime quando disponibile (stabile)
   const sortByTime = (arr: Match[]) =>
     arr.slice().sort((a, b) => {
       const ta = a.scheduledTime ? new Date(a.scheduledTime).getTime() : 0;
@@ -412,8 +397,6 @@ const MatchList: React.FC<MatchListProps> = ({
           </div>
         </div>
       )}
-
-      {/* ORDINE RICHIESTO: 1) Programmate, 2) Da Fare, 3) Completate */}
 
       <div>
         <h4 className="text-lg font-semibold mb-3 text-accent">Partite Programmate</h4>
