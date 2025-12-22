@@ -1,4 +1,3 @@
-// (updated) components/TournamentView.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { type Event, type Tournament, type Match, type TimeSlot, type Player } from '../types';
 import StandingsTable from './StandingsTable';
@@ -71,8 +70,15 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         m.status === "pending" &&
         (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId))
     : [];
-  // NOTE: handlers below accept optional triggerRect to anchor modals
 
+  // --- TRIGGER RECTS for anchored modals ---
+  const [editingTriggerRect, setEditingTriggerRect] = useState<DOMRect | null>(null);
+  const [bookingTriggerRect, setBookingTriggerRect] = useState<DOMRect | null>(null);
+  const [rescheduleTriggerRect, setRescheduleTriggerRect] = useState<DOMRect | null>(null);
+  const [deletingTriggerRect, setDeletingTriggerRect] = useState<DOMRect | null>(null);
+  const [slotToBookTriggerRect, setSlotToBookTriggerRect] = useState<DOMRect | null>(null);
+
+  // Handlers now accept optional triggerRect and store it when opening modals
   const handleClickBookSlot = (slot: TimeSlot, triggerRect?: DOMRect | null) => {
     setSlotToBook(slot);
     setSlotToBookTriggerRect(triggerRect ?? null);
@@ -133,8 +139,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     }
   };
 
-  // risultato (modifica / salva)
-  // note: accept triggerRect so modal can anchor where user clicked
+  // risultato (modifica / salva) — accept optional triggerRect
   const handleEditResult = (match: Match, triggerRect?: DOMRect | null) => {
     setEditingMatch(match);
     setEditingTriggerRect(triggerRect ?? null);
@@ -156,7 +161,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setScore2("");
   }
 
-  // elimina risultato
+  // elimina risultato (opens confirmation modal)
   const handleDeleteResult = (match: Match, triggerRect?: DOMRect | null) => {
     setDeletingMatch(match);
     setDeletingTriggerRect(triggerRect ?? null);
@@ -174,7 +179,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setDeletingTriggerRect(null);
   }
 
-  // booking
+  // booking — opens booking modal and stores triggerRect
   const handleBookMatch = (match: Match, triggerRect?: DOMRect | null) => {
     setBookingMatch(match);
     setBookingTriggerRect(triggerRect ?? null);
@@ -223,7 +228,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setBookingError("");
   }
 
-  // reschedule
+  // reschedule — opens modal
   const handleRescheduleMatch = (match: Match, triggerRect?: DOMRect | null) => {
     setReschedulingMatch(match);
     setRescheduleTriggerRect(triggerRect ?? null);
@@ -262,7 +267,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setBookingError("");
   }
 
-  // cancel booking (immediate handler)
+  // cancel booking (immediate)
   async function handleCancelBooking(match: Match) {
     if (!selectedGroup) return;
     const updatedMatch: Match = { ...match, status: "pending", scheduledTime: null, slotId: null, location: "", field: "" };
@@ -274,29 +279,19 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
   }
 
-  // --- MODAL ANCHORING LOGIC ADDED BELOW ---
-  // Refs for modals
+  // --- MODAL ANCHORING LOGIC ---
   const editingModalRef = useRef<HTMLDivElement | null>(null);
   const bookingModalRef = useRef<HTMLDivElement | null>(null);
   const rescheduleModalRef = useRef<HTMLDivElement | null>(null);
   const deletingModalRef = useRef<HTMLDivElement | null>(null);
   const slotToBookModalRef = useRef<HTMLDivElement | null>(null);
 
-  // inline styles for anchored modals
   const [editingModalStyle, setEditingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [bookingModalStyle, setBookingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [rescheduleModalStyle, setRescheduleModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [deletingModalStyle, setDeletingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [slotToBookModalStyle, setSlotToBookModalStyle] = useState<React.CSSProperties | undefined>(undefined);
 
-  // store trigger rects when provided by caller
-  const [editingTriggerRect, setEditingTriggerRect] = useState<DOMRect | null>(null);
-  const [bookingTriggerRect, setBookingTriggerRect] = useState<DOMRect | null>(null);
-  const [rescheduleTriggerRect, setRescheduleTriggerRect] = useState<DOMRect | null>(null);
-  const [deletingTriggerRect, setDeletingTriggerRect] = useState<DOMRect | null>(null);
-  const [slotToBookTriggerRect, setSlotToBookTriggerRect] = useState<DOMRect | null>(null);
-
-  // compute anchored style given trigger & modal rects
   function computeAnchorStyle(triggerRect: DOMRect, modalRect: DOMRect) {
     const margin = 8;
     const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
@@ -337,7 +332,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     };
   }
 
-  // helper to anchor a given modalRef using either provided triggerRect or document.activeElement
   function anchorModal(modalRef: React.RefObject<HTMLDivElement>, setStyle: (s?: React.CSSProperties) => void, providedTriggerRect?: DOMRect | null) {
     const modalEl = modalRef.current;
     if (!modalEl) return;
@@ -373,7 +367,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     });
   }
 
-  // reposition on open for each modal (use provided trigger rect if available)
   useEffect(() => {
     if (editingMatch) {
       anchorModal(editingModalRef, setEditingModalStyle, editingTriggerRect);
@@ -458,8 +451,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const modalBackdrop = "fixed inset-0 bg-black/70 z-50";
   const modalBox = "bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary";
 
-  // --- rest of component rendering (unchanged) ---
-  // ... (the JSX below is the same as before, but when rendering MatchList we pass the updated handlers)
   return (
     <div>
       {/* Tabs menu */}
@@ -480,6 +471,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Partite
         </button>
+        {/* Slot tab */}
         <button onClick={() => setActiveTab('slot')}
           className={`px-4 py-2 rounded-full ${activeTab === 'slot'
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
@@ -597,7 +589,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               onPlayerContact={handlePlayerContact}
               onRescheduleMatch={handleRescheduleMatch}
               onCancelBooking={handleCancelBooking}
-              onDeleteResult={(m, rect) => handleDeleteResult(m, rect)}
+              onDeleteResult={handleDeleteResult}
               viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
             />
 
@@ -800,8 +792,12 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                         key={m.id}
                         className="w-full bg-accent hover:bg-highlight text-white rounded-lg px-4 py-2 mb-2 font-bold"
                         onClick={(e) => {
-                          // pass the rect of the clicked button as anchor
-                          (e.currentTarget as HTMLElement).focus();
+                          const el = e.currentTarget as HTMLElement;
+                          el.focus();
+                          const rect = el.getBoundingClientRect();
+                          e.stopPropagation();
+                          // pass rect to the confirm handler by temporarily setting trigger rect and then confirming
+                          setSlotToBookTriggerRect(rect);
                           handleConfirmBookSlot(m.id);
                         }}
                       >
