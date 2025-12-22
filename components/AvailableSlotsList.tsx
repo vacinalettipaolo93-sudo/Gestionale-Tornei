@@ -5,8 +5,7 @@ interface Props {
   event: Event;
   tournament?: Tournament;
   userId?: string;
-  // accept triggerRect to anchor modal precisely
-  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void; // solo nel torneo, permette la prenotazione
+  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void; // now accepts triggerRect
   matchesPending?: Match[];
 }
 
@@ -50,6 +49,7 @@ const AvailableSlotsList: React.FC<Props> = ({
               <div>
                 <span className="font-bold">{formatSlot(slot)}</span>
                 {slot.location && <span className="ml-2 text-accent">{slot.location}</span>}
+                {/* Cambiata solo la classe del campo (field) da text-tertiary a text-red-500 */}
                 {slot.field && <span className="ml-2 text-red-500">{slot.field}</span>}
               </div>
               {onClickBook && matchesPending?.length > 0 ? (
