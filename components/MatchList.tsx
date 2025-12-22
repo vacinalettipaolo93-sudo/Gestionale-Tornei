@@ -218,7 +218,8 @@ const MatchCard: React.FC<{
         {match.status === 'pending' && canBook && (
           <button
             onClick={(e) => {
-              // prevent parent handlers from interfering
+              // ensure button receives focus so anchoring can use document.activeElement
+              (e.currentTarget as HTMLElement).focus();
               e.stopPropagation();
               // diagnostic log to confirm click arrives here
               console.log('[MatchList] Prenota button clicked, match id=', match?.id, ' onBookMatch present?', typeof onBookMatch === 'function');
@@ -241,7 +242,7 @@ const MatchCard: React.FC<{
         {canEnterResult && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onEditResult(match); }}
+            onClick={(e) => { (e.currentTarget as HTMLElement).focus(); e.stopPropagation(); onEditResult(match); }}
             className="bg-highlight/80 hover:bg-highlight text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
             Risultato
@@ -250,7 +251,7 @@ const MatchCard: React.FC<{
         {match.status === 'scheduled' && canManageBooking && onRescheduleMatch && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onRescheduleMatch(match); }}
+            onClick={(e) => { (e.currentTarget as HTMLElement).focus(); e.stopPropagation(); onRescheduleMatch(match); }}
             className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
             Modifica pren.
@@ -259,7 +260,7 @@ const MatchCard: React.FC<{
         {match.status === 'scheduled' && canManageBooking && onCancelBooking && (
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); onCancelBooking(match); }}
+            onClick={(e) => { (e.currentTarget as HTMLElement).focus(); e.stopPropagation(); onCancelBooking(match); }}
             className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
             Annulla pren.
@@ -269,6 +270,7 @@ const MatchCard: React.FC<{
           <button
             type="button"
             onClick={(e) => {
+              (e.currentTarget as HTMLElement).focus();
               e.stopPropagation();
               console.log('[MatchList] Elimina risultato clicked, match id=', match?.id, ' onDeleteResult present?', typeof onDeleteResult === 'function');
               try {
