@@ -220,7 +220,7 @@ const EventView: React.FC<EventViewProps> = ({
   });
 
   // ----------------------------
-  // BOOKED SLOTS: helper + handlers
+  // BOOKED SLOTS: helper + handlers (kept for compatibility)
   // ----------------------------
   const getBookedSlotsEntries = () => {
     const slots = event.globalTimeSlots ?? [];
@@ -256,7 +256,7 @@ const EventView: React.FC<EventViewProps> = ({
   const handleCancelBookedMatch = async (matchId: string, tournamentId: string) => {
     if (!confirm("Sei sicuro di voler annullare la prenotazione di questa partita?")) return;
 
-    const updatedTournaments = (event.tournaments || []).map(t => {
+    const updatedTournaments = (event.tournaments ?? []).map(t => {
       if (t.id !== tournamentId) return t;
       return {
         ...t,
@@ -448,70 +448,9 @@ const EventView: React.FC<EventViewProps> = ({
             loggedInPlayerId={loggedInPlayerId}
             selectedGroupId={undefined}
             globalTimeSlots={sortedGlobalTimeSlots}
-            onSelectTournament={onSelectTournament}
           />
         </div>
       )}
-
-      {/* ---------------------- */}
-      {/* Sezione: Partite prenotate (organizzatore) */}
-      {/* aggiunta: mostra lista partite prenotate (future) con due bottoni:
-          - Vai al torneo (onSelectTournament con 'matches')
-          - Annulla pren. (reimposta match a pending e aggiorna Firestore)
-      */}
-      {isOrganizer && (
-        <div className="mb-10">
-          <h2 className="text-2xl font-bold mb-4 text-white">Partite Prenotate (future)</h2>
-          <div className="bg-tertiary rounded-xl p-5">
-            {(() => {
-              const entries = getBookedSlotsEntries();
-              if (!entries.length) {
-                return <p className="text-text-secondary">Nessuna partita prenotata futura.</p>;
-              }
-              return (
-                <ul className="space-y-3">
-                  {entries.map((entry, idx) => {
-                    const m = entry.match;
-                    const slot = entry.slot;
-                    const displayTime = m.scheduledTime ? new Date(m.scheduledTime).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-                    const p1 = event.players?.find(p => p.id === m.player1Id)?.name ?? m.player1Id;
-                    const p2 = event.players?.find(p => p.id === m.player2Id)?.name ?? m.player2Id;
-                    return (
-                      <li key={`${m.id}-${idx}`} className="flex items-center justify-between border-b border-gray-700 pb-2">
-                        <div>
-                          <div className="font-bold text-white">{displayTime}</div>
-                          <div className="text-sm text-text-secondary">
-                            <span className="text-accent font-semibold">{entry.tournament.name}</span>
-                            {entry.groupName && <span className="mx-2">|</span>}
-                            {entry.groupName && <span>{entry.groupName}</span>}
-                          </div>
-                          <div className="text-white mt-1">{p1} vs {p2}</div>
-                          <div className="text-sm text-red-500">{slot ? `${slot.location}${slot.field ? ' — ' + slot.field : ''}` : (m.location || '')}</div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => onSelectTournament(entry.tournament, 'matches', undefined)}
-                            className="px-3 py-1 rounded bg-tertiary text-white"
-                          >
-                            Vai al torneo
-                          </button>
-                          <button
-                            onClick={() => handleCancelBookedMatch(m.id, entry.tournament.id)}
-                            className="px-3 py-1 rounded bg-red-600 text-white"
-                          >
-                            Annulla pren.
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-      {/* ---------------------- */}
 
       {/* REGOLAMENTO (solo organizzatore) */}
       {isOrganizer && (
