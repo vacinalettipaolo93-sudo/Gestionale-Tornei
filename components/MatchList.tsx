@@ -1,4 +1,3 @@
-// (updated) components/MatchList.tsx
 import React, { useState } from 'react';
 import { type Group, type Match, type Player } from '../types';
 
@@ -7,15 +6,12 @@ function downloadIcsForMatch({eventName, opponentName, date, startTime}: {eventN
   const pad = (num: number) => String(num).padStart(2, '0');
   const dtEnd = (() => {
     const [h, m] = startTime.split(':').map(Number);
-    // date is expected in YYYY-MM-DD and startTime HH:MM
     const dateObj = new Date(`${date}T${startTime}`);
-    // fallback if invalid
     if (isNaN(dateObj.getTime())) {
       const parts = date.split('-').map(Number);
       dateObj.setFullYear(parts[0], parts[1] - 1, parts[2]);
       dateObj.setHours(h, m, 0, 0);
     }
-    // durata = 1 ora
     dateObj.setHours(dateObj.getHours() + 1);
     return pad(dateObj.getHours()) + pad(dateObj.getMinutes());
   })();
@@ -38,24 +34,19 @@ function downloadIcsForMatch({eventName, opponentName, date, startTime}: {eventN
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-// /FINE AGGIUNTA funzione ICS
 
 // AGGIUNTA: Apri Google Calendar con evento precompilato
 function openGoogleCalendarForMatch({ eventName, opponentName, date, startTime, durationMinutes = 60, location = '', description = '' }:
   { eventName: string; opponentName: string; date: string; startTime: string; durationMinutes?: number; location?: string; description?: string }) {
 
-  // costruiamo una Date locale a partire da date (YYYY-MM-DD) e startTime (HH:MM)
   const [h, m] = startTime.split(':').map(Number);
   let startLocal = new Date(`${date}T${startTime}:00`);
   if (isNaN(startLocal.getTime())) {
-    // fallback: crea manualmente
     const parts = date.split('-').map(Number);
     startLocal = new Date(parts[0], parts[1] - 1, parts[2], h, m, 0);
   }
-
   const endLocal = new Date(startLocal.getTime() + durationMinutes * 60000);
 
-  // Converti in formato Google (YYYYMMDDTHHMMSSZ) - usare UTC per compatibilità
   const toGoogleDateTime = (d: Date) => {
     const pad = (n: number) => String(n).padStart(2, '0');
     const yyyy = d.getUTCFullYear();
@@ -78,12 +69,11 @@ function openGoogleCalendarForMatch({ eventName, opponentName, date, startTime, 
 
   window.open(url, '_blank');
 }
-// /FINE AGGIUNTA Google Calendar
 
 interface MatchListProps {
   group?: Group | null;
   players?: Player[];
-  // handlers now accept optional trigger rect so caller can anchor modals
+  // handlers accept optional triggerRect
   onEditResult: (match: Match, triggerRect?: DOMRect | null) => void;
   onBookMatch: (match: Match, triggerRect?: DOMRect | null) => void;
   isOrganizer: boolean;
@@ -144,20 +134,16 @@ const MatchCard: React.FC<{
       }
     : null;
 
-  // RIMPIAZZO: calcola data/ora locali a partire da scheduledTime (evita problemi di timezone)
   const localDateObj = match.scheduledTime ? new Date(match.scheduledTime) : null;
 
-  // rawDate per messaggi (formato dd-mm-yyyy)
   const rawDate = localDateObj
     ? `${String(localDateObj.getDate()).padStart(2, '0')}-${String(localDateObj.getMonth() + 1).padStart(2, '0')}-${localDateObj.getFullYear()}`
     : '';
 
-  // rawTime per messaggi (formato HH:MM, locale)
   const rawTime = localDateObj
     ? `${String(localDateObj.getHours()).padStart(2, '0')}:${String(localDateObj.getMinutes()).padStart(2, '0')}`
     : '';
 
-  // ISO locali per ICS / Google Calendar (YYYY-MM-DD and HH:MM)
   const localDateIso = localDateObj
     ? `${localDateObj.getFullYear()}-${String(localDateObj.getMonth() + 1).padStart(2, '0')}-${String(localDateObj.getDate()).padStart(2, '0')}`
     : '';
@@ -168,7 +154,6 @@ const MatchCard: React.FC<{
   return (
     <div className="bg-secondary p-4 rounded-lg shadow">
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-        {/* Player 1 - SINISTRA */}
         <div className="flex items-center gap-3 justify-start">
           <img src={player1.avatar} alt={player1.name} className="w-10 h-10 rounded-full object-cover" />
           <button
@@ -180,7 +165,6 @@ const MatchCard: React.FC<{
           </button>
         </div>
 
-        {/* Score centrale */}
         <div className="flex flex-col items-center">
           {match.score1 != null && match.score2 != null ? (
             <div className="text-2xl font-bold text-center">
@@ -203,7 +187,6 @@ const MatchCard: React.FC<{
           )}
         </div>
 
-        {/* Player 2 - DESTRA */}
         <div className="flex items-center gap-3 justify-end">
           <button
             type="button"
@@ -220,11 +203,11 @@ const MatchCard: React.FC<{
         {match.status === 'pending' && canBook && (
           <button
             onClick={(e) => {
-              // ensure the button's rect is available to the parent: focus + pass rect
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              (e.currentTarget as HTMLElement).focus();
+              const el = e.currentTarget as HTMLElement;
+              el.focus();
+              const rect = el.getBoundingClientRect();
               e.stopPropagation();
-              if (typeof onBookMatch === 'function') onBookMatch(match, rect);
+              onBookMatch(match, rect);
             }}
             className="bg-accent/80 hover:bg-accent text-primary font-bold py-2 px-3 rounded-lg text-sm transition-colors"
             type="button"
@@ -236,8 +219,9 @@ const MatchCard: React.FC<{
           <button
             type="button"
             onClick={(e) => {
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              (e.currentTarget as HTMLElement).focus();
+              const el = e.currentTarget as HTMLElement;
+              el.focus();
+              const rect = el.getBoundingClientRect();
               e.stopPropagation();
               onEditResult(match, rect);
             }}
@@ -250,8 +234,9 @@ const MatchCard: React.FC<{
           <button
             type="button"
             onClick={(e) => {
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              (e.currentTarget as HTMLElement).focus();
+              const el = e.currentTarget as HTMLElement;
+              el.focus();
+              const rect = el.getBoundingClientRect();
               e.stopPropagation();
               onRescheduleMatch(match, rect);
             }}
@@ -264,11 +249,10 @@ const MatchCard: React.FC<{
           <button
             type="button"
             onClick={(e) => {
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              (e.currentTarget as HTMLElement).focus();
+              const el = e.currentTarget as HTMLElement;
+              el.focus();
+              const rect = el.getBoundingClientRect();
               e.stopPropagation();
-              // onCancelBooking does an immediate action in TournamentView, so no modal anchoring needed,
-              // but call handler anyway.
               onCancelBooking(match);
             }}
             className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
@@ -280,8 +264,9 @@ const MatchCard: React.FC<{
           <button
             type="button"
             onClick={(e) => {
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              (e.currentTarget as HTMLElement).focus();
+              const el = e.currentTarget as HTMLElement;
+              el.focus();
+              const rect = el.getBoundingClientRect();
               e.stopPropagation();
               onDeleteResult(match, rect);
             }}
@@ -292,7 +277,6 @@ const MatchCard: React.FC<{
         )}
       </div>
 
-      {/* AGGIUNTA: bottoni calendario e whatsapp disponibili solo per match prenotato e visibile a uno dei due giocatori */}
       {match.status === 'scheduled' && isParticipant && scheduledInfo && (
         <div className="flex gap-2 mt-4 justify-center">
           <button
@@ -300,7 +284,6 @@ const MatchCard: React.FC<{
             onClick={() => {
               const eventName = 'Partita torneo';
               const opponentName = loggedInPlayerId === player1.id ? player2.name : player1.name;
-              // scarica .ics usando data/ora locali (ISO)
               downloadIcsForMatch({ eventName, opponentName, date: localDateIso, startTime: localTimeIso });
             }}
           >
@@ -338,7 +321,6 @@ const MatchCard: React.FC<{
           </a>
         </div>
       )}
-      {/* /FINE AGGIUNTA */}
     </div>
   );
 };
@@ -372,18 +354,16 @@ const MatchList: React.FC<MatchListProps> = ({
   };
 
   const pendingMatches = filteredMatches('pending');
-  
-  // --- FILTRI MIGLIORATI: "partite programmate" mostra solo se slotId + scheduledTime è valorizzato ---
+
   const scheduledMatches = group.matches.filter(m =>
     m.status === 'scheduled' &&
     m.slotId &&
     m.scheduledTime &&
     (filter === 'all' || (!!loggedInPlayerId && (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId)))
   );
-  
+
   const completedMatches = group.matches.filter(m => m.score1 != null && m.score2 != null);
 
-  // Optional: ordina le liste per scheduledTime quando disponibile (stabile)
   const sortByTime = (arr: Match[]) =>
     arr.slice().sort((a, b) => {
       const ta = a.scheduledTime ? new Date(a.scheduledTime).getTime() : 0;
@@ -413,8 +393,6 @@ const MatchList: React.FC<MatchListProps> = ({
           </div>
         </div>
       )}
-
-      {/* ORDINE RICHIESTO: 1) Programmate, 2) Da Fare, 3) Completate */}
 
       <div>
         <h4 className="text-lg font-semibold mb-3 text-accent">Partite Programmate</h4>
