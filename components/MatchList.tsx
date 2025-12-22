@@ -1,3 +1,4 @@
+// (updated) components/MatchList.tsx
 import React, { useState } from 'react';
 import { type Group, type Match, type Player } from '../types';
 
@@ -82,14 +83,15 @@ function openGoogleCalendarForMatch({ eventName, opponentName, date, startTime, 
 interface MatchListProps {
   group?: Group | null;
   players?: Player[];
-  onEditResult: (match: Match) => void;
-  onBookMatch: (match: Match) => void;
+  // handlers now accept optional trigger rect so caller can anchor modals
+  onEditResult: (match: Match, triggerRect?: DOMRect | null) => void;
+  onBookMatch: (match: Match, triggerRect?: DOMRect | null) => void;
   isOrganizer: boolean;
   loggedInPlayerId?: string;
   onPlayerContact: (player: Player) => void;
-  onRescheduleMatch?: (match: Match) => void;
+  onRescheduleMatch?: (match: Match, triggerRect?: DOMRect | null) => void;
   onCancelBooking?: (match: Match) => void;
-  onDeleteResult?: (match: Match) => void;
+  onDeleteResult?: (match: Match, triggerRect?: DOMRect | null) => void;
   viewingOwnGroup?: boolean;
 }
 
@@ -97,14 +99,14 @@ const MatchCard: React.FC<{
   match: Match;
   player1?: Player | null;
   player2?: Player | null;
-  onEditResult: (match: Match) => void;
-  onBookMatch: (match: Match) => void;
+  onEditResult: (match: Match, triggerRect?: DOMRect | null) => void;
+  onBookMatch: (match: Match, triggerRect?: DOMRect | null) => void;
   isOrganizer: boolean;
   loggedInPlayerId?: string;
   onPlayerContact: (player: Player) => void;
-  onRescheduleMatch?: (match: Match) => void;
+  onRescheduleMatch?: (match: Match, triggerRect?: DOMRect | null) => void;
   onCancelBooking?: (match: Match) => void;
-  onDeleteResult?: (match: Match) => void;
+  onDeleteResult?: (match: Match, triggerRect?: DOMRect | null) => void;
   viewingOwnGroup?: boolean;
 }> = ({
   match,
@@ -218,20 +220,11 @@ const MatchCard: React.FC<{
         {match.status === 'pending' && canBook && (
           <button
             onClick={(e) => {
-              // ensure button receives focus so anchoring can use document.activeElement
+              // ensure the button's rect is available to the parent: focus + pass rect
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
               (e.currentTarget as HTMLElement).focus();
               e.stopPropagation();
-              // diagnostic log to confirm click arrives here
-              console.log('[MatchList] Prenota button clicked, match id=', match?.id, ' onBookMatch present?', typeof onBookMatch === 'function');
-              if (typeof onBookMatch === 'function') {
-                try {
-                  onBookMatch(match);
-                } catch (err) {
-                  console.error('[MatchList] Error calling onBookMatch:', err);
-                }
-              } else {
-                console.warn('[MatchList] onBookMatch is not a function. Cannot book match.');
-              }
+              if (typeof onBookMatch === 'function') onBookMatch(match, rect);
             }}
             className="bg-accent/80 hover:bg-accent text-primary font-bold py-2 px-3 rounded-lg text-sm transition-colors"
             type="button"
@@ -242,7 +235,12 @@ const MatchCard: React.FC<{
         {canEnterResult && (
           <button
             type="button"
-            onClick={(e) => { (e.currentTarget as HTMLElement).focus(); e.stopPropagation(); onEditResult(match); }}
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              (e.currentTarget as HTMLElement).focus();
+              e.stopPropagation();
+              onEditResult(match, rect);
+            }}
             className="bg-highlight/80 hover:bg-highlight text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
             Risultato
@@ -251,7 +249,12 @@ const MatchCard: React.FC<{
         {match.status === 'scheduled' && canManageBooking && onRescheduleMatch && (
           <button
             type="button"
-            onClick={(e) => { (e.currentTarget as HTMLElement).focus(); e.stopPropagation(); onRescheduleMatch(match); }}
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              (e.currentTarget as HTMLElement).focus();
+              e.stopPropagation();
+              onRescheduleMatch(match, rect);
+            }}
             className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
             Modifica pren.
@@ -260,7 +263,14 @@ const MatchCard: React.FC<{
         {match.status === 'scheduled' && canManageBooking && onCancelBooking && (
           <button
             type="button"
-            onClick={(e) => { (e.currentTarget as HTMLElement).focus(); e.stopPropagation(); onCancelBooking(match); }}
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              (e.currentTarget as HTMLElement).focus();
+              e.stopPropagation();
+              // onCancelBooking does an immediate action in TournamentView, so no modal anchoring needed,
+              // but call handler anyway.
+              onCancelBooking(match);
+            }}
             className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
             Annulla pren.
@@ -270,14 +280,10 @@ const MatchCard: React.FC<{
           <button
             type="button"
             onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
               (e.currentTarget as HTMLElement).focus();
               e.stopPropagation();
-              console.log('[MatchList] Elimina risultato clicked, match id=', match?.id, ' onDeleteResult present?', typeof onDeleteResult === 'function');
-              try {
-                onDeleteResult(match);
-              } catch (err) {
-                console.error('[MatchList] Error calling onDeleteResult:', err);
-              }
+              onDeleteResult(match, rect);
             }}
             className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
           >
@@ -285,6 +291,7 @@ const MatchCard: React.FC<{
           </button>
         )}
       </div>
+
       {/* AGGIUNTA: bottoni calendario e whatsapp disponibili solo per match prenotato e visibile a uno dei due giocatori */}
       {match.status === 'scheduled' && isParticipant && scheduledInfo && (
         <div className="flex gap-2 mt-4 justify-center">
