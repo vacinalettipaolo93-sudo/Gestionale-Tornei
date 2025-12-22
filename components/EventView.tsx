@@ -219,71 +219,6 @@ const EventView: React.FC<EventViewProps> = ({
     return ta - tb;
   });
 
-  // ----------------------------
-  // BOOKED SLOTS: helper + handlers (kept for compatibility)
-  // ----------------------------
-  const getBookedSlotsEntries = () => {
-    const slots = event.globalTimeSlots ?? [];
-    const entries: { slot?: TimeSlot; match: Match; tournament: Tournament; groupName?: string }[] = [];
-
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    (event.tournaments || []).forEach(t => {
-      (t.groups || []).forEach(g => {
-        (g.matches || []).forEach((m: Match) => {
-          if (m.status === 'scheduled' && m.scheduledTime) {
-            const s = new Date(m.scheduledTime);
-            if (isNaN(s.getTime())) return;
-            if (s.getTime() >= todayStart.getTime()) {
-              const slot = slots.find(slt => slt.id === m.slotId);
-              entries.push({ slot, match: m, tournament: t, groupName: g.name });
-            }
-          }
-        });
-      });
-    });
-
-    entries.sort((a, b) => {
-      const ta = a.match.scheduledTime ? new Date(a.match.scheduledTime).getTime() : 0;
-      const tb = b.match.scheduledTime ? new Date(b.match.scheduledTime).getTime() : 0;
-      return ta - tb;
-    });
-
-    return entries;
-  };
-
-  const handleCancelBookedMatch = async (matchId: string, tournamentId: string) => {
-    if (!confirm("Sei sicuro di voler annullare la prenotazione di questa partita?")) return;
-
-    const updatedTournaments = (event.tournaments ?? []).map(t => {
-      if (t.id !== tournamentId) return t;
-      return {
-        ...t,
-        groups: (t.groups || []).map(g => ({
-          ...g,
-          matches: (g.matches || []).map(m => {
-            if (m.id !== matchId) return m;
-            return { ...m, status: 'pending', scheduledTime: undefined, slotId: undefined, location: undefined, field: undefined };
-          })
-        }))
-      };
-    });
-
-    // update local UI
-    setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, tournaments: updatedTournaments } : ev));
-
-    // persist
-    try {
-      await updateDoc(doc(db, "events", event.id), {
-        tournaments: updatedTournaments
-      });
-    } catch (err) {
-      console.error("Errore annullamento prenotazione", err);
-    }
-  };
-  // ----------------------------
-
   return (
     <div>
       <div className="bg-primary p-6 rounded-xl shadow-lg mb-8">
@@ -448,6 +383,7 @@ const EventView: React.FC<EventViewProps> = ({
             loggedInPlayerId={loggedInPlayerId}
             selectedGroupId={undefined}
             globalTimeSlots={sortedGlobalTimeSlots}
+            onSelectTournament={onSelectTournament}
           />
         </div>
       )}
