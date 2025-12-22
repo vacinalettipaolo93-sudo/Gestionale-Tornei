@@ -5,7 +5,7 @@ interface Props {
   event: Event;
   tournament?: Tournament;
   userId?: string;
-  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void;
+  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void; // now accepts triggerRect
   matchesPending?: Match[];
 }
 
@@ -23,6 +23,7 @@ const AvailableSlotsList: React.FC<Props> = ({
   onClickBook,
   matchesPending = [],
 }) => {
+  // compute booked slots (valgono in tutto l'evento)
   const bookedIds = event.tournaments
     .flatMap(t => t.groups || [])
     .flatMap(g => g.matches || [])
