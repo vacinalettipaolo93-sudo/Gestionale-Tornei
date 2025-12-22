@@ -5,7 +5,7 @@ interface Props {
   event: Event;
   tournament?: Tournament;
   userId?: string;
-  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void; // now accepts triggerRect
+  onClickBook?: (slot: TimeSlot, triggerRect?: DOMRect | null) => void;
   matchesPending?: Match[];
 }
 
@@ -23,7 +23,6 @@ const AvailableSlotsList: React.FC<Props> = ({
   onClickBook,
   matchesPending = [],
 }) => {
-  // compute booked slots (valgono in tutto l'evento)
   const bookedIds = event.tournaments
     .flatMap(t => t.groups || [])
     .flatMap(g => g.matches || [])
@@ -34,9 +33,6 @@ const AvailableSlotsList: React.FC<Props> = ({
     slot => !bookedIds.includes(slot.id)
   );
 
-  // Se siamo nel TournamentView:
-  // prenota solo se c'è almeno una partita pending dell'utente
-  // Altrimenti lista solo
   return (
     <div className="bg-secondary p-5 rounded-xl shadow-lg max-w-2xl mx-auto my-8">
       <h3 className="text-lg font-bold mb-4 text-accent">Slot Disponibili</h3>
@@ -49,7 +45,6 @@ const AvailableSlotsList: React.FC<Props> = ({
               <div>
                 <span className="font-bold">{formatSlot(slot)}</span>
                 {slot.location && <span className="ml-2 text-accent">{slot.location}</span>}
-                {/* Cambiata solo la classe del campo (field) da text-tertiary a text-red-500 */}
                 {slot.field && <span className="ml-2 text-red-500">{slot.field}</span>}
               </div>
               {onClickBook && matchesPending?.length > 0 ? (
