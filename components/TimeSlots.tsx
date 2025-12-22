@@ -135,6 +135,37 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
       });
     };
 
+    // Annulla prenotazione per una partita prenotata su uno slot (reimposta a pending)
+    const handleCancelBookedMatch = async (matchId: string, tournamentId: string) => {
+      if (!confirm("Sei sicuro di voler annullare la prenotazione di questa partita?")) return;
+
+      const updatedTournaments = (event.tournaments || []).map(t => {
+        if (t.id !== tournamentId) return t;
+        return {
+          ...t,
+          groups: (t.groups || []).map(g => ({
+            ...g,
+            matches: (g.matches || []).map(m => {
+              if (m.id !== matchId) return m;
+              return { ...m, status: 'pending', scheduledTime: undefined, slotId: undefined, location: undefined, field: undefined };
+            })
+          }))
+        };
+      });
+
+      // update local UI
+      setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, tournaments: updatedTournaments } : ev));
+
+      // persist
+      try {
+        await updateDoc(doc(db, "events", event.id), {
+          tournaments: updatedTournaments
+        });
+      } catch (err) {
+        console.error("Errore annullamento prenotazione", err);
+      }
+    };
+
     return (
       <div>
         <h2 className="text-2xl font-bold mb-4 text-accent">Slot Orari Globali</h2>
@@ -251,17 +282,25 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                           </div>
                         </div>
 
-                        {/* Bottone: Vai al torneo (se fornita la callback) */}
-                        {onSelectTournament && (
-                          <div className="ml-4 flex flex-col gap-2">
+                        {/* Bottoni: Vai al torneo (se fornita la callback) e Annulla pren. */}
+                        <div className="ml-4 flex flex-col gap-2">
+                          {onSelectTournament && (
                             <button
                               className="px-3 py-1 rounded bg-tertiary text-white"
                               onClick={() => onSelectTournament(tournament, 'matches', group.id)}
                             >
                               Vai al torneo
                             </button>
-                          </div>
-                        )}
+                          )}
+                          {isOrganizer && (
+                            <button
+                              className="px-3 py-1 rounded bg-red-600 text-white"
+                              onClick={() => handleCancelBookedMatch(match.id, tournament.id)}
+                            >
+                              Annulla pren.
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </li>
                   );
