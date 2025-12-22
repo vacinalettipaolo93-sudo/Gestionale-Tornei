@@ -49,13 +49,17 @@ const AvailableSlotsList: React.FC<Props> = ({
               <div>
                 <span className="font-bold">{formatSlot(slot)}</span>
                 {slot.location && <span className="ml-2 text-accent">{slot.location}</span>}
-                {/* Cambiata solo la classe del campo (field) da text-tertiary a text-red-500 */}
                 {slot.field && <span className="ml-2 text-red-500">{slot.field}</span>}
               </div>
               {onClickBook && matchesPending?.length > 0 ? (
                 <button
                   className="bg-accent hover:bg-highlight text-white px-4 py-2 rounded font-bold transition"
-                  onClick={() => onClickBook(slot)}
+                  onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                    // focus the button so anchoring logic (document.activeElement) finds the trigger
+                    (e.currentTarget as HTMLElement).focus();
+                    e.stopPropagation();
+                    onClickBook(slot);
+                  }}
                 >
                   Prenota
                 </button>
