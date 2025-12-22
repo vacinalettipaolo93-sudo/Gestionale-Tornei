@@ -232,7 +232,7 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                   return (
                     <li key={slot.id} className="flex flex-col px-2 py-2 rounded bg-[#22283A] mb-2">
                       <span className="font-bold text-white">
-                        {formatDateTime(slot.start)} - {slot.location} - {slot.field}
+                        {formatDateTime(slot.start)} - <span className="text-accent">{slot.location}</span> - <span className="text-red-500">{slot.field}</span>
                       </span>
                       <span className="font-bold text-accent">
                         Partita programmata:
