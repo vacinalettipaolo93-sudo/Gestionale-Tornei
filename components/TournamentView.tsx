@@ -78,7 +78,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const [deletingTriggerRect, setDeletingTriggerRect] = useState<DOMRect | null>(null);
   const [slotToBookTriggerRect, setSlotToBookTriggerRect] = useState<DOMRect | null>(null);
 
-  // Handlers now accept optional triggerRect and store it when opening modals
+  // Handlers accept optional triggerRect and store it when opening modals
   const handleClickBookSlot = (slot: TimeSlot, triggerRect?: DOMRect | null) => {
     setSlotToBook(slot);
     setSlotToBookTriggerRect(triggerRect ?? null);
@@ -447,7 +447,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     }
   }, [slotToBook, myPendingMatches.length, slotToBookTriggerRect]);
 
-  // End anchoring logic
   const modalBackdrop = "fixed inset-0 bg-black/70 z-50";
   const modalBox = "bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary";
 
@@ -471,7 +470,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Partite
         </button>
-        {/* Slot tab */}
         <button onClick={() => setActiveTab('slot')}
           className={`px-4 py-2 rounded-full ${activeTab === 'slot'
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
@@ -796,7 +794,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                           el.focus();
                           const rect = el.getBoundingClientRect();
                           e.stopPropagation();
-                          // pass rect to the confirm handler by temporarily setting trigger rect and then confirming
                           setSlotToBookTriggerRect(rect);
                           handleConfirmBookSlot(m.id);
                         }}
