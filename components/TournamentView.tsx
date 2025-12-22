@@ -78,7 +78,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const [deletingTriggerRect, setDeletingTriggerRect] = useState<DOMRect | null>(null);
   const [slotToBookTriggerRect, setSlotToBookTriggerRect] = useState<DOMRect | null>(null);
 
-  // Handlers accept optional triggerRect and store it when opening modals
+  // Handlers now accept optional triggerRect and store it when opening modals
   const handleClickBookSlot = (slot: TimeSlot, triggerRect?: DOMRect | null) => {
     setSlotToBook(slot);
     setSlotToBookTriggerRect(triggerRect ?? null);
@@ -161,7 +161,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setScore2("");
   }
 
-  // elimina risultato (opens confirmation modal)
+  // elimina risultato (confirmation) — now uses a handler to open modal with triggerRect
   const handleDeleteResult = (match: Match, triggerRect?: DOMRect | null) => {
     setDeletingMatch(match);
     setDeletingTriggerRect(triggerRect ?? null);
@@ -228,7 +228,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setBookingError("");
   }
 
-  // reschedule — opens modal
+  // reschedule — opens modal with optional triggerRect
   const handleRescheduleMatch = (match: Match, triggerRect?: DOMRect | null) => {
     setReschedulingMatch(match);
     setRescheduleTriggerRect(triggerRect ?? null);
@@ -267,7 +267,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setBookingError("");
   }
 
-  // cancel booking (immediate)
+  // cancel booking
   async function handleCancelBooking(match: Match) {
     if (!selectedGroup) return;
     const updatedMatch: Match = { ...match, status: "pending", scheduledTime: null, slotId: null, location: "", field: "" };
@@ -332,18 +332,24 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     };
   }
 
+  // helper to anchor a given modalRef using providedTriggerRect when available
   function anchorModal(modalRef: React.RefObject<HTMLDivElement>, setStyle: (s?: React.CSSProperties) => void, providedTriggerRect?: DOMRect | null) {
     const modalEl = modalRef.current;
     if (!modalEl) return;
 
+    // wait for modal to be visible & sized
     requestAnimationFrame(() => {
       const modalRect = modalEl.getBoundingClientRect();
+
+      // prefer provided trigger rect (more reliable)
       if (providedTriggerRect) {
         setStyle(computeAnchorStyle(providedTriggerRect, modalRect));
         return;
       }
+
       const active = document.activeElement as HTMLElement | null;
       if (!active || active === document.body || active === document.documentElement) {
+        // no reliable trigger: fallback to center on larger screens as well
         const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
         if (vw <= 480) {
           setStyle({
@@ -353,6 +359,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
             transform: 'translate(-50%, -50%)'
           });
         } else {
+          // position near middle-top area (not centered) to avoid full center if no trigger
           setStyle({
             position: 'fixed',
             top: '20%',
@@ -367,6 +374,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     });
   }
 
+  // reposition on open for each modal (pass provided trigger rects)
   useEffect(() => {
     if (editingMatch) {
       anchorModal(editingModalRef, setEditingModalStyle, editingTriggerRect);
@@ -447,6 +455,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     }
   }, [slotToBook, myPendingMatches.length, slotToBookTriggerRect]);
 
+  // End anchoring logic
+  // --- original modal classes kept but wrapper changed to allow anchored positioning ---
   const modalBackdrop = "fixed inset-0 bg-black/70 z-50";
   const modalBox = "bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary";
 
@@ -470,6 +480,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Partite
         </button>
+        {/* AGGIUNTA: Tab Slot Disponibili */}
         <button onClick={() => setActiveTab('slot')}
           className={`px-4 py-2 rounded-full ${activeTab === 'slot'
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
@@ -591,7 +602,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
             />
 
-            {/* Editing modal (anchored) */}
             {editingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -637,7 +647,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Booking modal (anchored) */}
             {bookingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -684,7 +693,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Reschedule modal (anchored) */}
             {reschedulingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
@@ -731,7 +739,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Delete result confirmation modal (anchored) */}
             {deletingMatch && (
               <div className={modalBackdrop} role="dialog" aria-modal="true">
                 <div
