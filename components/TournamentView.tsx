@@ -71,14 +71,14 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId))
     : [];
 
-  // --- TRIGGER RECTS for anchored modals (minimal additions) ---
+  // --- TRIGGER RECTS for anchored modals ---
   const [editingTriggerRect, setEditingTriggerRect] = useState<DOMRect | null>(null);
   const [bookingTriggerRect, setBookingTriggerRect] = useState<DOMRect | null>(null);
   const [rescheduleTriggerRect, setRescheduleTriggerRect] = useState<DOMRect | null>(null);
   const [deletingTriggerRect, setDeletingTriggerRect] = useState<DOMRect | null>(null);
   const [slotToBookTriggerRect, setSlotToBookTriggerRect] = useState<DOMRect | null>(null);
 
-  // Handlers updated to accept optional triggerRect (they store it for anchoring)
+  // Handlers accept optional triggerRect and store it when opening modals
   const handleClickBookSlot = (slot: TimeSlot, triggerRect?: DOMRect | null) => {
     setSlotToBook(slot);
     setSlotToBookTriggerRect(triggerRect ?? null);
@@ -139,7 +139,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     }
   };
 
-  // risultato (modifica / salva) — accept optional triggerRect
+  // risultato (modifica / salva)
   const handleEditResult = (match: Match, triggerRect?: DOMRect | null) => {
     setEditingMatch(match);
     setEditingTriggerRect(triggerRect ?? null);
@@ -161,7 +161,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setScore2("");
   }
 
-  // elimina risultato — split open vs confirm (open accepts triggerRect)
+  // elimina risultato (open uses trigger rect)
   const handleOpenDeleteResult = (match: Match, triggerRect?: DOMRect | null) => {
     setDeletingMatch(match);
     setDeletingTriggerRect(triggerRect ?? null);
@@ -179,7 +179,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setDeletingTriggerRect(null);
   }
 
-  // booking — opens booking modal and stores triggerRect
+  // booking
   const handleBookMatch = (match: Match, triggerRect?: DOMRect | null) => {
     setBookingMatch(match);
     setBookingTriggerRect(triggerRect ?? null);
@@ -228,7 +228,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setBookingError("");
   }
 
-  // reschedule — opens modal (accepts triggerRect)
+  // reschedule
   const handleRescheduleMatch = (match: Match, triggerRect?: DOMRect | null) => {
     setReschedulingMatch(match);
     setRescheduleTriggerRect(triggerRect ?? null);
@@ -280,10 +280,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   }
 
   // --- MODAL ANCHORING LOGIC ADDED BELOW ---
-  // We track refs and inline styles for each modal so they open near the element
-  // that triggered them (fallback to centered modal on small viewports).
-  // NOTE: we only change positioning/markup, NOT the functional logic.
-
   const editingModalRef = useRef<HTMLDivElement | null>(null);
   const bookingModalRef = useRef<HTMLDivElement | null>(null);
   const rescheduleModalRef = useRef<HTMLDivElement | null>(null);
@@ -296,13 +292,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const [deletingModalStyle, setDeletingModalStyle] = useState<React.CSSProperties | undefined>(undefined);
   const [slotToBookModalStyle, setSlotToBookModalStyle] = useState<React.CSSProperties | undefined>(undefined);
 
-  // compute anchored style given trigger & modal rects
   function computeAnchorStyle(triggerRect: DOMRect, modalRect: DOMRect) {
     const margin = 8;
     const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
     const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
 
-    // mobile fallback: center
     if (vw <= 480) {
       return {
         position: 'fixed' as const,
@@ -315,15 +309,12 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     let top = triggerRect.bottom + margin;
     let left = triggerRect.left;
 
-    // try to place below; if not enough space, place above
     if (top + modalRect.height > vh - margin) {
       top = triggerRect.top - modalRect.height - margin;
     }
 
-    // clamp vertically
     top = Math.max(margin, Math.min(top, vh - modalRect.height - margin));
 
-    // horizontal overflow correction
     if (left + modalRect.width > vw - margin) {
       left = Math.max(margin, vw - modalRect.width - margin);
     }
@@ -337,48 +328,55 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     };
   }
 
-  // helper to anchor a given modalRef using providedTriggerRect when available
+  // New anchorModal: applies styles directly to modalEl.style for reliability
   function anchorModal(modalRef: React.RefObject<HTMLDivElement>, setStyle: (s?: React.CSSProperties) => void, providedTriggerRect?: DOMRect | null) {
     const modalEl = modalRef.current;
     if (!modalEl) return;
 
-    // wait for modal to be visible & sized
     requestAnimationFrame(() => {
       const modalRect = modalEl.getBoundingClientRect();
 
-      // Prefer provided trigger rect, otherwise fallback to global last click, otherwise active element
       const globalLastClickRect = (window as any).__lastClickRect as DOMRect | undefined;
       const triggerToUse = providedTriggerRect ?? globalLastClickRect ?? null;
 
       if (triggerToUse) {
-        setStyle(computeAnchorStyle(triggerToUse, modalRect));
+        const styleObj = computeAnchorStyle(triggerToUse, modalRect);
+        // apply inline style directly (imperative) — more resilient to React render timing
+        try {
+          modalEl.style.position = (styleObj.position as string) || 'fixed';
+          modalEl.style.top = (styleObj.top as string) || '';
+          modalEl.style.left = (styleObj.left as string) || '';
+          modalEl.style.transform = (styleObj.transform as string) || 'none';
+        } catch (err) {
+          // fallback: set as cssText
+          modalEl.style.cssText = `position: ${styleObj.position}; top: ${styleObj.top}; left: ${styleObj.left}; transform: ${styleObj.transform};`;
+        }
+        // keep a React state copy too (optional)
+        setStyle(styleObj);
         return;
       }
 
       const active = document.activeElement as HTMLElement | null;
       if (!active || active === document.body || active === document.documentElement) {
-        // no reliable trigger: fallback to center on larger screens as well
         const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
-        if (vw <= 480) {
-          setStyle({
-            position: 'fixed',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)'
-          });
-        } else {
-          // position near middle-top area (not centered) to avoid full center if no trigger
-          setStyle({
-            position: 'fixed',
-            top: '20%',
-            left: '50%',
-            transform: 'translateX(-50%)'
-          });
-        }
+        const fallbackStyle = vw <= 480
+          ? { position: 'fixed' as const, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }
+          : { position: 'fixed' as const, top: '20%', left: '50%', transform: 'translateX(-50%)' };
+
+        modalEl.style.position = (fallbackStyle.position as string) || 'fixed';
+        modalEl.style.top = (fallbackStyle as any).top || '';
+        modalEl.style.left = (fallbackStyle as any).left || '';
+        modalEl.style.transform = (fallbackStyle as any).transform || 'none';
+        setStyle(fallbackStyle);
         return;
       }
       const triggerRect = active.getBoundingClientRect();
-      setStyle(computeAnchorStyle(triggerRect, modalRect));
+      const styleObj = computeAnchorStyle(triggerRect, modalRect);
+      modalEl.style.position = (styleObj.position as string) || 'fixed';
+      modalEl.style.top = (styleObj.top as string) || '';
+      modalEl.style.left = (styleObj.left as string) || '';
+      modalEl.style.transform = (styleObj.transform as string) || 'none';
+      setStyle(styleObj);
     });
   }
 
@@ -394,6 +392,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         window.removeEventListener('resize', onScroll);
       };
     } else {
+      // clear inline style when modal closed
+      if (editingModalRef.current) editingModalRef.current.style.cssText = '';
       setEditingModalStyle(undefined);
       setEditingTriggerRect(null);
     }
@@ -410,6 +410,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         window.removeEventListener('resize', onScroll);
       };
     } else {
+      if (bookingModalRef.current) bookingModalRef.current.style.cssText = '';
       setBookingModalStyle(undefined);
       setBookingTriggerRect(null);
     }
@@ -426,6 +427,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         window.removeEventListener('resize', onScroll);
       };
     } else {
+      if (rescheduleModalRef.current) rescheduleModalRef.current.style.cssText = '';
       setRescheduleModalStyle(undefined);
       setRescheduleTriggerRect(null);
     }
@@ -442,6 +444,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         window.removeEventListener('resize', onScroll);
       };
     } else {
+      if (deletingModalRef.current) deletingModalRef.current.style.cssText = '';
       setDeletingModalStyle(undefined);
       setDeletingTriggerRect(null);
     }
@@ -458,13 +461,13 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         window.removeEventListener('resize', onScroll);
       };
     } else {
+      if (slotToBookModalRef.current) slotToBookModalRef.current.style.cssText = '';
       setSlotToBookModalStyle(undefined);
       setSlotToBookTriggerRect(null);
     }
   }, [slotToBook, myPendingMatches.length, slotToBookTriggerRect]);
 
   // End anchoring logic
-  // --- original modal classes kept but wrapper changed to allow anchored positioning ---
   const modalBackdrop = "fixed inset-0 bg-black/70 z-50";
   const modalBox = "bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary";
 
@@ -488,7 +491,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Partite
         </button>
-        {/* AGGIUNTA: Tab Slot Disponibili */}
         <button onClick={() => setActiveTab('slot')}
           className={`px-4 py-2 rounded-full ${activeTab === 'slot'
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
