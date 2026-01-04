@@ -1,71 +1,80 @@
 // components/AvailabilityTab.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import AvailabilityRow from "./AvailabilityRow";
-import { getAvailabilitiesForPlayers, getUserAvailabilities } from "../services/availabilityService";
-import { type Event, type Tournament, type Group } from "../types";
+import { type Event, type Tournament, type Group, type Player, type TimeSlot } from "../types";
+import {
+  getGlobalAvailability,
+  getGlobalAvailabilitiesForPlayers,
+  setGlobalAvailability,
+  removeGlobalAvailability,
+  getSlotPreferencesForPlayers,
+  setSlotPreference,
+  removeSlotPreference,
+} from "../services/availabilityService";
 
 /**
- * Props:
- * - event, tournament: da passare come in TournamentView
- * - selectedGroup: il girone attualmente selezionato (da TournamentView)
- * - loggedInPlayerId: id del giocatore loggato (player.id), può essere undefined se non loggato
+ * Disponibilità semplificata:
+ * - titolo: "Disponibilità di gioco"
+ * - stato globale: disponibile (default) / non disponibile (override persisted)
+ * - lista slots creati dall'amministratore: l'utente può marcarsi come "voglio giocare" su uno slot (toggle)
  *
- * Questo componente mostra per i prossimi N giorni le disponibilità dei partecipanti del girone
- * e permette al giocatore loggato (se presente) di modificare le proprie.
+ * Props:
+ * - event, tournament: per reperire lista slot e lista partecipanti
+ * - selectedGroup: il girone corrente
+ * - loggedInPlayerId: id del giocatore loggato (player.id)
  */
+
 type Props = {
   event: Event;
   tournament: Tournament;
   selectedGroup: Group;
   loggedInPlayerId?: string;
-  rangeDays?: number;
 };
 
-function formatDateKey(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
+function formatDateTime(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`; // YYYY-MM-DD per storage/lookup
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
 }
 
-function formatDisplayDate(isoDate: string) {
-  // isoDate atteso: YYYY-MM-DD -> ritorna DD-MM-YYYY
-  const parts = isoDate.split("-");
-  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
-  const d = new Date(isoDate);
-  return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
-}
-
-export default function AvailabilityTab({ event, tournament, selectedGroup, loggedInPlayerId, rangeDays = 14 }: Props) {
-  const [today] = useState(() => new Date());
-  const dates = useMemo(() => {
-    const arr: string[] = [];
-    for (let i = 0; i < rangeDays; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
-      arr.push(formatDateKey(d));
-    }
-    return arr;
-  }, [today, rangeDays]);
-
+export default function AvailabilityTab({ event, tournament, selectedGroup, loggedInPlayerId }: Props) {
   const participantIds = selectedGroup.playerIds ?? [];
-  const [availMap, setAvailMap] = useState<Record<string, Record<string, Record<string, boolean>>>>({});
-  const [loading, setLoading] = useState(false);
+  const participants = participantIds.map(pid => event.players.find(p => p.id === pid)).filter(Boolean) as Player[];
+
+  // pick slots: prefer tournament.timeSlots then event.globalTimeSlots
+  const slots: TimeSlot[] = Array.isArray(tournament.timeSlots) && tournament.timeSlots.length > 0
+    ? (tournament.timeSlots as any as TimeSlot[])
+    : (Array.isArray(event.globalTimeSlots) ? (event.globalTimeSlots as any as TimeSlot[]) : []);
+
+  const [globalMap, setGlobalMap] = useState<Record<string, boolean | undefined>>({});
+  const [slotPrefMap, setSlotPrefMap] = useState<Record<string, Set<string>>>({}); // playerId -> set(slotId)
+
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
     async function load() {
       setLoading(true);
       try {
-        const recs = await getAvailabilitiesForPlayers(participantIds, dates[0], dates[dates.length - 1]);
-        // map: availMap[playerId][date][slot] = isAvailable
-        const m: Record<string, Record<string, Record<string, boolean>>> = {};
-        recs.forEach(r => {
-          if (!m[r.playerId]) m[r.playerId] = {};
-          if (!m[r.playerId][r.date]) m[r.playerId][r.date] = {};
-          m[r.playerId][r.date][r.slot] = r.isAvailable;
+        // globals
+        const globals = await getGlobalAvailabilitiesForPlayers(participantIds);
+        const gMap: Record<string, boolean | undefined> = {};
+        globals.forEach(g => { gMap[g.playerId] = g.available; });
+        // slot prefs
+        const prefs = await getSlotPreferencesForPlayers(participantIds);
+        const sMap: Record<string, Set<string>> = {};
+        prefs.forEach(p => {
+          if (!sMap[p.playerId]) sMap[p.playerId] = new Set<string>();
+          if (p.isPreferred) sMap[p.playerId].add(p.slotId);
         });
-        if (mounted) setAvailMap(m);
+        if (mounted) {
+          setGlobalMap(gMap);
+          setSlotPrefMap(sMap);
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -74,75 +83,140 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     }
     load();
     return () => { mounted = false; };
-  }, [participantIds, dates]);
+  }, [participantIds, tournament.id, event.id]);
+
+  // helper: toggle global for logged in player
+  async function toggleMyGlobal() {
+    if (!loggedInPlayerId) return;
+    const current = globalMap[loggedInPlayerId];
+    try {
+      if (current === undefined) {
+        // default available -> mark non available
+        await setGlobalAvailability(loggedInPlayerId, false);
+        setGlobalMap(m => ({ ...m, [loggedInPlayerId]: false }));
+      } else {
+        // if exists (either false or true) -> remove setting to revert to default (available)
+        await removeGlobalAvailability(loggedInPlayerId);
+        const next = { ...globalMap };
+        delete next[loggedInPlayerId];
+        setGlobalMap(next);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // helper: toggle slot pref for logged in player
+  async function toggleMySlot(slotId: string) {
+    if (!loggedInPlayerId) return;
+    const mySet = slotPrefMap[loggedInPlayerId] ?? new Set<string>();
+    const has = mySet.has(slotId);
+    try {
+      if (!has) {
+        await setSlotPreference(loggedInPlayerId, slotId, true);
+        setSlotPrefMap(m => ({ ...m, [loggedInPlayerId]: new Set([...(m[loggedInPlayerId] ? Array.from(m[loggedInPlayerId]) : []), slotId]) }));
+      } else {
+        await removeSlotPreference(loggedInPlayerId, slotId);
+        setSlotPrefMap(m => {
+          const copy = { ...m };
+          const s = new Set(copy[loggedInPlayerId] ? Array.from(copy[loggedInPlayerId]) : []);
+          s.delete(slotId);
+          copy[loggedInPlayerId] = s;
+          return copy;
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   if (loading) return <div>Caricamento disponibilità…</div>;
 
   return (
-    <div className="max-w-4xl mx-auto bg-secondary rounded-xl p-6 shadow space-y-6">
-      <h3 className="text-xl font-bold text-accent">Disponibilità del Girone — Prossimi {dates.length} giorni</h3>
+    <div className="max-w-5xl mx-auto bg-secondary rounded-xl p-6 shadow space-y-6">
+      <h3 className="text-xl font-bold text-accent">Disponibilità di gioco</h3>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Colonna: le tue disponibilità (editable) */}
-        <div>
-          <h4 className="font-semibold mb-3">Le tue disponibilità</h4>
+        {/* Colonna sinistra: stato globale utente */}
+        <div className="bg-primary p-4 rounded-lg border border-tertiary">
+          <h4 className="font-semibold mb-3">Stato generale</h4>
           {loggedInPlayerId ? (
-            <div className="bg-primary p-3 rounded-lg border border-tertiary space-y-2">
-              {dates.map(date => (
-                <AvailabilityRow
-                  key={date}
-                  playerId={loggedInPlayerId}
-                  date={date} // YYYY-MM-DD internamente
-                  editable={true}
-                  initial={availMap[loggedInPlayerId]?.[date]}
-                  onChange={async () => {
-                    const recs = await getUserAvailabilities(loggedInPlayerId, dates[0], dates[dates.length - 1]);
-                    const m: Record<string, Record<string, Record<string, boolean>>> = {};
-                    recs.forEach(r => {
-                      if (!m[r.playerId]) m[r.playerId] = {};
-                      if (!m[r.playerId][r.date]) m[r.playerId][r.date] = {};
-                      m[r.playerId][r.date][r.slot] = r.isAvailable;
-                    });
-                    setAvailMap(prev => ({ ...prev, ...m }));
-                  }}
-                />
-              ))}
-            </div>
+            <>
+              <div className="mb-3">
+                <div className="text-sm text-text-secondary mb-1">Il tuo stato corrente</div>
+                <div className={`inline-block px-3 py-2 rounded ${globalMap[loggedInPlayerId] === false ? 'bg-red-100' : 'bg-green-50'} border border-tertiary/30`}>
+                  {globalMap[loggedInPlayerId] === false ? 'Non disponibile' : 'Disponibile (default)'}
+                </div>
+              </div>
+              <button
+                onClick={toggleMyGlobal}
+                className="bg-accent hover:bg-highlight text-white px-4 py-2 rounded"
+              >
+                {globalMap[loggedInPlayerId] === false ? 'Rendi Disponibile (rimuovi non disponibile)' : 'Segna Non disponibile'}
+              </button>
+            </>
           ) : (
-            <div>Per modificare le disponibilità esegui il login.</div>
+            <div>Effettua il login per impostare il tuo stato.</div>
           )}
+
+          <div className="mt-6">
+            <h5 className="font-semibold">Partecipanti — stato veloce</h5>
+            <ul className="mt-2 space-y-2">
+              {participants.map(p => (
+                <li key={p.id} className="flex items-center justify-between">
+                  <div>{p.name}</div>
+                  <div className={`${globalMap[p.id] === false ? 'text-red-600' : 'text-green-600'} font-semibold`}>
+                    {globalMap[p.id] === false ? 'Non disponibile' : 'Disponibile'}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
-        {/* Colonna: elenco partecipanti e disponibilità (visualizzazione) */}
+        {/* Colonna centrale: lista slot e toggle preferenza */}
         <div className="lg:col-span-2">
-          <h4 className="font-semibold mb-3">Partecipanti — Disponibilità</h4>
-          <div className="bg-primary p-4 rounded-lg border border-tertiary space-y-3 max-h-[520px] overflow-auto">
-            {participantIds.map(pid => {
-              const player = event.players.find(p => p.id === pid);
-              return (
-                <div key={pid} className="mb-4">
-                  <div className="font-semibold">{player ? player.name : pid}</div>
-                  <div className="mt-2 space-y-1">
-                    {dates.map(date => (
-                      <div key={date} className="flex items-center gap-3">
-                        <div className="w-36 text-sm">{formatDisplayDate(date)}</div>
-                        {(["MORNING","AFTERNOON","EVENING"] as const).map(s => {
-                          const val = availMap[pid]?.[date]?.[s];
-                          const label = val === undefined ? "Disponibile" : (val ? "Disponibile" : "Non disponibile");
-                          const bg = val === false ? "bg-red-100" : "bg-green-50";
-                          return (
-                            <div key={s} className={`${bg} border border-tertiary/30 rounded-md px-3 py-2 min-w-[140px]`}>
-                              <div className="font-semibold text-sm">{s === "MORNING" ? "Mattina" : s === "AFTERNOON" ? "Pomeriggio" : "Sera"}</div>
-                              <div className="text-xs text-text-secondary">{label}</div>
-                            </div>
-                          );
-                        })}
+          <h4 className="font-semibold mb-3">Slot creati dall'amministratore</h4>
+          {slots.length === 0 ? (
+            <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuno slot creato dall'amministratore per questo torneo.</div>
+          ) : (
+            <div className="space-y-4">
+              {slots.map(slot => {
+                const slotId = (slot as any).id ?? (slot as any).time ?? JSON.stringify(slot);
+                // count interested players
+                const interested = participants.filter(p => slotPrefMap[p.id]?.has(slotId)).map(p => p.name);
+                const myPref = loggedInPlayerId ? (slotPrefMap[loggedInPlayerId]?.has(slotId) ?? false) : false;
+                return (
+                  <div key={slotId} className="bg-primary p-3 rounded-lg border border-tertiary flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">{formatDateTime((slot as any).start ?? (slot as any).time)}</div>
+                      <div className="text-sm text-text-secondary">
+                        {(slot as any).location ? `${(slot as any).location}${(slot as any).field ? ` - ${(slot as any).field}` : ''}` : ''}
                       </div>
-                    ))}
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm text-text-secondary mr-2">
+                        {interested.length > 0 ? `${interested.length} interessati` : 'Nessuno interessato'}
+                        {interested.length > 0 && <div className="text-xs mt-1 text-text-secondary/80">{interested.slice(0,5).join(', ')}{interested.length>5? '...' : ''}</div>}
+                      </div>
+
+                      {loggedInPlayerId ? (
+                        <button
+                          onClick={() => toggleMySlot(slotId)}
+                          className={`px-3 py-2 rounded font-semibold ${myPref ? 'bg-green-600 text-white' : 'bg-tertiary text-text-primary'}`}
+                        >
+                          {myPref ? 'Segnato: Voglio giocare' : 'Segna: Voglio giocare'}
+                        </button>
+                      ) : (
+                        <div className="text-sm text-text-secondary">Login per segnare interesse</div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
