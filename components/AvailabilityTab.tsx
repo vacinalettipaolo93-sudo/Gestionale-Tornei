@@ -2,7 +2,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { type Event, type Tournament, type Group, type Player, type TimeSlot } from "../types";
 import {
-  getGlobalAvailability,
   getGlobalAvailabilitiesForPlayers,
   setGlobalAvailability,
   removeGlobalAvailability,
@@ -12,7 +11,7 @@ import {
 } from "../services/availabilityService";
 
 /**
- * Disponibilità semplificata:
+ * Disponibilità semplificata (mostra solo slot futuri):
  * - titolo: "Disponibilità di gioco"
  * - stato globale: disponibile (default) / non disponibile (override persisted)
  * - lista slots creati dall'amministratore: l'utente può marcarsi come "voglio giocare" su uno slot (toggle)
@@ -46,7 +45,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
   const participants = participantIds.map(pid => event.players.find(p => p.id === pid)).filter(Boolean) as Player[];
 
   // pick slots: prefer tournament.timeSlots then event.globalTimeSlots
-  const slots: TimeSlot[] = Array.isArray(tournament.timeSlots) && tournament.timeSlots.length > 0
+  const allSlots: TimeSlot[] = Array.isArray(tournament.timeSlots) && tournament.timeSlots.length > 0
     ? (tournament.timeSlots as any as TimeSlot[])
     : (Array.isArray(event.globalTimeSlots) ? (event.globalTimeSlots as any as TimeSlot[]) : []);
 
@@ -54,6 +53,17 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
   const [slotPrefMap, setSlotPrefMap] = useState<Record<string, Set<string>>>({}); // playerId -> set(slotId)
 
   const [loading, setLoading] = useState(true);
+
+  // filter only future slots (strictly greater than now)
+  const now = useMemo(() => new Date(), []);
+  const slots = useMemo(() => {
+    return allSlots.filter(s => {
+      const startIso = (s as any).start ?? (s as any).time ?? null;
+      if (!startIso) return false;
+      const t = new Date(startIso);
+      return !isNaN(t.getTime()) && t.getTime() > now.getTime();
+    });
+  }, [allSlots, now]);
 
   useEffect(() => {
     let mounted = true;
@@ -95,7 +105,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
         await setGlobalAvailability(loggedInPlayerId, false);
         setGlobalMap(m => ({ ...m, [loggedInPlayerId]: false }));
       } else {
-        // if exists (either false or true) -> remove setting to revert to default (available)
+        // if exists -> remove setting to revert to default (available)
         await removeGlobalAvailability(loggedInPlayerId);
         const next = { ...globalMap };
         delete next[loggedInPlayerId];
@@ -176,9 +186,9 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
 
         {/* Colonna centrale: lista slot e toggle preferenza */}
         <div className="lg:col-span-2">
-          <h4 className="font-semibold mb-3">Slot creati dall'amministratore</h4>
+          <h4 className="font-semibold mb-3">Slot futuri creati dall'amministratore</h4>
           {slots.length === 0 ? (
-            <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuno slot creato dall'amministratore per questo torneo.</div>
+            <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuno slot futuro creato dall'amministratore per questo torneo.</div>
           ) : (
             <div className="space-y-4">
               {slots.map(slot => {
