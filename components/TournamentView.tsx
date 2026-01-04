@@ -821,7 +821,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         {activeTab === 'groups' && isOrganizer && (
           <GroupManagement event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} />
         )}
-        {activeTab === 'players' and isOrganizer && (
+        {activeTab === 'players' && isOrganizer && (
           <PlayerManagement event={event} setEvents={setEvents} isOrganizer={isOrganizer} onPlayerContact={handlePlayerContact} />
         )}
         {activeTab === 'settings' && isOrganizer && (
