@@ -1,3 +1,4 @@
+// App.tsx
 import React, { useState, useMemo, useEffect } from 'react';
 import { type Event, type Tournament, type User, type Player } from './types';
 import EventView from './components/EventView';
