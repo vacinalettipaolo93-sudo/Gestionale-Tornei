@@ -152,7 +152,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       if (!startIso) return false;
       const startDate = new Date(startIso);
       if (isNaN(startDate.getTime())) return false;
-      if (startDate.getTime() <= now.getTime()) return false; // exclude past or current
+      // exclude past or current (strictly future only)
+      if (startDate.getTime() <= now.getTime()) return false;
       return !booked.includes(slot.id);
     });
   }
@@ -529,8 +530,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Slot Disponibili
         </button>
-
-        {/* Nuova tab Disponibilità di gioco */}
         <button onClick={() => setActiveTab('availability')}
           className={`px-4 py-2 rounded-full ${activeTab === 'availability'
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
@@ -539,7 +538,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Disponibilità di gioco
         </button>
-
         {!isOrganizer && (
           <button onClick={() => setActiveTab('participants')}
             className={`px-4 py-2 rounded-full ${activeTab === 'participants'
@@ -652,8 +650,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               onDeleteResult={handleOpenDeleteResult}
               viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
             />
-
-            {/* Modals rendered via Portal so they are not inside transformed parents */}
+            {/* Modals (unchanged) */}
             {editingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
@@ -677,7 +674,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 </div>
               </Portal>
             )}
-
             {bookingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
@@ -703,7 +699,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 </div>
               </Portal>
             )}
-
             {reschedulingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
@@ -729,7 +724,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 </div>
               </Portal>
             )}
-
             {deletingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
@@ -811,7 +805,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           />
         )}
 
-        {activeTab === 'playoffs' and isOrganizer && (
+        {activeTab === 'playoffs' && isOrganizer && (
           <PlayoffBracketBuilder
             event={event}
             tournament={tournament}
@@ -824,7 +818,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
             <Playoffs event={event} tournament={tournament} setEvents={setEvents} />
           </div>
         )}
-        {activeTab === 'consolation' and (
+        {activeTab === 'consolation' && (
           <ConsolationBracket event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInPlayerId} />
         )}
         {activeTab === 'groups' && isOrganizer && (
