@@ -22,7 +22,8 @@ type TournamentTab =
   | 'groups'
   | 'settings'
   | 'rules'
-  | 'players';
+  | 'players'
+  | 'availability'; // <-- aggiunto
 
 const App: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
