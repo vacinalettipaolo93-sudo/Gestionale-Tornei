@@ -142,10 +142,19 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     );
   }
 
+  // --- UPDATED: getAvailableSlots filters out past slots and booked ones ---
   function getAvailableSlots() {
     const globalSlots = Array.isArray(event.globalTimeSlots) ? event.globalTimeSlots : [];
     const booked = getAllBookedSlotIds();
-    return globalSlots.filter(slot => !booked.includes(slot.id));
+    const now = new Date();
+    return globalSlots.filter(slot => {
+      const startIso = (slot as any).start ?? (slot as any).time ?? null;
+      if (!startIso) return false;
+      const startDate = new Date(startIso);
+      if (isNaN(startDate.getTime())) return false;
+      if (startDate.getTime() <= now.getTime()) return false; // exclude past or current
+      return !booked.includes(slot.id);
+    });
   }
 
   const handlePlayerContact = (player: { phone?: string } | Player) => {
@@ -802,7 +811,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           />
         )}
 
-        {activeTab === 'playoffs' && isOrganizer && (
+        {activeTab === 'playoffs' and isOrganizer && (
           <PlayoffBracketBuilder
             event={event}
             tournament={tournament}
@@ -815,7 +824,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
             <Playoffs event={event} tournament={tournament} setEvents={setEvents} />
           </div>
         )}
-        {activeTab === 'consolation' && (
+        {activeTab === 'consolation' and (
           <ConsolationBracket event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInPlayerId} />
         )}
         {activeTab === 'groups' && isOrganizer && (
