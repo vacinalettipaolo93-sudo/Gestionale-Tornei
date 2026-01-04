@@ -1,3 +1,4 @@
+// components/TournamentView.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { type Event, type Tournament, type Match, type TimeSlot, type Player } from '../types';
@@ -11,6 +12,7 @@ import ConsolationBracket from './ConsolationBracket';
 import PlayerManagement from './PlayerManagement';
 import PlayoffBracketBuilder from './PlayoffBracketBuilder';
 import AvailableSlotsList from './AvailableSlotsList';
+import AvailabilityTab from './AvailabilityTab';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
 
@@ -20,7 +22,7 @@ interface TournamentViewProps {
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   isOrganizer: boolean;
   loggedInPlayerId?: string;
-  initialActiveTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players';
+  initialActiveTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability';
   initialSelectedGroupId?: string;
   onPlayerContact?: (player: Player | { phone?: string }) => void;
 }
@@ -52,7 +54,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   );
   const selectedGroup = tournament.groups.find(g => g.id === selectedGroupId);
 
-  const [activeTab, setActiveTab] = useState<'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players'>(
+  const [activeTab, setActiveTab] = useState<'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability'>(
     (initialActiveTab ?? 'standings') as any
   );
 
@@ -518,6 +520,17 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Slot Disponibili
         </button>
+
+        {/* Nuova tab Disponibilità */}
+        <button onClick={() => setActiveTab('availability')}
+          className={`px-4 py-2 rounded-full ${activeTab === 'availability'
+            ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
+            : 'bg-transparent text-accent'
+          }`}
+        >
+          Disponibilità
+        </button>
+
         {!isOrganizer && (
           <button onClick={() => setActiveTab('participants')}
             className={`px-4 py-2 rounded-full ${activeTab === 'participants'
@@ -777,6 +790,16 @@ const TournamentView: React.FC<TournamentViewProps> = ({
 
         {activeTab === 'participants' && !isOrganizer && (
           <ParticipantsTab event={event} tournament={tournament} loggedInPlayerId={loggedInPlayerId} />
+        )}
+
+        {/* Nuova sezione: Disponibilità */}
+        {activeTab === 'availability' && selectedGroup && (
+          <AvailabilityTab
+            event={event}
+            tournament={tournament}
+            selectedGroup={selectedGroup}
+            loggedInPlayerId={loggedInPlayerId}
+          />
         )}
 
         {activeTab === 'playoffs' && isOrganizer && (
