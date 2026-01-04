@@ -521,14 +521,14 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           Slot Disponibili
         </button>
 
-        {/* Nuova tab Disponibilità */}
+        {/* Nuova tab Disponibilità di gioco */}
         <button onClick={() => setActiveTab('availability')}
           className={`px-4 py-2 rounded-full ${activeTab === 'availability'
             ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
             : 'bg-transparent text-accent'
           }`}
         >
-          Disponibilità
+          Disponibilità di gioco
         </button>
 
         {!isOrganizer && (
@@ -821,7 +821,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         {activeTab === 'groups' && isOrganizer && (
           <GroupManagement event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} />
         )}
-        {activeTab === 'players' && isOrganizer && (
+        {activeTab === 'players' and isOrganizer && (
           <PlayerManagement event={event} setEvents={setEvents} isOrganizer={isOrganizer} onPlayerContact={handlePlayerContact} />
         )}
         {activeTab === 'settings' && isOrganizer && (
