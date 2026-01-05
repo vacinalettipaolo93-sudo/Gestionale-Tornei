@@ -11,17 +11,15 @@ import {
 } from "../services/availabilityService";
 
 /**
- * Disponibilità di gioco (solo per-date, senza stato globale)
+ * AvailabilityTab — mostra per-date la disponibilità dei partecipanti e, dentro ogni data,
+ * quali slot (creati dall'amministratore) ciascun partecipante ha segnato come "voglio giocare".
  *
- * - L'utente può marcare "Non disponibile" per singole date (YYYY-MM-DD) estratte dagli slot futuri.
- * - Se l'utente è non-disponibile per una data, non può segnare interesse sugli slot di quella data.
- * - Viene mostrata una visuale tabellare dei partecipanti vs date: per ogni cella "Disponibile" / "Non disponibile".
- * - Vengono mostrati anche gli slot futuri non prenotati e l'utente può segnare interesse (se non marcato non-disponibile per la data).
+ * Rispetta le seguenti regole già implementate:
+ * - mostra solo slot futuri non prenotati
+ * - l'utente può marcare "Non disponibile" per singole date; se lo è, NON può segnare interesse sugli slot di quella data
+ * - nella tabella partecipanti vs date si vede "Disponibile"/"Non disponibile" e, se ha segnato slot, si vedono gli orari selezionati
  *
- * Props:
- * - event, tournament: per reperire slots e matches (usati per escludere slot prenotati)
- * - selectedGroup: il girone corrente
- * - loggedInPlayerId: id del giocatore loggato (player.id)
+ * Non modifica altro del progetto.
  */
 
 type Props = {
@@ -55,6 +53,14 @@ function formatDateTime(iso?: string) {
   const hh = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+}
+
+function formatTimeOnly(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${min}`;
 }
 
 export default function AvailabilityTab({ event, tournament, selectedGroup, loggedInPlayerId }: Props) {
@@ -105,6 +111,27 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
       if (key) set.add(key);
     });
     return Array.from(set).sort();
+  }, [futureSlots]);
+
+  // Build date -> slots map for quick lookup (slots on a date)
+  const dateSlotsMap = useMemo(() => {
+    const m: Record<string, TimeSlot[]> = {};
+    futureSlots.forEach(s => {
+      const startIso = (s as any).start ?? (s as any).time ?? null;
+      if (!startIso) return;
+      const key = formatDateKeyFromIso(startIso);
+      if (!m[key]) m[key] = [];
+      m[key].push(s);
+    });
+    // optional: sort each date's slots by start
+    Object.keys(m).forEach(k => {
+      m[k].sort((a, b) => {
+        const ta = new Date((a as any).start ?? (a as any).time).getTime();
+        const tb = new Date((b as any).start ?? (b as any).time).getTime();
+        return ta - tb;
+      });
+    });
+    return m;
   }, [futureSlots]);
 
   const [loading, setLoading] = useState(true);
@@ -246,7 +273,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
           )}
         </div>
 
-        {/* Middle: participants x dates availability table */}
+        {/* Middle/right: participants x dates availability table + slots list */}
         <div className="lg:col-span-3">
           <h4 className="font-semibold mb-3">Disponibilità partecipanti per data</h4>
 
@@ -269,11 +296,37 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                       <td className="py-2 pr-4 font-medium">{p.name}</td>
                       {dateKeys.map(dk => {
                         const unavailable = isParticipantUnavailableOn(p.id, dk);
+                        // find slots for this date
+                        const slotsForDate = dateSlotsMap[dk] ?? [];
+                        // find which of these slots participant selected
+                        const selectedSlotIds = Array.from(slotPrefMap[p.id] ?? new Set<string>());
+                        const selectedSlotsOnDate = slotsForDate.filter(s => {
+                          const sid = (s as any).id ?? (s as any).time ?? JSON.stringify(s);
+                          return selectedSlotIds.includes(sid);
+                        });
                         return (
-                          <td key={dk} className="px-3 py-2">
-                            <span className={unavailable ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'}>
-                              {unavailable ? 'Non disponibile' : 'Disponibile'}
-                            </span>
+                          <td key={dk} className="px-3 py-2 align-top">
+                            {unavailable ? (
+                              <div className="text-red-600 font-semibold">Non disponibile</div>
+                            ) : (
+                              <>
+                                {selectedSlotsOnDate.length > 0 ? (
+                                  <div className="space-y-1">
+                                    {selectedSlotsOnDate.map(s => {
+                                      const startIso = (s as any).start ?? (s as any).time ?? "";
+                                      return (
+                                        <div key={(s as any).id ?? startIso} className="inline-flex items-center gap-2 px-2 py-1 rounded bg-green-50 border border-tertiary/30">
+                                          <span className="font-semibold text-xs">{formatTimeOnly(startIso)}</span>
+                                          <span className="text-xs text-text-secondary">{(s as any).location ?? ""}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="text-green-600 font-semibold">Disponibile</div>
+                                )}
+                              </>
+                            )}
                           </td>
                         );
                       })}
@@ -305,7 +358,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                           {(slot as any).location ? `${(slot as any).location}${(slot as any).field ? ` - ${(slot as any).field}` : ''}` : ''}
                         </div>
                         <div className="text-xs text-text-secondary mt-1">
-                          {interested.length > 0 ? `${interested.length} interessati` : 'Nessuno interessato'}
+                          {interested.length > 0 ? `${interested.length} interessati: ${interested.slice(0,5).join(', ')}${interested.length>5?'...':''}` : 'Nessuno interessato'}
                         </div>
                         {myDateUnavail && <div className="text-xs text-red-600 mt-1">Hai segnato NON disponibile per questa data — non puoi segnare interesse qui.</div>}
                       </div>
