@@ -14,11 +14,9 @@ import {
  * AvailabilityTab — mostra per-date la disponibilità dei partecipanti e, dentro ogni data,
  * quali slot (creati dall'amministratore) ciascun partecipante ha segnato come "voglio giocare".
  *
- * Aggiornamento:
- * - nella tabella partecipanti vs date, le etichette orario sono SOLO in formato range (es. "08:00-09:00"),
- *   testo in verde, senza contorno né sfondo.
- * - nella lista "Slot futuri creati dall'amministratore" vengono mostrate TUTTE le informazioni:
- *   data, time-range (in evidenza verde), location e campo.
+ * Aggiornamento richiesto:
+ * - nelle celle della tabella mostra SOLO l'orario di inizio (es. "8.00", "9.30") in verde, senza contorno né sfondo.
+ * - nella lista "Slot futuri creati dall'amministratore" mostra la data, l'orario di inizio (verde) e poi location/campo.
  *
  * Non modifica altro del progetto.
  */
@@ -30,7 +28,7 @@ type Props = {
   loggedInPlayerId?: string;
 };
 
-function pad(n: number) {
+function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
@@ -49,27 +47,15 @@ function formatDisplayDateKey(key: string) {
   return key;
 }
 
-function formatTimeOnly(iso?: string) {
+// Format start time as requested: "8.00", "9.30", etc.
+// Use no leading zero for hour (so 08 -> "8.00"), show minutes with two digits after dot.
+function formatHourDotFromIso(iso?: string) {
   if (!iso) return "";
   const d = new Date(iso);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function formatTimeRangeFromSlot(slot: TimeSlot, defaultDurationMinutes = 60) {
-  const startIso = (slot as any).start ?? (slot as any).time ?? null;
-  if (!startIso) return "";
-  const start = new Date(startIso);
-  let endIso = (slot as any).end ?? (slot as any).endTime ?? null;
-  let end: Date;
-  if (endIso) {
-    end = new Date(endIso);
-    if (isNaN(end.getTime())) {
-      end = new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
-    }
-  } else {
-    end = new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
-  }
-  return `${pad(start.getHours())}:${pad(start.getMinutes())}-${pad(end.getHours())}:${pad(end.getMinutes())}`;
+  if (isNaN(d.getTime())) return "";
+  const h = String(d.getHours()); // no pad
+  const m = pad2(d.getMinutes());
+  return `${h}.${m}`;
 }
 
 export default function AvailabilityTab({ event, tournament, selectedGroup, loggedInPlayerId }: Props) {
@@ -237,7 +223,6 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
 
   if (loading) return <div>Caricamento disponibilità…</div>;
 
-  // helper to check participant availability on a given dateKey
   function isParticipantUnavailableOn(pId: string, dateKey: string) {
     return !!(dateUnavailMap[pId]?.has(dateKey));
   }
@@ -322,11 +307,12 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                                 {selectedSlotsOnDate.length > 0 ? (
                                   <div className="flex flex-wrap gap-2">
                                     {selectedSlotsOnDate.map(s => {
-                                      const range = formatTimeRangeFromSlot(s);
+                                      const startIso = (s as any).start ?? (s as any).time ?? "";
+                                      const hourDot = formatHourDotFromIso(startIso); // e.g. "8.00"
                                       return (
-                                        <div key={(s as any).id ?? range} className="">
-                                          {/* Time text in green, no outline or background */}
-                                          <span className="font-semibold text-xs text-green-600">{range}</span>
+                                        <div key={(s as any).id ?? startIso} className="">
+                                          {/* Time text in green, no outline or background, single hour only */}
+                                          <span className="font-semibold text-xs text-green-600">{hourDot}</span>
                                         </div>
                                       );
                                     })}
@@ -346,7 +332,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
             </div>
           )}
 
-          {/* Slots list (below table) - SHOW FULL DETAILS: date, time-range (green), location, field */}
+          {/* Slots list (below table) - SHOW FULL DETAILS: date, start time (green), location, field */}
           <div className="mt-6">
             <h4 className="font-semibold mb-3">Slot futuri creati dall'amministratore</h4>
             {futureSlots.length === 0 ? (
@@ -359,7 +345,8 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                   const myDateUnavail = loggedInPlayerId ? isParticipantUnavailableOn(loggedInPlayerId, slotDateKey) : false;
                   const interested = participants.filter(p => slotPrefMap[p.id]?.has(slotId)).map(p => p.name);
                   const myPref = loggedInPlayerId ? (slotPrefMap[loggedInPlayerId]?.has(slotId) ?? false) : false;
-                  const range = formatTimeRangeFromSlot(slot);
+                  const startIso = (slot as any).start ?? (slot as any).time ?? "";
+                  const hourDot = formatHourDotFromIso(startIso); // e.g. "8.00"
                   const location = (slot as any).location ?? "";
                   const field = (slot as any).field ?? "";
                   return (
@@ -367,8 +354,8 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                       <div>
                         {/* Date small */}
                         <div className="text-sm text-text-secondary mb-1">{formatDisplayDateKey(slotDateKey)}</div>
-                        {/* Time range in green (prominent) */}
-                        <div className="font-semibold text-green-600 mb-1">{range}</div>
+                        {/* Start time in green (prominent), single hour */}
+                        <div className="font-semibold text-green-600 mb-1">{hourDot}</div>
                         {/* FULL details: location and field */}
                         <div className="text-sm text-text-secondary">
                           {location}{location && field ? " - " : ""}{field}
