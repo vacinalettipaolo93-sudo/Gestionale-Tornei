@@ -15,7 +15,7 @@ import {
  * quali slot (creati dall'amministratore) ciascun partecipante ha segnato come "voglio giocare".
  *
  * Aggiornamento richiesto:
- * - nelle celle della tabella mostra SOLO l'orario di inizio (es. "8.00", "9.30") in verde, senza contorno né sfondo.
+ * - nelle celle della tabella mostra SOLO l'orario di inizio in formato "08:00", "09:30" ecc. (con leading zero).
  * - nella lista "Slot futuri creati dall'amministratore" mostra la data, l'orario di inizio (verde) e poi location/campo.
  *
  * Non modifica altro del progetto.
@@ -47,15 +47,31 @@ function formatDisplayDateKey(key: string) {
   return key;
 }
 
-// Format start time as requested: "8.00", "9.30", etc.
-// Use no leading zero for hour (so 08 -> "8.00"), show minutes with two digits after dot.
-function formatHourDotFromIso(iso?: string) {
+// Format start time as requested: "08:00", "09:30", etc. (leading zero, colon)
+function formatHHMMFromIso(iso?: string) {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
-  const h = String(d.getHours()); // no pad
+  const h = pad2(d.getHours());
   const m = pad2(d.getMinutes());
-  return `${h}.${m}`;
+  return `${h}:${m}`;
+}
+
+function formatTimeRangeFromSlot(slot: TimeSlot, defaultDurationMinutes = 60) {
+  const startIso = (slot as any).start ?? (slot as any).time ?? null;
+  if (!startIso) return "";
+  const start = new Date(startIso);
+  let endIso = (slot as any).end ?? (slot as any).endTime ?? null;
+  let end: Date;
+  if (endIso) {
+    end = new Date(endIso);
+    if (isNaN(end.getTime())) {
+      end = new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
+    }
+  } else {
+    end = new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
+  }
+  return `${pad2(start.getHours())}:${pad2(start.getMinutes())}-${pad2(end.getHours())}:${pad2(end.getMinutes())}`;
 }
 
 export default function AvailabilityTab({ event, tournament, selectedGroup, loggedInPlayerId }: Props) {
@@ -223,6 +239,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
 
   if (loading) return <div>Caricamento disponibilità…</div>;
 
+  // helper to check participant availability on a given dateKey
   function isParticipantUnavailableOn(pId: string, dateKey: string) {
     return !!(dateUnavailMap[pId]?.has(dateKey));
   }
@@ -308,11 +325,11 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                                   <div className="flex flex-wrap gap-2">
                                     {selectedSlotsOnDate.map(s => {
                                       const startIso = (s as any).start ?? (s as any).time ?? "";
-                                      const hourDot = formatHourDotFromIso(startIso); // e.g. "8.00"
+                                      const hhmm = formatHHMMFromIso(startIso); // e.g. "08:00"
                                       return (
                                         <div key={(s as any).id ?? startIso} className="">
                                           {/* Time text in green, no outline or background, single hour only */}
-                                          <span className="font-semibold text-xs text-green-600">{hourDot}</span>
+                                          <span className="font-semibold text-xs text-green-600">{hhmm}</span>
                                         </div>
                                       );
                                     })}
@@ -346,7 +363,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                   const interested = participants.filter(p => slotPrefMap[p.id]?.has(slotId)).map(p => p.name);
                   const myPref = loggedInPlayerId ? (slotPrefMap[loggedInPlayerId]?.has(slotId) ?? false) : false;
                   const startIso = (slot as any).start ?? (slot as any).time ?? "";
-                  const hourDot = formatHourDotFromIso(startIso); // e.g. "8.00"
+                  const hhmm = formatHHMMFromIso(startIso); // e.g. "08:00"
                   const location = (slot as any).location ?? "";
                   const field = (slot as any).field ?? "";
                   return (
@@ -355,7 +372,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                         {/* Date small */}
                         <div className="text-sm text-text-secondary mb-1">{formatDisplayDateKey(slotDateKey)}</div>
                         {/* Start time in green (prominent), single hour */}
-                        <div className="font-semibold text-green-600 mb-1">{hourDot}</div>
+                        <div className="font-semibold text-green-600 mb-1">{hhmm}</div>
                         {/* FULL details: location and field */}
                         <div className="text-sm text-text-secondary">
                           {location}{location && field ? " - " : ""}{field}
