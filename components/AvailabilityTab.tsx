@@ -2,9 +2,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { type Event, type Tournament, type Group, type Player, type TimeSlot } from "../types";
 import {
-  getGlobalAvailabilitiesForPlayers,
-  setGlobalAvailability,
-  removeGlobalAvailability,
   getSlotPreferencesForPlayers,
   setSlotPreference,
   removeSlotPreference,
@@ -14,12 +11,17 @@ import {
 } from "../services/availabilityService";
 
 /**
- * Disponibilità di gioco estesa:
- * - mantiene il toggle globale (disponibile / non disponibile) se vuoi ancora usarlo
- * - aggiunge toggle "Non disponibile" per singole date (YYYY-MM-DD) prese dagli slot futuri
- * - lista slot futuri (esclude slot già prenotati) su cui segnare interesse
+ * Disponibilità di gioco (solo per-date, senza stato globale)
  *
- * Nota: le date visualizzate sono le date (YYYY-MM-DD) estratte dagli slot futuri creati dall'amministratore.
+ * - L'utente può marcare "Non disponibile" per singole date (YYYY-MM-DD) estratte dagli slot futuri.
+ * - Se l'utente è non-disponibile per una data, non può segnare interesse sugli slot di quella data.
+ * - Viene mostrata una visuale tabellare dei partecipanti vs date: per ogni cella "Disponibile" / "Non disponibile".
+ * - Vengono mostrati anche gli slot futuri non prenotati e l'utente può segnare interesse (se non marcato non-disponibile per la data).
+ *
+ * Props:
+ * - event, tournament: per reperire slots e matches (usati per escludere slot prenotati)
+ * - selectedGroup: il girone corrente
+ * - loggedInPlayerId: id del giocatore loggato (player.id)
  */
 
 type Props = {
@@ -64,7 +66,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     ? (tournament.timeSlots as any as TimeSlot[])
     : (Array.isArray(event.globalTimeSlots) ? (event.globalTimeSlots as any as TimeSlot[]) : []);
 
-  // booked slot ids across event
+  // booked slot ids across the event (matches with slotId scheduled/completed)
   const bookedSlotIds = useMemo(() => {
     return new Set(
       event.tournaments.flatMap(t =>
@@ -77,7 +79,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     );
   }, [event.tournaments]);
 
-  // now and future slots (exclude booked slots)
+  // now and future slots (exclude booked)
   const now = useMemo(() => new Date(), []);
   const futureSlots = useMemo(() => {
     return allSlots.filter(s => {
@@ -108,10 +110,8 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
   const [loading, setLoading] = useState(true);
 
   // maps:
-  // globalMap[playerId] = boolean | undefined
   // slotPrefMap[playerId] = Set(slotId)
   // dateUnavailMap[playerId] = Set(dateKey)
-  const [globalMap, setGlobalMap] = useState<Record<string, boolean | undefined>>({});
   const [slotPrefMap, setSlotPrefMap] = useState<Record<string, Set<string>>>({});
   const [dateUnavailMap, setDateUnavailMap] = useState<Record<string, Set<string>>>({});
 
@@ -120,15 +120,10 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     async function load() {
       setLoading(true);
       try {
-        const [globals, slotPrefs, dateUnavails] = await Promise.all([
-          getGlobalAvailabilitiesForPlayers(participantIds),
+        const [slotPrefs, dateUnavails] = await Promise.all([
           getSlotPreferencesForPlayers(participantIds),
-          // fetch date unavailabilities limited to dateKeys range if any
           getDateUnavailabilitiesForPlayers(participantIds, dateKeys[0] ?? "", dateKeys[dateKeys.length - 1] ?? "")
         ]);
-
-        const gMap: Record<string, boolean | undefined> = {};
-        globals.forEach(g => { gMap[g.playerId] = g.available; });
 
         const sMap: Record<string, Set<string>> = {};
         slotPrefs.forEach(p => {
@@ -143,7 +138,6 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
         });
 
         if (mounted) {
-          setGlobalMap(gMap);
           setSlotPrefMap(sMap);
           setDateUnavailMap(dMap);
         }
@@ -157,26 +151,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     return () => { mounted = false; };
   }, [participantIds, dateKeys.join(","), tournament.id, event.id]);
 
-  // toggle global availability (unchanged)
-  async function toggleMyGlobal() {
-    if (!loggedInPlayerId) return;
-    const current = globalMap[loggedInPlayerId];
-    try {
-      if (current === undefined) {
-        await setGlobalAvailability(loggedInPlayerId, false);
-        setGlobalMap(m => ({ ...m, [loggedInPlayerId]: false }));
-      } else {
-        await removeGlobalAvailability(loggedInPlayerId);
-        const next = { ...globalMap };
-        delete next[loggedInPlayerId];
-        setGlobalMap(next);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  // toggle slot preference (unchanged)
+  // toggle slot preference
   async function toggleMySlot(slotId: string) {
     if (!loggedInPlayerId) return;
     const mySet = slotPrefMap[loggedInPlayerId] ?? new Set<string>();
@@ -200,7 +175,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     }
   }
 
-  // toggle date unavailability (new)
+  // toggle date unavailability
   async function toggleMyDateUnavail(dateKey: string) {
     if (!loggedInPlayerId) return;
     const mySet = dateUnavailMap[loggedInPlayerId] ?? new Set<string>();
@@ -226,103 +201,42 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
 
   if (loading) return <div>Caricamento disponibilità…</div>;
 
+  // helper to check participant availability on a given dateKey
+  function isParticipantUnavailableOn(pId: string, dateKey: string) {
+    return !!(dateUnavailMap[pId]?.has(dateKey));
+  }
+
   return (
     <div className="max-w-6xl mx-auto bg-secondary rounded-xl p-6 shadow space-y-6">
       <h3 className="text-xl font-bold text-accent">Disponibilità di gioco</h3>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column: global + per-date controls */}
-        <div className="bg-primary p-4 rounded-lg border border-tertiary space-y-4">
-          <h4 className="font-semibold">Stato generale</h4>
-          {loggedInPlayerId ? (
-            <>
-              <div className="mb-2">
-                <div className="text-sm text-text-secondary mb-1">Il tuo stato globale</div>
-                <div className={`inline-block px-3 py-2 rounded ${globalMap[loggedInPlayerId] === false ? 'bg-red-100' : 'bg-green-50'} border border-tertiary/30`}>
-                  {globalMap[loggedInPlayerId] === false ? 'Non disponibile (globale)' : 'Disponibile (default)'}
-                </div>
-              </div>
-              <button onClick={toggleMyGlobal} className="bg-accent hover:bg-highlight text-white px-4 py-2 rounded">
-                {globalMap[loggedInPlayerId] === false ? 'Rendi Disponibile (rimuovi non disponibile)' : 'Segna Non disponibile (globale)'}
-              </button>
-
-              <div className="mt-4">
-                <h5 className="font-semibold mb-2">Non disponibile per date</h5>
-                {dateKeys.length === 0 ? (
-                  <div className="text-text-secondary text-sm">Nessuna data futura disponibile (gli slot futuri non sono presenti).</div>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-auto pr-2">
-                    {dateKeys.map(dk => {
-                      const countUnavailable = participants.filter(p => dateUnavailMap[p.id]?.has(dk)).length;
-                      const myUnavail = loggedInPlayerId ? (dateUnavailMap[loggedInPlayerId]?.has(dk) ?? false) : false;
-                      return (
-                        <div key={dk} className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="font-semibold">{formatDisplayDateKey(dk)}</div>
-                            <div className="text-xs text-text-secondary">{countUnavailable > 0 ? `${countUnavailable} non disponibili` : 'Tutti disponibili'}</div>
-                          </div>
-                          <div>
-                            {loggedInPlayerId ? (
-                              <button
-                                onClick={() => toggleMyDateUnavail(dk)}
-                                className={`px-3 py-2 rounded ${myUnavail ? 'bg-red-600 text-white' : 'bg-tertiary text-text-primary'}`}
-                              >
-                                {myUnavail ? 'Rimosso: Non disponibile' : 'Segna Non disponibile'}
-                              </button>
-                            ) : (
-                              <div className="text-sm text-text-secondary">Login per impostare</div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Left: per-date toggles */}
+        <div className="lg:col-span-1 bg-primary p-4 rounded-lg border border-tertiary space-y-4">
+          <h4 className="font-semibold">Non disponibile per date</h4>
+          {dateKeys.length === 0 ? (
+            <div className="text-text-secondary text-sm">Nessuna data futura (gli slot futuri non sono presenti).</div>
           ) : (
-            <div>Effettua il login per impostare le tue disponibilità.</div>
-          )}
-        </div>
-
-        {/* Right columns: slots list with interest toggles */}
-        <div className="lg:col-span-2">
-          <h4 className="font-semibold mb-3">Slot futuri creati dall'amministratore</h4>
-          {futureSlots.length === 0 ? (
-            <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuno slot futuro disponibile creato dall'amministratore per questo torneo.</div>
-          ) : (
-            <div className="space-y-4">
-              {futureSlots.map(slot => {
-                const slotId = (slot as any).id ?? (slot as any).time ?? JSON.stringify(slot);
-                // if slot's date is marked by the user as unavailable, disable toggle for that user
-                const slotDateKey = formatDateKeyFromIso((slot as any).start ?? (slot as any).time ?? "");
-                const myDateUnavail = loggedInPlayerId ? (dateUnavailMap[loggedInPlayerId]?.has(slotDateKey) ?? false) : false;
-                const interested = participants.filter(p => slotPrefMap[p.id]?.has(slotId)).map(p => p.name);
-                const myPref = loggedInPlayerId ? (slotPrefMap[loggedInPlayerId]?.has(slotId) ?? false) : false;
+            <div className="space-y-2 max-h-[52vh] overflow-auto pr-2">
+              {dateKeys.map(dk => {
+                const countUnavailable = participants.filter(p => isParticipantUnavailableOn(p.id, dk)).length;
+                const myUnavail = loggedInPlayerId ? isParticipantUnavailableOn(loggedInPlayerId, dk) : false;
                 return (
-                  <div key={slotId} className="bg-primary p-3 rounded-lg border border-tertiary flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div key={dk} className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-semibold">{formatDateTime((slot as any).start ?? (slot as any).time)}</div>
-                      <div className="text-sm text-text-secondary">
-                        {(slot as any).location ? `${(slot as any).location}${(slot as any).field ? ` - ${(slot as any).field}` : ''}` : ''}
-                      </div>
-                      <div className="text-xs text-text-secondary mt-1">
-                        {interested.length > 0 ? `${interested.length} interessati` : 'Nessuno interessato'}
-                      </div>
-                      {myDateUnavail && <div className="text-xs text-red-600 mt-1">Hai segnato NON disponibile per questa data — non puoi segnare interesse qui.</div>}
+                      <div className="font-semibold">{formatDisplayDateKey(dk)}</div>
+                      <div className="text-xs text-text-secondary">{countUnavailable > 0 ? `${countUnavailable} non disponibili` : 'Tutti disponibili'}</div>
                     </div>
-
-                    <div className="flex items-center gap-3">
+                    <div>
                       {loggedInPlayerId ? (
                         <button
-                          onClick={() => toggleMySlot(slotId)}
-                          disabled={myDateUnavail}
-                          className={`px-3 py-2 rounded font-semibold ${myPref ? 'bg-green-600 text-white' : 'bg-tertiary text-text-primary'} ${myDateUnavail ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={() => toggleMyDateUnavail(dk)}
+                          className={`px-3 py-2 rounded ${myUnavail ? 'bg-red-600 text-white' : 'bg-tertiary text-text-primary'}`}
                         >
-                          {myPref ? 'Segnato: Voglio giocare' : 'Segna: Voglio giocare'}
+                          {myUnavail ? 'Rimuovi: Non disponibile' : 'Segna Non disponibile'}
                         </button>
                       ) : (
-                        <div className="text-sm text-text-secondary">Login per segnare interesse</div>
+                        <div className="text-sm text-text-secondary">Login per impostare</div>
                       )}
                     </div>
                   </div>
@@ -330,6 +244,91 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
               })}
             </div>
           )}
+        </div>
+
+        {/* Middle: participants x dates availability table */}
+        <div className="lg:col-span-3">
+          <h4 className="font-semibold mb-3">Disponibilità partecipanti per data</h4>
+
+          {dateKeys.length === 0 ? (
+            <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuna data futura disponibile.</div>
+          ) : (
+            <div className="overflow-auto bg-primary p-3 rounded-lg border border-tertiary">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr>
+                    <th className="text-left pr-4 pb-2 font-semibold">Giocatore</th>
+                    {dateKeys.map(dk => (
+                      <th key={dk} className="text-left px-3 pb-2 font-semibold">{formatDisplayDateKey(dk)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {participants.map(p => (
+                    <tr key={p.id} className="odd:bg-primary/60">
+                      <td className="py-2 pr-4 font-medium">{p.name}</td>
+                      {dateKeys.map(dk => {
+                        const unavailable = isParticipantUnavailableOn(p.id, dk);
+                        return (
+                          <td key={dk} className="px-3 py-2">
+                            <span className={unavailable ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'}>
+                              {unavailable ? 'Non disponibile' : 'Disponibile'}
+                            </span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Slots list (below table) */}
+          <div className="mt-6">
+            <h4 className="font-semibold mb-3">Slot futuri creati dall'amministratore</h4>
+            {futureSlots.length === 0 ? (
+              <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuno slot futuro disponibile creato dall'amministratore per questo torneo.</div>
+            ) : (
+              <div className="space-y-4">
+                {futureSlots.map(slot => {
+                  const slotId = (slot as any).id ?? (slot as any).time ?? JSON.stringify(slot);
+                  const slotDateKey = formatDateKeyFromIso((slot as any).start ?? (slot as any).time ?? "");
+                  const myDateUnavail = loggedInPlayerId ? isParticipantUnavailableOn(loggedInPlayerId, slotDateKey) : false;
+                  const interested = participants.filter(p => slotPrefMap[p.id]?.has(slotId)).map(p => p.name);
+                  const myPref = loggedInPlayerId ? (slotPrefMap[loggedInPlayerId]?.has(slotId) ?? false) : false;
+                  return (
+                    <div key={slotId} className="bg-primary p-3 rounded-lg border border-tertiary flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">{formatDateTime((slot as any).start ?? (slot as any).time)}</div>
+                        <div className="text-sm text-text-secondary">
+                          {(slot as any).location ? `${(slot as any).location}${(slot as any).field ? ` - ${(slot as any).field}` : ''}` : ''}
+                        </div>
+                        <div className="text-xs text-text-secondary mt-1">
+                          {interested.length > 0 ? `${interested.length} interessati` : 'Nessuno interessato'}
+                        </div>
+                        {myDateUnavail && <div className="text-xs text-red-600 mt-1">Hai segnato NON disponibile per questa data — non puoi segnare interesse qui.</div>}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {loggedInPlayerId ? (
+                          <button
+                            onClick={() => toggleMySlot(slotId)}
+                            disabled={myDateUnavail}
+                            className={`px-3 py-2 rounded font-semibold ${myPref ? 'bg-green-600 text-white' : 'bg-tertiary text-text-primary'} ${myDateUnavail ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            {myPref ? 'Segnato: Voglio giocare' : 'Segna: Voglio giocare'}
+                          </button>
+                        ) : (
+                          <div className="text-sm text-text-secondary">Login per segnare interesse</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
