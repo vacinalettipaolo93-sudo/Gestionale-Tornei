@@ -311,12 +311,13 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                             ) : (
                               <>
                                 {selectedSlotsOnDate.length > 0 ? (
-                                  <div className="space-y-1">
+                                  <div className="flex flex-wrap gap-2">
                                     {selectedSlotsOnDate.map(s => {
                                       const startIso = (s as any).start ?? (s as any).time ?? "";
                                       return (
                                         <div key={(s as any).id ?? startIso} className="inline-flex items-center gap-2 px-2 py-1 rounded bg-green-50 border border-tertiary/30">
-                                          <span className="font-semibold text-xs">{formatTimeOnly(startIso)}</span>
+                                          {/* Time text color made more visible */}
+                                          <span className="font-semibold text-xs text-text-primary">{formatTimeOnly(startIso)}</span>
                                           <span className="text-xs text-text-secondary">{(s as any).location ?? ""}</span>
                                         </div>
                                       );
@@ -353,7 +354,8 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                   return (
                     <div key={slotId} className="bg-primary p-3 rounded-lg border border-tertiary flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div>
-                        <div className="font-semibold">{formatDateTime((slot as any).start ?? (slot as any).time)}</div>
+                        {/* Make the main time text darker for readability */}
+                        <div className="font-semibold text-text-primary">{formatDateTime((slot as any).start ?? (slot as any).time)}</div>
                         <div className="text-sm text-text-secondary">
                           {(slot as any).location ? `${(slot as any).location}${(slot as any).field ? ` - ${(slot as any).field}` : ''}` : ''}
                         </div>
