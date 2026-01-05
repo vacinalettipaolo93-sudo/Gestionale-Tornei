@@ -2,25 +2,24 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { type Event, type Tournament, type Group, type Player, type TimeSlot } from "../types";
 import {
-  getSlotPreferencesForPlayers,
   setSlotPreference,
   removeSlotPreference,
-  getDateUnavailabilitiesForPlayers,
   setDateUnavailability,
   removeDateUnavailability,
 } from "../services/availabilityService";
+import { db } from "../firebase";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 
 /**
- * AvailabilityTab — mostra per-date la disponibilità dei partecipanti e, dentro ogni data,
- * quali slot (creati dall'amministratore) ciascun partecipante ha segnato come "voglio giocare".
+ * AvailabilityTab (persistent + realtime)
  *
- * Aggiornamento:
- * - nella tabella, se uno stesso giocatore ha segnato più slot nello stesso orario (es. 08:00 su campo 1 e 08:00 su campo 3),
- *   verrà mostrato solo un'unica etichetta "08:00" (non replicata).
- * - nella lista slot futuri vengono comunque mostrate tutte le entry (campo + orario).
+ * - Salva le preferenze usando i servizi (setSlotPreference / removeSlotPreference, setDateUnavailability / removeDateUnavailability).
+ * - Sostituisce il fetch one-shot con listener realtime (onSnapshot) su:
+ *     - collection "slot_preferences"
+ *     - collection "date_unavailabilities"
+ *   per i player del girone (chunking fino a 10 ids per query).
  *
- * Comportamento:
- * - lo storage rimane per slotId; la visualizzazione progressivamente raggruppa per orario di inizio.
+ * Questo assicura che dopo che una scrittura è stata effettuata essa sia vista immediatamente dalla UI e sopravviva al reload.
  */
 
 type Props = {
@@ -49,7 +48,6 @@ function formatDisplayDateKey(key: string) {
   return key;
 }
 
-// Format start time as requested: "08:00", "09:30", etc. (leading zero, colon)
 function formatHHMMFromIso(iso?: string) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -57,23 +55,6 @@ function formatHHMMFromIso(iso?: string) {
   const h = pad2(d.getHours());
   const m = pad2(d.getMinutes());
   return `${h}:${m}`;
-}
-
-function formatTimeRangeFromSlot(slot: TimeSlot, defaultDurationMinutes = 60) {
-  const startIso = (slot as any).start ?? (slot as any).time ?? null;
-  if (!startIso) return "";
-  const start = new Date(startIso);
-  let endIso = (slot as any).end ?? (slot as any).endTime ?? null;
-  let end: Date;
-  if (endIso) {
-    end = new Date(endIso);
-    if (isNaN(end.getTime())) {
-      end = new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
-    }
-  } else {
-    end = new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
-  }
-  return `${pad2(start.getHours())}:${pad2(start.getMinutes())}-${pad2(end.getHours())}:${pad2(end.getMinutes())}`;
 }
 
 export default function AvailabilityTab({ event, tournament, selectedGroup, loggedInPlayerId }: Props) {
@@ -136,7 +117,6 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
       if (!m[key]) m[key] = [];
       m[key].push(s);
     });
-    // sort each date's slots by start
     Object.keys(m).forEach(k => {
       m[k].sort((a, b) => {
         const ta = new Date((a as any).start ?? (a as any).time).getTime();
@@ -147,51 +127,89 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     return m;
   }, [futureSlots]);
 
+  // local ui state for prefs / date-unavailabilities
   const [loading, setLoading] = useState(true);
-
-  // maps:
-  // slotPrefMap[playerId] = Set(slotId)
-  // dateUnavailMap[playerId] = Set(dateKey)
   const [slotPrefMap, setSlotPrefMap] = useState<Record<string, Set<string>>>({});
   const [dateUnavailMap, setDateUnavailMap] = useState<Record<string, Set<string>>>({});
 
+  // --- realtime listeners for slot_preferences and date_unavailabilities ---
   useEffect(() => {
-    let mounted = true;
-    async function load() {
-      setLoading(true);
-      try {
-        const [slotPrefs, dateUnavails] = await Promise.all([
-          getSlotPreferencesForPlayers(participantIds),
-          getDateUnavailabilitiesForPlayers(participantIds, dateKeys[0] ?? "", dateKeys[dateKeys.length - 1] ?? "")
-        ]);
-
-        const sMap: Record<string, Set<string>> = {};
-        slotPrefs.forEach(p => {
-          if (!sMap[p.playerId]) sMap[p.playerId] = new Set<string>();
-          if (p.isPreferred) sMap[p.playerId].add(p.slotId);
-        });
-
-        const dMap: Record<string, Set<string>> = {};
-        dateUnavails.forEach(d => {
-          if (!dMap[d.playerId]) dMap[d.playerId] = new Set<string>();
-          if (d.unavailable) dMap[d.playerId].add(d.date);
-        });
-
-        if (mounted) {
-          setSlotPrefMap(sMap);
-          setDateUnavailMap(dMap);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
+    if (!participantIds || participantIds.length === 0) {
+      setSlotPrefMap({});
+      setDateUnavailMap({});
+      setLoading(false);
+      return;
     }
-    load();
-    return () => { mounted = false; };
-  }, [participantIds, dateKeys.join(","), tournament.id, event.id]);
 
-  // toggle slot preference
+    setLoading(true);
+    const unsubscribes: (() => void)[] = [];
+
+    // Firestore 'in' supports up to 10 values — chunk participantIds
+    const CHUNK = 10;
+    for (let i = 0; i < participantIds.length; i += CHUNK) {
+      const chunk = participantIds.slice(i, i + CHUNK);
+
+      // slot preferences listener
+      const prefCol = collection(db, "slot_preferences");
+      const prefQ = query(prefCol, where("playerId", "in", chunk));
+      const unsubPref = onSnapshot(prefQ, snap => {
+        // rebuild entire map merging across chunks
+        setSlotPrefMap(prevMap => {
+          // start from prevMap but we'll recreate global for all participants from all active snapshots
+          // to ensure correctness, collect from all subscriptions by reading from each snapshot result
+          // Simpler: we will gather current docs across all active prefQ snapshots by storing them externally.
+          // Because we are in a multi-snapshot environment, easiest approach is to rebuild from all docs in DB each time:
+          // But to avoid extra reads, we merge per-snapshot into previous — acceptable here:
+          const copy = { ...(prevMap || {}) };
+          // remove entries for players present in this chunk (we'll recalc)
+          chunk.forEach(pid => { copy[pid] = new Set<string>(); });
+          snap.docs.forEach(d => {
+            const data = d.data() as any;
+            const pid = data.playerId as string;
+            const slotId = data.slotId as string;
+            const isPreferred = data.isPreferred === true;
+            if (!copy[pid]) copy[pid] = new Set<string>();
+            if (isPreferred) copy[pid].add(slotId);
+            else copy[pid].delete(slotId);
+          });
+          return copy;
+        });
+      });
+      unsubscribes.push(unsubPref);
+
+      // date unavailability listener
+      const dateCol = collection(db, "date_unavailabilities");
+      const dateQ = query(dateCol, where("playerId", "in", chunk));
+      const unsubDate = onSnapshot(dateQ, snap => {
+        setDateUnavailMap(prevMap => {
+          const copy = { ...(prevMap || {}) };
+          // reset chunk players
+          chunk.forEach(pid => { copy[pid] = new Set<string>(); });
+          snap.docs.forEach(d => {
+            const data = d.data() as any;
+            const pid = data.playerId as string;
+            const date = data.date as string;
+            const unavailable = data.unavailable === true;
+            if (!copy[pid]) copy[pid] = new Set<string>();
+            if (unavailable) copy[pid].add(date);
+            else copy[pid].delete(date);
+          });
+          return copy;
+        });
+      });
+      unsubscribes.push(unsubDate);
+    }
+
+    // when at least one listener attached mark loading false after a tick
+    const id = setTimeout(() => setLoading(false), 200);
+    return () => {
+      clearTimeout(id);
+      unsubscribes.forEach(u => u());
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participantIds.join(",")]); // re-run if participants change
+
+  // Toggle slot preference: write then local snapshot will update from listener
   async function toggleMySlot(slotId: string) {
     if (!loggedInPlayerId) return;
     const mySet = slotPrefMap[loggedInPlayerId] ?? new Set<string>();
@@ -199,23 +217,16 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     try {
       if (!has) {
         await setSlotPreference(loggedInPlayerId, slotId, true);
-        setSlotPrefMap(m => ({ ...m, [loggedInPlayerId]: new Set([...(m[loggedInPlayerId] ? Array.from(m[loggedInPlayerId]) : []), slotId]) }));
       } else {
         await removeSlotPreference(loggedInPlayerId, slotId);
-        setSlotPrefMap(m => {
-          const copy = { ...m };
-          const s = new Set(copy[loggedInPlayerId] ? Array.from(copy[loggedInPlayerId]) : []);
-          s.delete(slotId);
-          copy[loggedInPlayerId] = s;
-          return copy;
-        });
       }
+      // don't update local map here; listener will reflect DB change
     } catch (err) {
-      console.error(err);
+      console.error("Errore salvataggio preferenza slot:", err);
     }
   }
 
-  // toggle date unavailability
+  // Toggle date unavailability: write then listener updates state
   async function toggleMyDateUnavail(dateKey: string) {
     if (!loggedInPlayerId) return;
     const mySet = dateUnavailMap[loggedInPlayerId] ?? new Set<string>();
@@ -223,25 +234,16 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     try {
       if (!has) {
         await setDateUnavailability(loggedInPlayerId, dateKey, true);
-        setDateUnavailMap(m => ({ ...m, [loggedInPlayerId]: new Set([...(m[loggedInPlayerId] ? Array.from(m[loggedInPlayerId]) : []), dateKey]) }));
       } else {
         await removeDateUnavailability(loggedInPlayerId, dateKey);
-        setDateUnavailMap(m => {
-          const copy = { ...m };
-          const s = new Set(copy[loggedInPlayerId] ? Array.from(copy[loggedInPlayerId]) : []);
-          s.delete(dateKey);
-          copy[loggedInPlayerId] = s;
-          return copy;
-        });
       }
     } catch (err) {
-      console.error(err);
+      console.error("Errore salvataggio non-disponibilità per data:", err);
     }
   }
 
   if (loading) return <div>Caricamento disponibilità…</div>;
 
-  // helper to check participant availability on a given dateKey
   function isParticipantUnavailableOn(pId: string, dateKey: string) {
     return !!(dateUnavailMap[pId]?.has(dateKey));
   }
@@ -318,9 +320,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                       <td className="py-2 pr-4 font-medium">{p.name}</td>
                       {dateKeys.map(dk => {
                         const unavailable = isParticipantUnavailableOn(p.id, dk);
-                        // find slots for this date
                         const slotsForDate = dateSlotsMap[dk] ?? [];
-                        // find which of these slots participant selected
                         const selectedSlotIds = Array.from(slotPrefMap[p.id] ?? new Set<string>());
                         const selectedSlotsOnDate = slotsForDate.filter(s => {
                           const sid = (s as any).id ?? (s as any).time ?? JSON.stringify(s);
@@ -341,7 +341,6 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                                   <div className="flex flex-wrap gap-2">
                                     {sortedTimes.map(time => (
                                       <div key={time}>
-                                        {/* Time text in green, no outline or background, single start time only */}
                                         <span className="font-semibold text-xs text-green-600">{time}</span>
                                       </div>
                                     ))}
@@ -361,7 +360,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
             </div>
           )}
 
-          {/* Slots list (below table) - SHOW FULL DETAILS: date, start time (green), location, field */}
+          {/* Slots list (below table) - SHOW FULL DETAILS */}
           <div className="mt-6">
             <h4 className="font-semibold mb-3">Slot futuri creati dall'amministratore</h4>
             {futureSlots.length === 0 ? (
@@ -381,11 +380,8 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                   return (
                     <div key={slotId} className="bg-primary p-3 rounded-lg border border-tertiary flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div>
-                        {/* Date small */}
                         <div className="text-sm text-text-secondary mb-1">{formatDisplayDateKey(slotDateKey)}</div>
-                        {/* Start time in green (prominent), single hour */}
                         <div className="font-semibold text-green-600 mb-1">{hhmm}</div>
-                        {/* FULL details: location and field */}
                         <div className="text-sm text-text-secondary">
                           {location}{location && field ? " - " : ""}{field}
                         </div>
