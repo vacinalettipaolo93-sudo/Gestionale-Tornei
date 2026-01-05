@@ -8,20 +8,18 @@ import {
   getSlotPreferencesForPlayers,
   setSlotPreference,
   removeSlotPreference,
+  getDateUnavailabilitiesForPlayers,
+  setDateUnavailability,
+  removeDateUnavailability,
 } from "../services/availabilityService";
 
 /**
- * Disponibilità semplificata (mostra solo slot futuri e non già prenotati):
- * - titolo: "Disponibilità di gioco"
- * - stato globale: disponibile (default) / non disponibile (override persisted)
- * - lista slots creati dall'amministratore: l'utente può marcarsi come "voglio giocare" su uno slot (toggle)
+ * Disponibilità di gioco estesa:
+ * - mantiene il toggle globale (disponibile / non disponibile) se vuoi ancora usarlo
+ * - aggiunge toggle "Non disponibile" per singole date (YYYY-MM-DD) prese dagli slot futuri
+ * - lista slot futuri (esclude slot già prenotati) su cui segnare interesse
  *
- * Ora: esclude gli slot già prenotati da altre partite (slotId presenti nelle matches con status scheduled/completed)
- *
- * Props:
- * - event, tournament: per reperire lista slot e lista partecipanti
- * - selectedGroup: il girone corrente
- * - loggedInPlayerId: id del giocatore loggato (player.id)
+ * Nota: le date visualizzate sono le date (YYYY-MM-DD) estratte dagli slot futuri creati dall'amministratore.
  */
 
 type Props = {
@@ -30,6 +28,21 @@ type Props = {
   selectedGroup: Group;
   loggedInPlayerId?: string;
 };
+
+function formatDateKeyFromIso(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`; // YYYY-MM-DD
+}
+
+function formatDisplayDateKey(key: string) {
+  const parts = key.split("-");
+  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+  return key;
+}
 
 function formatDateTime(iso?: string) {
   if (!iso) return "";
@@ -51,12 +64,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     ? (tournament.timeSlots as any as TimeSlot[])
     : (Array.isArray(event.globalTimeSlots) ? (event.globalTimeSlots as any as TimeSlot[]) : []);
 
-  const [globalMap, setGlobalMap] = useState<Record<string, boolean | undefined>>({});
-  const [slotPrefMap, setSlotPrefMap] = useState<Record<string, Set<string>>>({}); // playerId -> set(slotId)
-
-  const [loading, setLoading] = useState(true);
-
-  // compute booked slot ids across the event (matches with slotId and scheduled/completed)
+  // booked slot ids across event
   const bookedSlotIds = useMemo(() => {
     return new Set(
       event.tournaments.flatMap(t =>
@@ -69,40 +77,75 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     );
   }, [event.tournaments]);
 
-  // filter only future slots (strictly greater than now) and exclude booked ones
+  // now and future slots (exclude booked slots)
   const now = useMemo(() => new Date(), []);
-  const slots = useMemo(() => {
+  const futureSlots = useMemo(() => {
     return allSlots.filter(s => {
-      const slotId = (s as any).id ?? (s as any).time ?? null;
-      if (!slotId) return false;
-      if (bookedSlotIds.has(slotId)) return false; // exclude booked slots
       const startIso = (s as any).start ?? (s as any).time ?? null;
       if (!startIso) return false;
       const t = new Date(startIso);
       if (isNaN(t.getTime())) return false;
-      return t.getTime() > now.getTime();
+      if (t.getTime() <= now.getTime()) return false;
+      const slotId = (s as any).id ?? (s as any).time ?? null;
+      if (!slotId) return false;
+      if (bookedSlotIds.has(slotId)) return false;
+      return true;
     });
   }, [allSlots, now, bookedSlotIds]);
+
+  // derive unique date keys (YYYY-MM-DD) from futureSlots, sorted
+  const dateKeys = useMemo(() => {
+    const set = new Set<string>();
+    futureSlots.forEach(s => {
+      const startIso = (s as any).start ?? (s as any).time ?? null;
+      if (!startIso) return;
+      const key = formatDateKeyFromIso(startIso);
+      if (key) set.add(key);
+    });
+    return Array.from(set).sort();
+  }, [futureSlots]);
+
+  const [loading, setLoading] = useState(true);
+
+  // maps:
+  // globalMap[playerId] = boolean | undefined
+  // slotPrefMap[playerId] = Set(slotId)
+  // dateUnavailMap[playerId] = Set(dateKey)
+  const [globalMap, setGlobalMap] = useState<Record<string, boolean | undefined>>({});
+  const [slotPrefMap, setSlotPrefMap] = useState<Record<string, Set<string>>>({});
+  const [dateUnavailMap, setDateUnavailMap] = useState<Record<string, Set<string>>>({});
 
   useEffect(() => {
     let mounted = true;
     async function load() {
       setLoading(true);
       try {
-        // globals
-        const globals = await getGlobalAvailabilitiesForPlayers(participantIds);
+        const [globals, slotPrefs, dateUnavails] = await Promise.all([
+          getGlobalAvailabilitiesForPlayers(participantIds),
+          getSlotPreferencesForPlayers(participantIds),
+          // fetch date unavailabilities limited to dateKeys range if any
+          getDateUnavailabilitiesForPlayers(participantIds, dateKeys[0] ?? "", dateKeys[dateKeys.length - 1] ?? "")
+        ]);
+
         const gMap: Record<string, boolean | undefined> = {};
         globals.forEach(g => { gMap[g.playerId] = g.available; });
-        // slot prefs
-        const prefs = await getSlotPreferencesForPlayers(participantIds);
+
         const sMap: Record<string, Set<string>> = {};
-        prefs.forEach(p => {
+        slotPrefs.forEach(p => {
           if (!sMap[p.playerId]) sMap[p.playerId] = new Set<string>();
           if (p.isPreferred) sMap[p.playerId].add(p.slotId);
         });
+
+        const dMap: Record<string, Set<string>> = {};
+        dateUnavails.forEach(d => {
+          if (!dMap[d.playerId]) dMap[d.playerId] = new Set<string>();
+          if (d.unavailable) dMap[d.playerId].add(d.date);
+        });
+
         if (mounted) {
           setGlobalMap(gMap);
           setSlotPrefMap(sMap);
+          setDateUnavailMap(dMap);
         }
       } catch (err) {
         console.error(err);
@@ -112,19 +155,17 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     }
     load();
     return () => { mounted = false; };
-  }, [participantIds, tournament.id, event.id]);
+  }, [participantIds, dateKeys.join(","), tournament.id, event.id]);
 
-  // helper: toggle global for logged in player
+  // toggle global availability (unchanged)
   async function toggleMyGlobal() {
     if (!loggedInPlayerId) return;
     const current = globalMap[loggedInPlayerId];
     try {
       if (current === undefined) {
-        // default available -> mark non available
         await setGlobalAvailability(loggedInPlayerId, false);
         setGlobalMap(m => ({ ...m, [loggedInPlayerId]: false }));
       } else {
-        // if exists -> remove setting to revert to default (available)
         await removeGlobalAvailability(loggedInPlayerId);
         const next = { ...globalMap };
         delete next[loggedInPlayerId];
@@ -135,7 +176,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     }
   }
 
-  // helper: toggle slot pref for logged in player
+  // toggle slot preference (unchanged)
   async function toggleMySlot(slotId: string) {
     if (!loggedInPlayerId) return;
     const mySet = slotPrefMap[loggedInPlayerId] ?? new Set<string>();
@@ -159,60 +200,103 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     }
   }
 
+  // toggle date unavailability (new)
+  async function toggleMyDateUnavail(dateKey: string) {
+    if (!loggedInPlayerId) return;
+    const mySet = dateUnavailMap[loggedInPlayerId] ?? new Set<string>();
+    const has = mySet.has(dateKey);
+    try {
+      if (!has) {
+        await setDateUnavailability(loggedInPlayerId, dateKey, true);
+        setDateUnavailMap(m => ({ ...m, [loggedInPlayerId]: new Set([...(m[loggedInPlayerId] ? Array.from(m[loggedInPlayerId]) : []), dateKey]) }));
+      } else {
+        await removeDateUnavailability(loggedInPlayerId, dateKey);
+        setDateUnavailMap(m => {
+          const copy = { ...m };
+          const s = new Set(copy[loggedInPlayerId] ? Array.from(copy[loggedInPlayerId]) : []);
+          s.delete(dateKey);
+          copy[loggedInPlayerId] = s;
+          return copy;
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   if (loading) return <div>Caricamento disponibilità…</div>;
 
   return (
-    <div className="max-w-5xl mx-auto bg-secondary rounded-xl p-6 shadow space-y-6">
+    <div className="max-w-6xl mx-auto bg-secondary rounded-xl p-6 shadow space-y-6">
       <h3 className="text-xl font-bold text-accent">Disponibilità di gioco</h3>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Colonna sinistra: stato globale utente */}
-        <div className="bg-primary p-4 rounded-lg border border-tertiary">
-          <h4 className="font-semibold mb-3">Stato generale</h4>
+        {/* Left column: global + per-date controls */}
+        <div className="bg-primary p-4 rounded-lg border border-tertiary space-y-4">
+          <h4 className="font-semibold">Stato generale</h4>
           {loggedInPlayerId ? (
             <>
-              <div className="mb-3">
-                <div className="text-sm text-text-secondary mb-1">Il tuo stato corrente</div>
+              <div className="mb-2">
+                <div className="text-sm text-text-secondary mb-1">Il tuo stato globale</div>
                 <div className={`inline-block px-3 py-2 rounded ${globalMap[loggedInPlayerId] === false ? 'bg-red-100' : 'bg-green-50'} border border-tertiary/30`}>
-                  {globalMap[loggedInPlayerId] === false ? 'Non disponibile' : 'Disponibile (default)'}
+                  {globalMap[loggedInPlayerId] === false ? 'Non disponibile (globale)' : 'Disponibile (default)'}
                 </div>
               </div>
-              <button
-                onClick={toggleMyGlobal}
-                className="bg-accent hover:bg-highlight text-white px-4 py-2 rounded"
-              >
-                {globalMap[loggedInPlayerId] === false ? 'Rendi Disponibile (rimuovi non disponibile)' : 'Segna Non disponibile'}
+              <button onClick={toggleMyGlobal} className="bg-accent hover:bg-highlight text-white px-4 py-2 rounded">
+                {globalMap[loggedInPlayerId] === false ? 'Rendi Disponibile (rimuovi non disponibile)' : 'Segna Non disponibile (globale)'}
               </button>
+
+              <div className="mt-4">
+                <h5 className="font-semibold mb-2">Non disponibile per date</h5>
+                {dateKeys.length === 0 ? (
+                  <div className="text-text-secondary text-sm">Nessuna data futura disponibile (gli slot futuri non sono presenti).</div>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-auto pr-2">
+                    {dateKeys.map(dk => {
+                      const countUnavailable = participants.filter(p => dateUnavailMap[p.id]?.has(dk)).length;
+                      const myUnavail = loggedInPlayerId ? (dateUnavailMap[loggedInPlayerId]?.has(dk) ?? false) : false;
+                      return (
+                        <div key={dk} className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold">{formatDisplayDateKey(dk)}</div>
+                            <div className="text-xs text-text-secondary">{countUnavailable > 0 ? `${countUnavailable} non disponibili` : 'Tutti disponibili'}</div>
+                          </div>
+                          <div>
+                            {loggedInPlayerId ? (
+                              <button
+                                onClick={() => toggleMyDateUnavail(dk)}
+                                className={`px-3 py-2 rounded ${myUnavail ? 'bg-red-600 text-white' : 'bg-tertiary text-text-primary'}`}
+                              >
+                                {myUnavail ? 'Rimosso: Non disponibile' : 'Segna Non disponibile'}
+                              </button>
+                            ) : (
+                              <div className="text-sm text-text-secondary">Login per impostare</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </>
           ) : (
-            <div>Effettua il login per impostare il tuo stato.</div>
+            <div>Effettua il login per impostare le tue disponibilità.</div>
           )}
-
-          <div className="mt-6">
-            <h5 className="font-semibold">Partecipanti — stato veloce</h5>
-            <ul className="mt-2 space-y-2">
-              {participants.map(p => (
-                <li key={p.id} className="flex items-center justify-between">
-                  <div>{p.name}</div>
-                  <div className={`${globalMap[p.id] === false ? 'text-red-600' : 'text-green-600'} font-semibold`}>
-                    {globalMap[p.id] === false ? 'Non disponibile' : 'Disponibile'}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
 
-        {/* Colonna centrale: lista slot e toggle preferenza (esclude slot prenotati) */}
+        {/* Right columns: slots list with interest toggles */}
         <div className="lg:col-span-2">
           <h4 className="font-semibold mb-3">Slot futuri creati dall'amministratore</h4>
-          {slots.length === 0 ? (
+          {futureSlots.length === 0 ? (
             <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuno slot futuro disponibile creato dall'amministratore per questo torneo.</div>
           ) : (
             <div className="space-y-4">
-              {slots.map(slot => {
+              {futureSlots.map(slot => {
                 const slotId = (slot as any).id ?? (slot as any).time ?? JSON.stringify(slot);
-                // count interested players
+                // if slot's date is marked by the user as unavailable, disable toggle for that user
+                const slotDateKey = formatDateKeyFromIso((slot as any).start ?? (slot as any).time ?? "");
+                const myDateUnavail = loggedInPlayerId ? (dateUnavailMap[loggedInPlayerId]?.has(slotDateKey) ?? false) : false;
                 const interested = participants.filter(p => slotPrefMap[p.id]?.has(slotId)).map(p => p.name);
                 const myPref = loggedInPlayerId ? (slotPrefMap[loggedInPlayerId]?.has(slotId) ?? false) : false;
                 return (
@@ -222,18 +306,18 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                       <div className="text-sm text-text-secondary">
                         {(slot as any).location ? `${(slot as any).location}${(slot as any).field ? ` - ${(slot as any).field}` : ''}` : ''}
                       </div>
+                      <div className="text-xs text-text-secondary mt-1">
+                        {interested.length > 0 ? `${interested.length} interessati` : 'Nessuno interessato'}
+                      </div>
+                      {myDateUnavail && <div className="text-xs text-red-600 mt-1">Hai segnato NON disponibile per questa data — non puoi segnare interesse qui.</div>}
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div className="text-sm text-text-secondary mr-2">
-                        {interested.length > 0 ? `${interested.length} interessati` : 'Nessuno interessato'}
-                        {interested.length > 0 && <div className="text-xs mt-1 text-text-secondary/80">{interested.slice(0,5).join(', ')}{interested.length>5? '...' : ''}</div>}
-                      </div>
-
                       {loggedInPlayerId ? (
                         <button
                           onClick={() => toggleMySlot(slotId)}
-                          className={`px-3 py-2 rounded font-semibold ${myPref ? 'bg-green-600 text-white' : 'bg-tertiary text-text-primary'}`}
+                          disabled={myDateUnavail}
+                          className={`px-3 py-2 rounded font-semibold ${myPref ? 'bg-green-600 text-white' : 'bg-tertiary text-text-primary'} ${myDateUnavail ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           {myPref ? 'Segnato: Voglio giocare' : 'Segna: Voglio giocare'}
                         </button>
