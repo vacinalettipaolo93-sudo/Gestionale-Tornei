@@ -14,10 +14,10 @@ import {
  * AvailabilityTab — mostra per-date la disponibilità dei partecipanti e, dentro ogni data,
  * quali slot (creati dall'amministratore) ciascun partecipante ha segnato come "voglio giocare".
  *
- * Rispetta le seguenti regole già implementate:
- * - mostra solo slot futuri non prenotati
- * - l'utente può marcare "Non disponibile" per singole date; se lo è, NON può segnare interesse sugli slot di quella data
- * - nella tabella partecipanti vs date si vede "Disponibile"/"Non disponibile" e, se ha segnato slot, si vedono gli orari selezionati
+ * Aggiornamento:
+ * - le etichette orario mostrate nella tabella e nella lista slot ora mostrano SOLO gli orari
+ *   in formato range (es. "08:00-09:00"), testo in rosso, senza contorno né sfondo.
+ * - la lista slot mostra la data in piccolo e il time-range in evidenza rosso.
  *
  * Non modifica altro del progetto.
  */
@@ -28,6 +28,10 @@ type Props = {
   selectedGroup: Group;
   loggedInPlayerId?: string;
 };
+
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
 
 function formatDateKeyFromIso(iso?: string) {
   if (!iso) return "";
@@ -44,23 +48,27 @@ function formatDisplayDateKey(key: string) {
   return key;
 }
 
-function formatDateTime(iso?: string) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
-}
-
 function formatTimeOnly(iso?: string) {
   if (!iso) return "";
   const d = new Date(iso);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${min}`;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatTimeRangeFromSlot(slot: TimeSlot, defaultDurationMinutes = 60) {
+  const startIso = (slot as any).start ?? (slot as any).time ?? null;
+  if (!startIso) return "";
+  const start = new Date(startIso);
+  let endIso = (slot as any).end ?? (slot as any).endTime ?? null;
+  let end: Date;
+  if (endIso) {
+    end = new Date(endIso);
+    if (isNaN(end.getTime())) {
+      end = new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
+    }
+  } else {
+    end = new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
+  }
+  return `${pad(start.getHours())}:${pad(start.getMinutes())}-${pad(end.getHours())}:${pad(end.getMinutes())}`;
 }
 
 export default function AvailabilityTab({ event, tournament, selectedGroup, loggedInPlayerId }: Props) {
@@ -123,7 +131,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
       if (!m[key]) m[key] = [];
       m[key].push(s);
     });
-    // optional: sort each date's slots by start
+    // sort each date's slots by start
     Object.keys(m).forEach(k => {
       m[k].sort((a, b) => {
         const ta = new Date((a as any).start ?? (a as any).time).getTime();
@@ -313,12 +321,11 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                                 {selectedSlotsOnDate.length > 0 ? (
                                   <div className="flex flex-wrap gap-2">
                                     {selectedSlotsOnDate.map(s => {
-                                      const startIso = (s as any).start ?? (s as any).time ?? "";
+                                      const range = formatTimeRangeFromSlot(s);
                                       return (
-                                        <div key={(s as any).id ?? startIso} className="inline-flex items-center gap-2 px-2 py-1 rounded bg-green-50 border border-tertiary/30">
-                                          {/* Time text color made more visible */}
-                                          <span className="font-semibold text-xs text-text-primary">{formatTimeOnly(startIso)}</span>
-                                          <span className="text-xs text-text-secondary">{(s as any).location ?? ""}</span>
+                                        <div key={(s as any).id ?? range} className="">
+                                          {/* Time text in red, no outline or background */}
+                                          <span className="font-semibold text-xs text-red-600">{range}</span>
                                         </div>
                                       );
                                     })}
@@ -351,14 +358,13 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                   const myDateUnavail = loggedInPlayerId ? isParticipantUnavailableOn(loggedInPlayerId, slotDateKey) : false;
                   const interested = participants.filter(p => slotPrefMap[p.id]?.has(slotId)).map(p => p.name);
                   const myPref = loggedInPlayerId ? (slotPrefMap[loggedInPlayerId]?.has(slotId) ?? false) : false;
+                  const range = formatTimeRangeFromSlot(slot);
                   return (
                     <div key={slotId} className="bg-primary p-3 rounded-lg border border-tertiary flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div>
-                        {/* Make the main time text darker for readability */}
-                        <div className="font-semibold text-text-primary">{formatDateTime((slot as any).start ?? (slot as any).time)}</div>
-                        <div className="text-sm text-text-secondary">
-                          {(slot as any).location ? `${(slot as any).location}${(slot as any).field ? ` - ${(slot as any).field}` : ''}` : ''}
-                        </div>
+                        {/* Date small, time range in red, only time-range displayed prominently */}
+                        <div className="text-sm text-text-secondary mb-1">{formatDisplayDateKey(slotDateKey)}</div>
+                        <div className="font-semibold text-red-600">{range}</div>
                         <div className="text-xs text-text-secondary mt-1">
                           {interested.length > 0 ? `${interested.length} interessati: ${interested.slice(0,5).join(', ')}${interested.length>5?'...':''}` : 'Nessuno interessato'}
                         </div>
