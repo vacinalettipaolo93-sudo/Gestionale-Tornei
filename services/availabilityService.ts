@@ -14,10 +14,13 @@ import {
 import { db } from "../firebase";
 
 /**
- * Questo servizio gestisce:
- * - override di disponibilità per date/slot (funzionalità precedente, lasciata per compatibilità)
- * - impostazione globale della disponibilità per un giocatore (collection "availability_settings")
- * - preferenze per slot creati dall'amministratore (collection "slot_preferences")
+ * Servizio disponibilità
+ *
+ * Collections:
+ * - availabilities (legacy per data+slot)
+ * - availability_settings (global on/off per player)
+ * - slot_preferences (preference per slot)
+ * - date_unavailabilities (per-player per-date non disponibilità)
  */
 
 // --- tipi ---
@@ -50,10 +53,20 @@ export interface GlobalAvailability {
   updatedAt?: any;
 }
 
+export interface DateUnavailability {
+  id?: string; // doc id = `${playerId}_${YYYY-MM-DD}`
+  playerId: string;
+  date: string; // YYYY-MM-DD
+  unavailable: boolean; // true = not available for that date
+  createdAt?: any;
+  updatedAt?: any;
+}
+
 // --- collections ---
-const AVAIL_COL = "availabilities"; // legacy/compat
+const AVAIL_COL = "availabilities"; // legacy
 const GLOBAL_COL = "availability_settings";
 const SLOT_PREF_COL = "slot_preferences";
+const DATE_UNAVAIL_COL = "date_unavailabilities";
 
 // --- legacy: per-date availabilities (lasciamo le funzioni se servono) ---
 function docIdAvail(playerId: string, date: string, slot: string) {
@@ -100,7 +113,6 @@ export async function getGlobalAvailability(playerId: string): Promise<GlobalAva
 export async function getGlobalAvailabilitiesForPlayers(playerIds: string[]): Promise<GlobalAvailability[]> {
   const results: GlobalAvailability[] = [];
   if (!playerIds || playerIds.length === 0) return results;
-  // Firestore 'in' supports up to 10 items
   const CHUNK = 10;
   for (let i = 0; i < playerIds.length; i += CHUNK) {
     const chunk = playerIds.slice(i, i + CHUNK);
@@ -108,6 +120,43 @@ export async function getGlobalAvailabilitiesForPlayers(playerIds: string[]): Pr
     const q = query(c, where("playerId", "in", chunk));
     const snap = await getDocs(q);
     snap.docs.forEach(d => results.push({ id: d.id, ...(d.data() as GlobalAvailability) }));
+  }
+  return results;
+}
+
+// --- DATE unavailabilities (per-player per-date) ---
+function docIdDateUnavail(playerId: string, date: string) {
+  return `${playerId}_${date}`;
+}
+
+export async function setDateUnavailability(playerId: string, date: string, unavailable: boolean): Promise<void> {
+  const id = docIdDateUnavail(playerId, date);
+  const ref = doc(db, DATE_UNAVAIL_COL, id);
+  await setDoc(ref, { playerId, date, unavailable, updatedAt: serverTimestamp(), createdAt: serverTimestamp() }, { merge: true });
+}
+
+export async function removeDateUnavailability(playerId: string, date: string): Promise<void> {
+  const id = docIdDateUnavail(playerId, date);
+  const ref = doc(db, DATE_UNAVAIL_COL, id);
+  await deleteDoc(ref);
+}
+
+export async function getDateUnavailabilitiesForPlayers(playerIds: string[], startDate?: string, endDate?: string): Promise<DateUnavailability[]> {
+  const results: DateUnavailability[] = [];
+  if (!playerIds || playerIds.length === 0) return results;
+  const CHUNK = 10;
+  for (let i = 0; i < playerIds.length; i += CHUNK) {
+    const chunk = playerIds.slice(i, i + CHUNK);
+    const c = collection(db, DATE_UNAVAIL_COL);
+    // Build query: playerId in chunk, optional date range
+    let q;
+    if (startDate && endDate) {
+      q = query(c, where("playerId", "in", chunk), where("date", ">=", startDate), where("date", "<=", endDate), orderBy("date", "asc"));
+    } else {
+      q = query(c, where("playerId", "in", chunk));
+    }
+    const snap = await getDocs(q);
+    snap.docs.forEach(d => results.push({ id: d.id, ...(d.data() as DateUnavailability) }));
   }
   return results;
 }
