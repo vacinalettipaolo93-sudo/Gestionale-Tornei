@@ -15,9 +15,10 @@ import {
  * quali slot (creati dall'amministratore) ciascun partecipante ha segnato come "voglio giocare".
  *
  * Aggiornamento:
- * - le etichette orario mostrate nella tabella e nella lista slot ora mostrano SOLO gli orari
- *   in formato range (es. "08:00-09:00"), testo in rosso, senza contorno né sfondo.
- * - la lista slot mostra la data in piccolo e il time-range in evidenza rosso.
+ * - nella tabella partecipanti vs date, le etichette orario sono SOLO in formato range (es. "08:00-09:00"),
+ *   testo in verde, senza contorno né sfondo.
+ * - nella lista "Slot futuri creati dall'amministratore" vengono mostrate TUTTE le informazioni:
+ *   data, time-range (in evidenza verde), location e campo.
  *
  * Non modifica altro del progetto.
  */
@@ -324,8 +325,8 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                                       const range = formatTimeRangeFromSlot(s);
                                       return (
                                         <div key={(s as any).id ?? range} className="">
-                                          {/* Time text in red, no outline or background */}
-                                          <span className="font-semibold text-xs text-red-600">{range}</span>
+                                          {/* Time text in green, no outline or background */}
+                                          <span className="font-semibold text-xs text-green-600">{range}</span>
                                         </div>
                                       );
                                     })}
@@ -345,7 +346,7 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
             </div>
           )}
 
-          {/* Slots list (below table) */}
+          {/* Slots list (below table) - SHOW FULL DETAILS: date, time-range (green), location, field */}
           <div className="mt-6">
             <h4 className="font-semibold mb-3">Slot futuri creati dall'amministratore</h4>
             {futureSlots.length === 0 ? (
@@ -359,12 +360,19 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                   const interested = participants.filter(p => slotPrefMap[p.id]?.has(slotId)).map(p => p.name);
                   const myPref = loggedInPlayerId ? (slotPrefMap[loggedInPlayerId]?.has(slotId) ?? false) : false;
                   const range = formatTimeRangeFromSlot(slot);
+                  const location = (slot as any).location ?? "";
+                  const field = (slot as any).field ?? "";
                   return (
                     <div key={slotId} className="bg-primary p-3 rounded-lg border border-tertiary flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div>
-                        {/* Date small, time range in red, only time-range displayed prominently */}
+                        {/* Date small */}
                         <div className="text-sm text-text-secondary mb-1">{formatDisplayDateKey(slotDateKey)}</div>
-                        <div className="font-semibold text-red-600">{range}</div>
+                        {/* Time range in green (prominent) */}
+                        <div className="font-semibold text-green-600 mb-1">{range}</div>
+                        {/* FULL details: location and field */}
+                        <div className="text-sm text-text-secondary">
+                          {location}{location && field ? " - " : ""}{field}
+                        </div>
                         <div className="text-xs text-text-secondary mt-1">
                           {interested.length > 0 ? `${interested.length} interessati: ${interested.slice(0,5).join(', ')}${interested.length>5?'...':''}` : 'Nessuno interessato'}
                         </div>
