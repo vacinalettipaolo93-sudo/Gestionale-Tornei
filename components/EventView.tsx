@@ -334,6 +334,12 @@ const EventView: React.FC<EventViewProps> = ({
                     >
                       Slot Disponibili
                     </button>
+                    <button
+                    onClick={(e) => { e.stopPropagation(); onSelectTournament(tournament, 'availability'); }}
+                    className="px-3 py-1 rounded-md bg-tertiary text-text-primary text-sm font-semibold hover:bg-tertiary/90 transition"
+                    >
+                      Disponibilità
+                    </button>
                   </div>
 
                   <div className="flex items-center gap-3 mb-2 mt-4">
