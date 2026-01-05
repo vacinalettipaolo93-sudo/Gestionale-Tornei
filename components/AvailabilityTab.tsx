@@ -11,10 +11,12 @@ import {
 } from "../services/availabilityService";
 
 /**
- * Disponibilità semplificata (mostra solo slot futuri):
+ * Disponibilità semplificata (mostra solo slot futuri e non già prenotati):
  * - titolo: "Disponibilità di gioco"
  * - stato globale: disponibile (default) / non disponibile (override persisted)
  * - lista slots creati dall'amministratore: l'utente può marcarsi come "voglio giocare" su uno slot (toggle)
+ *
+ * Ora: esclude gli slot già prenotati da altre partite (slotId presenti nelle matches con status scheduled/completed)
  *
  * Props:
  * - event, tournament: per reperire lista slot e lista partecipanti
@@ -54,16 +56,33 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
 
   const [loading, setLoading] = useState(true);
 
-  // filter only future slots (strictly greater than now)
+  // compute booked slot ids across the event (matches with slotId and scheduled/completed)
+  const bookedSlotIds = useMemo(() => {
+    return new Set(
+      event.tournaments.flatMap(t =>
+        t.groups ? t.groups.flatMap(g =>
+          g.matches
+            .filter(m => m.slotId && (m.status === "scheduled" || m.status === "completed"))
+            .map(m => m.slotId!)
+        ) : []
+      )
+    );
+  }, [event.tournaments]);
+
+  // filter only future slots (strictly greater than now) and exclude booked ones
   const now = useMemo(() => new Date(), []);
   const slots = useMemo(() => {
     return allSlots.filter(s => {
+      const slotId = (s as any).id ?? (s as any).time ?? null;
+      if (!slotId) return false;
+      if (bookedSlotIds.has(slotId)) return false; // exclude booked slots
       const startIso = (s as any).start ?? (s as any).time ?? null;
       if (!startIso) return false;
       const t = new Date(startIso);
-      return !isNaN(t.getTime()) && t.getTime() > now.getTime();
+      if (isNaN(t.getTime())) return false;
+      return t.getTime() > now.getTime();
     });
-  }, [allSlots, now]);
+  }, [allSlots, now, bookedSlotIds]);
 
   useEffect(() => {
     let mounted = true;
@@ -184,11 +203,11 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
           </div>
         </div>
 
-        {/* Colonna centrale: lista slot e toggle preferenza */}
+        {/* Colonna centrale: lista slot e toggle preferenza (esclude slot prenotati) */}
         <div className="lg:col-span-2">
           <h4 className="font-semibold mb-3">Slot futuri creati dall'amministratore</h4>
           {slots.length === 0 ? (
-            <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuno slot futuro creato dall'amministratore per questo torneo.</div>
+            <div className="bg-primary p-4 rounded-lg border border-tertiary">Nessuno slot futuro disponibile creato dall'amministratore per questo torneo.</div>
           ) : (
             <div className="space-y-4">
               {slots.map(slot => {
