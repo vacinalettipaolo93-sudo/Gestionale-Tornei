@@ -14,11 +14,13 @@ import {
  * AvailabilityTab — mostra per-date la disponibilità dei partecipanti e, dentro ogni data,
  * quali slot (creati dall'amministratore) ciascun partecipante ha segnato come "voglio giocare".
  *
- * Aggiornamento richiesto:
- * - nelle celle della tabella mostra SOLO l'orario di inizio in formato "08:00", "09:30" ecc. (con leading zero).
- * - nella lista "Slot futuri creati dall'amministratore" mostra la data, l'orario di inizio (verde) e poi location/campo.
+ * Aggiornamento:
+ * - nella tabella, se uno stesso giocatore ha segnato più slot nello stesso orario (es. 08:00 su campo 1 e 08:00 su campo 3),
+ *   verrà mostrato solo un'unica etichetta "08:00" (non replicata).
+ * - nella lista slot futuri vengono comunque mostrate tutte le entry (campo + orario).
  *
- * Non modifica altro del progetto.
+ * Comportamento:
+ * - lo storage rimane per slotId; la visualizzazione progressivamente raggruppa per orario di inizio.
  */
 
 type Props = {
@@ -244,6 +246,15 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
     return !!(dateUnavailMap[pId]?.has(dateKey));
   }
 
+  // helper: sort hh:mm strings
+  function sortHHMMArray(arr: string[]) {
+    return arr.slice().sort((a, b) => {
+      const [ah, am] = a.split(":").map(Number);
+      const [bh, bm] = b.split(":").map(Number);
+      return ah !== bh ? ah - bh : am - bm;
+    });
+  }
+
   return (
     <div className="max-w-6xl mx-auto bg-secondary rounded-xl p-6 shadow space-y-6">
       <h3 className="text-xl font-bold text-accent">Disponibilità di gioco</h3>
@@ -315,24 +326,25 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                           const sid = (s as any).id ?? (s as any).time ?? JSON.stringify(s);
                           return selectedSlotIds.includes(sid);
                         });
+
+                        // Create unique hh:mm list so same start times across fields are shown only once
+                        const uniqueTimes = Array.from(new Set(selectedSlotsOnDate.map(s => formatHHMMFromIso((s as any).start ?? (s as any).time ?? ""))));
+                        const sortedTimes = sortHHMMArray(uniqueTimes.filter(Boolean));
+
                         return (
                           <td key={dk} className="px-3 py-2 align-top">
                             {unavailable ? (
                               <div className="text-red-600 font-semibold">Non disponibile</div>
                             ) : (
                               <>
-                                {selectedSlotsOnDate.length > 0 ? (
+                                {sortedTimes.length > 0 ? (
                                   <div className="flex flex-wrap gap-2">
-                                    {selectedSlotsOnDate.map(s => {
-                                      const startIso = (s as any).start ?? (s as any).time ?? "";
-                                      const hhmm = formatHHMMFromIso(startIso); // e.g. "08:00"
-                                      return (
-                                        <div key={(s as any).id ?? startIso} className="">
-                                          {/* Time text in green, no outline or background, single hour only */}
-                                          <span className="font-semibold text-xs text-green-600">{hhmm}</span>
-                                        </div>
-                                      );
-                                    })}
+                                    {sortedTimes.map(time => (
+                                      <div key={time}>
+                                        {/* Time text in green, no outline or background, single start time only */}
+                                        <span className="font-semibold text-xs text-green-600">{time}</span>
+                                      </div>
+                                    ))}
                                   </div>
                                 ) : (
                                   <div className="text-green-600 font-semibold">Disponibile</div>
