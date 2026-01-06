@@ -19,6 +19,9 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
  *     - collection "date_unavailabilities"
  *   per i player del girone (chunking fino a 10 ids per query).
  *
+ * - Robust slot discovery: unisce tournament.timeSlots + event.globalTimeSlots,
+ *   normalizza id e start date, deduplica e filtra solo quelli futuri non prenotati.
+ *
  * Questo assicura che dopo che una scrittura è stata effettuata essa sia vista immediatamente dalla UI e sopravviva al reload.
  */
 
@@ -57,51 +60,128 @@ function formatHHMMFromIso(iso?: string) {
   return `${h}:${m}`;
 }
 
+/**
+ * Robust helpers for slot normalization/parsing
+ */
+function normalizeSlotIdRaw(s: any) {
+  if (s == null) return "";
+  if (s.id) return String(s.id);
+  if (s.slotId) return String(s.slotId);
+  if (s.timeSlotId) return String(s.timeSlotId);
+  // fallback composite key (start|location|field)
+  const start = s.start ?? s.time ?? s.datetime ?? s.date ?? "";
+  const loc = s.location ?? "";
+  const field = s.field ?? "";
+  return `${String(start)}|${loc}|${field}`;
+}
+
+function parseStartToMsRaw(s: any) {
+  if (!s) return NaN;
+  const raw = s.start ?? s.time ?? s.datetime ?? s.date ?? s;
+  // number?
+  if (typeof raw === "number") {
+    return raw < 1e12 ? raw * 1000 : raw;
+  }
+  let str = String(raw);
+  // try ISO parse
+  let t = Date.parse(str);
+  if (isNaN(t)) {
+    // try replacing space with T
+    t = Date.parse(str.replace(" ", "T"));
+  }
+  if (isNaN(t)) {
+    // try numeric string
+    const n = Number(str);
+    if (!isNaN(n)) t = n < 1e12 ? n * 1000 : n;
+  }
+  return t;
+}
+
 export default function AvailabilityTab({ event, tournament, selectedGroup, loggedInPlayerId }: Props) {
   const participantIds = selectedGroup.playerIds ?? [];
   const participants = participantIds.map(pid => event.players.find(p => p.id === pid)).filter(Boolean) as Player[];
 
-  // pick slots: prefer tournament.timeSlots then event.globalTimeSlots
-  const allSlots: TimeSlot[] = Array.isArray(tournament.timeSlots) && tournament.timeSlots.length > 0
-    ? (tournament.timeSlots as any as TimeSlot[])
-    : (Array.isArray(event.globalTimeSlots) ? (event.globalTimeSlots as any as TimeSlot[]) : []);
+  // --- robust slot discovery: unisci tournament.timeSlots + event.globalTimeSlots,
+  // normalizza id e data, deduplica e filtra solo quelli futuri non prenotati ---
+  const rawSlots: TimeSlot[] = [
+    ...(Array.isArray(tournament.timeSlots) ? (tournament.timeSlots as any as TimeSlot[]) : []),
+    ...(Array.isArray(event.globalTimeSlots) ? (event.globalTimeSlots as any as TimeSlot[]) : []),
+  ];
 
-  // booked slot ids across the event (matches with slotId scheduled/completed)
+  // build map deduped by normalized id
+  const slotMap = useMemo(() => {
+    const m = new Map<string, (TimeSlot & { _startMs?: number })>();
+    rawSlots.forEach(s => {
+      const sid = normalizeSlotIdRaw(s);
+      if (!sid) return;
+      const startMs = parseStartToMsRaw(s);
+      const existing = m.get(sid);
+      if (!existing) {
+        m.set(sid, { ...(s as any), id: sid, _startMs: startMs });
+      } else {
+        const exStart = existing._startMs ?? NaN;
+        if (isNaN(exStart) && !isNaN(startMs)) {
+          m.set(sid, { ...(s as any), id: sid, _startMs: startMs });
+        } else if (!isNaN(startMs) && startMs < exStart) {
+          m.set(sid, { ...(s as any), id: sid, _startMs: startMs });
+        }
+      }
+    });
+    return m;
+  }, [rawSlots]);
+
+  // create normalized allSlots array
+  const allSlots = useMemo(() => {
+    return Array.from(slotMap.values());
+  }, [slotMap]);
+
+  // booked slot ids across the event (matches with slotId scheduled/completed) - normalized set
   const bookedSlotIds = useMemo(() => {
-    return new Set(
-      event.tournaments.flatMap(t =>
-        t.groups ? t.groups.flatMap(g =>
-          g.matches
-            .filter(m => m.slotId && (m.status === "scheduled" || m.status === "completed"))
-            .map(m => m.slotId!)
-        ) : []
-      )
-    );
+    const set = new Set<string>();
+    (event.tournaments ?? []).forEach(t => {
+      (t.groups ?? []).forEach(g => {
+        (g.matches ?? []).forEach(m => {
+          if (m.slotId) {
+            set.add(String(m.slotId));
+          }
+          if (m.scheduledTime) {
+            // add normalized scheduledTime possibilities (ISO)
+            const iso = String(m.scheduledTime);
+            set.add(iso);
+            // also add ms numeric form
+            const ms = parseStartToMsRaw({ start: m.scheduledTime });
+            if (!isNaN(ms)) set.add(String(ms));
+          }
+        });
+      });
+    });
+    return set;
   }, [event.tournaments]);
 
   // now and future slots (exclude booked)
-  const now = useMemo(() => new Date(), []);
+  const nowMs = useMemo(() => Date.now(), []);
   const futureSlots = useMemo(() => {
     return allSlots.filter(s => {
-      const startIso = (s as any).start ?? (s as any).time ?? null;
-      if (!startIso) return false;
-      const t = new Date(startIso);
-      if (isNaN(t.getTime())) return false;
-      if (t.getTime() <= now.getTime()) return false;
-      const slotId = (s as any).id ?? (s as any).time ?? null;
-      if (!slotId) return false;
-      if (bookedSlotIds.has(slotId)) return false;
+      const startMs = (s as any)._startMs ?? parseStartToMsRaw(s);
+      if (!startMs || isNaN(startMs)) return false;
+      if (startMs <= nowMs) return false;
+      const sid = s.id ?? normalizeSlotIdRaw(s);
+      if (!sid) return false;
+      // consider slot booked if bookedSlotIds contains the exact id or start timestamp variants
+      if (bookedSlotIds.has(sid)) return false;
+      if (bookedSlotIds.has(String(startMs))) return false;
+      const iso = new Date(startMs).toISOString();
+      if (bookedSlotIds.has(iso)) return false;
       return true;
     });
-  }, [allSlots, now, bookedSlotIds]);
+  }, [allSlots, bookedSlotIds, nowMs]);
 
   // derive unique date keys (YYYY-MM-DD) from futureSlots, sorted
   const dateKeys = useMemo(() => {
     const set = new Set<string>();
     futureSlots.forEach(s => {
-      const startIso = (s as any).start ?? (s as any).time ?? null;
-      if (!startIso) return;
-      const key = formatDateKeyFromIso(startIso);
+      const startIso = (s as any).start ?? (s as any).time ?? (s as any)._startMs ?? null;
+      const key = formatDateKeyFromIso(startIso ?? undefined);
       if (key) set.add(key);
     });
     return Array.from(set).sort();
@@ -111,16 +191,16 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
   const dateSlotsMap = useMemo(() => {
     const m: Record<string, TimeSlot[]> = {};
     futureSlots.forEach(s => {
-      const startIso = (s as any).start ?? (s as any).time ?? null;
-      if (!startIso) return;
-      const key = formatDateKeyFromIso(startIso);
+      const startIso = (s as any).start ?? (s as any).time ?? (s as any)._startMs ?? null;
+      const key = formatDateKeyFromIso(startIso ?? undefined);
+      if (!key) return;
       if (!m[key]) m[key] = [];
       m[key].push(s);
     });
     Object.keys(m).forEach(k => {
       m[k].sort((a, b) => {
-        const ta = new Date((a as any).start ?? (a as any).time).getTime();
-        const tb = new Date((b as any).start ?? (b as any).time).getTime();
+        const ta = parseStartToMsRaw(a);
+        const tb = parseStartToMsRaw(b);
         return ta - tb;
       });
     });
@@ -153,15 +233,9 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
       const prefCol = collection(db, "slot_preferences");
       const prefQ = query(prefCol, where("playerId", "in", chunk));
       const unsubPref = onSnapshot(prefQ, snap => {
-        // rebuild entire map merging across chunks
         setSlotPrefMap(prevMap => {
-          // start from prevMap but we'll recreate global for all participants from all active snapshots
-          // to ensure correctness, collect from all subscriptions by reading from each snapshot result
-          // Simpler: we will gather current docs across all active prefQ snapshots by storing them externally.
-          // Because we are in a multi-snapshot environment, easiest approach is to rebuild from all docs in DB each time:
-          // But to avoid extra reads, we merge per-snapshot into previous — acceptable here:
           const copy = { ...(prevMap || {}) };
-          // remove entries for players present in this chunk (we'll recalc)
+          // reset entries for players present in this chunk
           chunk.forEach(pid => { copy[pid] = new Set<string>(); });
           snap.docs.forEach(d => {
             const data = d.data() as any;
