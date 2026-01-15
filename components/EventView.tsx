@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { type Event, type Tournament, type TimeSlot, type Match } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
 import TimeSlots from './TimeSlots';
@@ -220,9 +220,34 @@ const EventView: React.FC<EventViewProps> = ({
     return ta - tb;
   });
 
+  // ===== Refs for page sections to enable menu navigation =====
+  const tournamentsRef = useRef<HTMLDivElement | null>(null);
+  const timeSlotsTopRef = useRef<HTMLDivElement | null>(null);
+  const timeSlotsBottomRef = useRef<HTMLDivElement | null>(null);
+  const rulesRef = useRef<HTMLDivElement | null>(null);
+  const matchControlRef = useRef<HTMLDivElement | null>(null);
+
+  // Scroll helper
+  const scrollToRef = (r: React.RefObject<HTMLDivElement>) => {
+    const el = r.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Helper to focus first input inside a section (used for "Aggiungi nuovo slot")
+  const focusFirstInputInRef = (r: React.RefObject<HTMLDivElement>) => {
+    const el = r.current;
+    if (!el) return;
+    // small delay to allow scroll animation
+    setTimeout(() => {
+      const input = el.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select');
+      if (input) input.focus();
+    }, 350);
+  };
+
   return (
     <div>
-      <div className="bg-primary p-6 rounded-xl shadow-lg mb-8">
+      <div className="bg-primary p-6 rounded-xl shadow-lg mb-6">
         <div className="flex justify-between items-start gap-6">
           <div className="flex-1">
             <h1 className="text-3xl font-bold text-white mb-1">{event.name}</h1>
@@ -244,10 +269,57 @@ const EventView: React.FC<EventViewProps> = ({
             </div>
           )}
         </div>
+
+        {/* ===== Top admin menu (only organizers) ===== */}
+        {isOrganizer && (
+          <nav className="mt-6 bg-secondary/20 rounded p-3 flex flex-wrap gap-2" aria-label="Menu amministratore evento">
+            <button
+              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
+              onClick={() => scrollToRef(tournamentsRef)}
+            >
+              Tornei
+            </button>
+
+            <button
+              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
+              onClick={() => { scrollToRef(timeSlotsTopRef); focusFirstInputInRef(timeSlotsTopRef); }}
+            >
+              Aggiungi nuovo slot
+            </button>
+
+            <button
+              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
+              onClick={() => scrollToRef(timeSlotsTopRef)}
+            >
+              Slot disponibili
+            </button>
+
+            <button
+              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
+              onClick={() => scrollToRef(timeSlotsBottomRef)}
+            >
+              Slot prenotati
+            </button>
+
+            <button
+              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
+              onClick={() => scrollToRef(rulesRef)}
+            >
+              Regolamento torneo
+            </button>
+
+            <button
+              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
+              onClick={() => scrollToRef(matchControlRef)}
+            >
+              Controllo partite
+            </button>
+          </nav>
+        )}
       </div>
 
       {/* CARD TORNEI */}
-      <div>
+      <div ref={tournamentsRef}>
         <h2 className="text-2xl font-bold text-white mb-4">Tornei</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {(event.tournaments ?? []).map(tournament => {
@@ -378,63 +450,62 @@ const EventView: React.FC<EventViewProps> = ({
         </div>
       </div>
 
-      {/* SLOT ORARI GLOBALI (solo organizzatore) */}
-      {isOrganizer && event.globalTimeSlots && (
-        <div className="mb-10">
-          <h2 className="text-2xl font-bold mb-4 text-white">Slot Orari Globali</h2>
-          <TimeSlots
-            event={event}
-            tournament={undefined}
-            setEvents={setEvents}
-            isOrganizer={isOrganizer}
-            loggedInPlayerId={loggedInPlayerId}
-            selectedGroupId={undefined}
-            globalTimeSlots={sortedGlobalTimeSlots}
-            onSelectTournament={onSelectTournament}
-          />
-        </div>
-      )}
+      {/* SLOT ORARI GLOBALI (solo organizzatore) - top anchor */}
+      <div ref={timeSlotsTopRef} className="mb-10 mt-8" id="slots-top">
+        <h2 className="text-2xl font-bold mb-4 text-white">Slot Orari Globali</h2>
+        <TimeSlots
+          event={event}
+          tournament={undefined}
+          setEvents={setEvents}
+          isOrganizer={isOrganizer}
+          loggedInPlayerId={loggedInPlayerId}
+          selectedGroupId={undefined}
+          globalTimeSlots={sortedGlobalTimeSlots}
+          onSelectTournament={onSelectTournament}
+        />
+      </div>
+
+      {/* Anchor positioned after TimeSlots to approximate "slot prenotati" */}
+      <div ref={timeSlotsBottomRef} id="slots-booked-anchor" />
 
       {/* REGOLAMENTO (solo organizzatore) */}
-      {isOrganizer && (
-        <div className="bg-tertiary p-6 rounded-xl shadow-lg mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-xl font-bold text-accent">Regolamento Torneo</h3>
-            {!rulesEdit && (
-              <button
-                onClick={() => setRulesEdit(true)}
-                className="py-1 px-4 bg-highlight text-white rounded-lg font-semibold"
-              >
-                Modifica
-              </button>
-            )}
-          </div>
-          {rulesEdit ? (
-            <div>
-              <textarea
-                value={rulesDraft}
-                onChange={(e) => setRulesDraft(e.target.value)}
-                className="w-full rounded bg-primary border p-3 min-h-[120px] mb-3"
-                placeholder="Scrivi qui il regolamento per il girone selezionato..."
-                disabled={loading}
-              />
-              <div className="flex items-center gap-3">
-                <button onClick={handleSaveRules} disabled={loading} className="bg-highlight text-white px-4 py-2 rounded font-bold">
-                  {loading ? "Salvando..." : "Salva regolamento per girone"}
-                </button>
-                <button onClick={() => { setRulesEdit(false); setRulesDraft(event.rules ?? ""); }} className="bg-tertiary px-4 py-2 rounded">
-                  Annulla
-                </button>
-              </div>
-              {successMsg && <div className="text-green-600 mt-3 font-semibold">{successMsg}</div>}
-            </div>
-          ) : (
-            <div className="bg-primary p-4 rounded-lg border border-tertiary mt-2 whitespace-pre-line">
-              {event.rules?.trim() ? event.rules : <span className="text-text-secondary">Nessun regolamento inserito dall'organizzatore.</span>}
-            </div>
+      <div ref={rulesRef} className="bg-tertiary p-6 rounded-xl shadow-lg mb-6" id="regolamento">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-xl font-bold text-accent">Regolamento Torneo</h3>
+          {!rulesEdit && isOrganizer && (
+            <button
+              onClick={() => setRulesEdit(true)}
+              className="py-1 px-4 bg-highlight text-white rounded-lg font-semibold"
+            >
+              Modifica
+            </button>
           )}
         </div>
-      )}
+        {rulesEdit ? (
+          <div>
+            <textarea
+              value={rulesDraft}
+              onChange={(e) => setRulesDraft(e.target.value)}
+              className="w-full rounded bg-primary border p-3 min-h-[120px] mb-3"
+              placeholder="Scrivi qui il regolamento per il girone selezionato..."
+              disabled={loading}
+            />
+            <div className="flex items-center gap-3">
+              <button onClick={handleSaveRules} disabled={loading} className="bg-highlight text-white px-4 py-2 rounded font-bold">
+                {loading ? "Salvando..." : "Salva regolamento per girone"}
+              </button>
+              <button onClick={() => { setRulesEdit(false); setRulesDraft(event.rules ?? ""); }} className="bg-tertiary px-4 py-2 rounded">
+                Annulla
+              </button>
+            </div>
+            {successMsg && <div className="text-green-600 mt-3 font-semibold">{successMsg}</div>}
+          </div>
+        ) : (
+          <div className="bg-primary p-4 rounded-lg border border-tertiary mt-2 whitespace-pre-line">
+            {event.rules?.trim() ? event.rules : <span className="text-text-secondary">Nessun regolamento inserito dall'organizzatore.</span>}
+          </div>
+        )}
+      </div>
 
       {/* REGOLAMENTO PER OGNI GIRONE - SOLO ORGANIZZATORE */}
       {isOrganizer && (event.tournaments ?? []).length > 0 &&
@@ -480,8 +551,9 @@ const EventView: React.FC<EventViewProps> = ({
       {/* ----------------- /MODAL: AGGIUNGI TORNEO ----------------- */}
 
       {/* == AdminMatchCounts inserito in fondo alla pagina (solo organizer) == */}
-      {isOrganizer && <AdminMatchCounts event={event} onSelectTournament={onSelectTournament} />}
-
+      <div ref={matchControlRef} id="match-control">
+        {isOrganizer && <AdminMatchCounts event={event} onSelectTournament={onSelectTournament} />}
+      </div>
     </div>
   );
 };
