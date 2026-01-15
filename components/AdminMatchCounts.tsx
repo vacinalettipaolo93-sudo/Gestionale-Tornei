@@ -6,15 +6,17 @@ import { type Event, type Player, type Tournament } from "../types";
  *
  * - Mostra solo i giocatori assegnati ad almeno un torneo/girone.
  * - Conta per ogni giocatore:
- *    played   = numero di match con status === 'completed' o 'finished' a cui partecipa
- *    scheduled = numero di match NON completed ma effettivamente prenotati/assegnati a uno slot
- *    remaining = maxMatches - played (min 0)
- * - Mostra gruppi 0..maxMatches in ordine crescente; esclude chi ha fatto > maxMatches
- * - Mostra in quale torneo/girone è il giocatore e permette di cliccare per aprire quel torneo
+ *    played     = numero di match completati (status === 'completed' || 'finished') nel suo girone
+ *    scheduled  = numero di match non completati ma effettivamente prenotati/assegnati a uno slot (nel suo girone)
+ *    expected   = numero totale di match che il giocatore deve disputare nel girone (calcolato dalle matches del girone)
+ *    remaining  = expected - played (min 0)
+ * - Mantiene il filtro "Mostra fino a" per escludere chi ha già giocato più di `maxMatches` (questo filtro è separato dal calcolo di remaining).
  *
- * Definizione di "prenotata":
- *   - match.id è referenziato in tournament.timeSlots[*].matchId oppure in event.globalTimeSlots[*].matchId
- *   - oppure match contiene campi come timeSlotId, matchId (non-null) o date/start
+ * Note implementative:
+ * - "Prenotata" (scheduled) è determinata verificando:
+ *     a) match.id è referenziato in tournament.timeSlots[*].matchId oppure in event.globalTimeSlots[*].matchId
+ *     b) oppure il match ha campi come date/start o timeSlotId/slotId/matchId
+ * - I conteggi (played/scheduled/expected) sono calcolati solo sui match presenti nel girone a cui il giocatore è assegnato.
  */
 
 type Row = {
@@ -22,6 +24,7 @@ type Row = {
   name: string;
   played: number;
   scheduled: number;
+  expected: number;
   remaining: number;
   tournamentId?: string;
   tournamentName?: string;
@@ -56,14 +59,6 @@ export default function AdminMatchCounts({
     // If no placements, return empty
     if (placement.size === 0) return [];
 
-    // Build map of players that are assigned (only these will be considered)
-    const playerMap = new Map<string, { name: string; played: number; scheduled: number }>();
-    (Array.isArray(event.players) ? event.players : []).forEach((p: Player) => {
-      if (placement.has(p.id)) {
-        playerMap.set(p.id, { name: p.name ?? p.nickname ?? p.id, played: 0, scheduled: 0 });
-      }
-    });
-
     // Build set of booked match ids by scanning tournament.timeSlots and event.globalTimeSlots
     const bookedMatchIds = new Set<string>();
     (Array.isArray(event.tournaments) ? event.tournaments : []).forEach(t => {
@@ -79,10 +74,29 @@ export default function AdminMatchCounts({
       });
     }
 
-    // Iterate tournaments -> groups -> matches to count played/scheduled (scheduled only if booked)
+    // For each player assigned, compute expected (matches in their group), played and scheduled (only within that group)
+    const resultRows: Row[] = [];
+
     (Array.isArray(event.tournaments) ? event.tournaments : []).forEach((t) => {
-      (Array.isArray(t.groups) ? t.groups : []).forEach((g) => {
-        (Array.isArray(g.matches) ? g.matches : []).forEach((m: any) => {
+      (Array.isArray(t.groups) ? t.groups : []).forEach((g: any) => {
+        // Build a map of matches in this group for quick lookup
+        const groupMatches = Array.isArray(g.matches) ? g.matches : [];
+
+        // Precompute per-player counts for this group
+        const perPlayerPlayed = new Map<string, number>();
+        const perPlayerScheduled = new Map<string, number>();
+        const perPlayerExpected = new Map<string, number>();
+
+        // expected: count how many matches in group involve each player
+        groupMatches.forEach((m: any) => {
+          const p1: string | undefined = m?.player1Id;
+          const p2: string | undefined = m?.player2Id;
+          if (p1) perPlayerExpected.set(p1, (perPlayerExpected.get(p1) || 0) + 1);
+          if (p2) perPlayerExpected.set(p2, (perPlayerExpected.get(p2) || 0) + 1);
+        });
+
+        // compute played/scheduled limited to group matches
+        groupMatches.forEach((m: any) => {
           const matchId = m?.id ?? m?.matchId ?? null;
           const p1: string | undefined = m?.player1Id;
           const p2: string | undefined = m?.player2Id;
@@ -94,38 +108,46 @@ export default function AdminMatchCounts({
           const hasTimeSlotField = !!(m?.timeSlotId || m?.slotId || m?.matchId);
           const isBooked = (matchId && bookedMatchIds.has(String(matchId))) || hasDate || hasTimeSlotField;
 
-          if (p1 && playerMap.has(p1)) {
-            const rec = playerMap.get(p1)!;
-            if (isCompleted) rec.played += 1;
-            else if (isBooked) rec.scheduled += 1;
+          if (p1 && placement.has(p1)) {
+            if (isCompleted) perPlayerPlayed.set(p1, (perPlayerPlayed.get(p1) || 0) + 1);
+            else if (isBooked) perPlayerScheduled.set(p1, (perPlayerScheduled.get(p1) || 0) + 1);
           }
-          if (p2 && playerMap.has(p2)) {
-            const rec = playerMap.get(p2)!;
-            if (isCompleted) rec.played += 1;
-            else if (isBooked) rec.scheduled += 1;
+          if (p2 && placement.has(p2)) {
+            if (isCompleted) perPlayerPlayed.set(p2, (perPlayerPlayed.get(p2) || 0) + 1);
+            else if (isBooked) perPlayerScheduled.set(p2, (perPlayerScheduled.get(p2) || 0) + 1);
           }
+        });
+
+        // For each player in this group, push a row (only for players assigned to a group)
+        (Array.isArray(g.playerIds) ? g.playerIds : []).forEach((pid: string) => {
+          if (!placement.has(pid)) return;
+          // find player name from event.players
+          const pDoc = (Array.isArray(event.players) ? event.players : []).find((pl: Player) => pl.id === pid);
+          const name = pDoc?.name ?? pDoc?.nickname ?? pid;
+          const expected = perPlayerExpected.get(pid) || 0;
+          const played = perPlayerPlayed.get(pid) || 0;
+          const scheduled = perPlayerScheduled.get(pid) || 0;
+          const remaining = Math.max(0, expected - played);
+
+          resultRows.push({
+            playerId: pid,
+            name,
+            played,
+            scheduled,
+            expected,
+            remaining,
+            tournamentId: t.id,
+            tournamentName: t.name,
+            groupId: g.id,
+            groupName: g.name,
+          });
         });
       });
     });
 
-    const out: Row[] = [];
-    for (const [playerId, data] of playerMap.entries()) {
-      const place = placement.get(playerId);
-      out.push({
-        playerId,
-        name: data.name,
-        played: data.played,
-        scheduled: data.scheduled,
-        remaining: Math.max(0, maxMatches - data.played),
-        tournamentId: place?.tournamentId,
-        tournamentName: place?.tournamentName,
-        groupId: place?.groupId,
-        groupName: place?.groupName,
-      });
-    }
-
-    return out
-      .filter((r) => r.played <= maxMatches) // exclude who played > maxMatches
+    // Filter by maxMatches (users asked earlier to be able to select e.g. 4 to list only players who have played <= max)
+    return resultRows
+      .filter((r) => r.played <= maxMatches)
       .sort((a, b) => a.played - b.played || a.name.localeCompare(b.name));
   }, [event, maxMatches]);
 
@@ -173,6 +195,7 @@ export default function AdminMatchCounts({
                     <tr className="text-left text-text-secondary">
                       <th className="pr-6">Giocatore</th>
                       <th className="pr-6">Torneo / Girone</th>
+                      <th className="pr-6">Previste</th>
                       <th className="pr-6">Giocate</th>
                       <th className="pr-6">In programma</th>
                       <th className="pr-6">Rimanenti</th>
@@ -198,6 +221,7 @@ export default function AdminMatchCounts({
                             <span className="text-text-secondary">—</span>
                           )}
                         </td>
+                        <td className="py-2">{r.expected}</td>
                         <td className="py-2">{r.played}</td>
                         <td className="py-2">{r.scheduled}</td>
                         <td className="py-2">{r.remaining}</td>
