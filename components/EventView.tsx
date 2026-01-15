@@ -12,7 +12,7 @@ interface EventViewProps {
   // accept optional initial tab and groupId when invoked
   onSelectTournament: (
     tournament: Tournament,
-    initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players',
+    initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability',
     initialGroupId?: string
   ) => void;
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
@@ -336,8 +336,8 @@ const EventView: React.FC<EventViewProps> = ({
                       Slot Disponibili
                     </button>
                     <button
-                    onClick={(e) => { e.stopPropagation(); onSelectTournament(tournament, 'availability'); }}
-                    className="px-3 py-1 rounded-md bg-tertiary text-text-primary text-sm font-semibold hover:bg-tertiary/90 transition"
+                      onClick={(e) => { e.stopPropagation(); onSelectTournament(tournament, 'availability'); }}
+                      className="px-3 py-1 rounded-md bg-tertiary text-text-primary text-sm font-semibold hover:bg-tertiary/90 transition"
                     >
                       Disponibilità di Gioco
                     </button>
@@ -480,7 +480,7 @@ const EventView: React.FC<EventViewProps> = ({
       {/* ----------------- /MODAL: AGGIUNGI TORNEO ----------------- */}
 
       {/* == AdminMatchCounts inserito in fondo alla pagina (solo organizer) == */}
-      {isOrganizer && <AdminMatchCounts event={event} />}
+      {isOrganizer && <AdminMatchCounts event={event} onSelectTournament={onSelectTournament} />}
 
     </div>
   );
