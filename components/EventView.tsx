@@ -5,6 +5,7 @@ import TimeSlots from './TimeSlots';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
 import { TrashIcon, PlusIcon } from './Icons';
+import AdminMatchCounts from "./AdminMatchCounts";
 
 interface EventViewProps {
   event: Event;
@@ -244,6 +245,8 @@ const EventView: React.FC<EventViewProps> = ({
           )}
         </div>
       </div>
+
+      {isOrganizer && <AdminMatchCounts event={event} />}
 
       {/* CARD TORNEI */}
       <div>
