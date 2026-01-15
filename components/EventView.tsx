@@ -246,8 +246,6 @@ const EventView: React.FC<EventViewProps> = ({
         </div>
       </div>
 
-      {isOrganizer && <AdminMatchCounts event={event} />}
-
       {/* CARD TORNEI */}
       <div>
         <h2 className="text-2xl font-bold text-white mb-4">Tornei</h2>
@@ -480,6 +478,9 @@ const EventView: React.FC<EventViewProps> = ({
         </div>
       )}
       {/* ----------------- /MODAL: AGGIUNGI TORNEO ----------------- */}
+
+      {/* == AdminMatchCounts inserito in fondo alla pagina (solo organizer) == */}
+      {isOrganizer && <AdminMatchCounts event={event} />}
 
     </div>
   );
