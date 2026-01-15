@@ -4,7 +4,7 @@ import { type Event, type Player, type Tournament } from "../types";
 /**
  * AdminMatchCounts
  *
- * - Usa i dati già presenti in `event` (players + tournaments[].groups[].matches)
+ * - Mostra solo i giocatori assegnati ad almeno un torneo/girone.
  * - Conta per ogni giocatore:
  *    played   = numero di match con status === 'completed' o 'finished' a cui partecipa
  *    scheduled = numero di match NON completed ma effettivamente prenotati/assegnati a uno slot
@@ -12,9 +12,9 @@ import { type Event, type Player, type Tournament } from "../types";
  * - Mostra gruppi 0..maxMatches in ordine crescente; esclude chi ha fatto > maxMatches
  * - Mostra in quale torneo/girone è il giocatore e permette di cliccare per aprire quel torneo
  *
- * Nota: la definizione di "prenotata" è euristica:
+ * Definizione di "prenotata":
  *   - match.id è referenziato in tournament.timeSlots[*].matchId oppure in event.globalTimeSlots[*].matchId
- *   - oppure match contiene campi come timeSlotId, matchId (non-null) o date
+ *   - oppure match contiene campi come timeSlotId, matchId (non-null) o date/start
  */
 
 type Row = {
@@ -41,12 +41,6 @@ export default function AdminMatchCounts({
   const [maxMatches, setMaxMatches] = useState<number>(defaultMax);
 
   const rows: Row[] = useMemo(() => {
-    const playerMap = new Map<string, { name: string; played: number; scheduled: number }>();
-
-    (Array.isArray(event.players) ? event.players : []).forEach((p: Player) => {
-      playerMap.set(p.id, { name: p.name ?? p.nickname ?? p.id, played: 0, scheduled: 0 });
-    });
-
     // Build placement map: first tournament/group where player appears
     const placement = new Map<string, { tournamentId: string; tournamentName?: string; groupId: string; groupName?: string }>();
     (Array.isArray(event.tournaments) ? event.tournaments : []).forEach(t => {
@@ -59,6 +53,17 @@ export default function AdminMatchCounts({
       });
     });
 
+    // If no placements, return empty
+    if (placement.size === 0) return [];
+
+    // Build map of players that are assigned (only these will be considered)
+    const playerMap = new Map<string, { name: string; played: number; scheduled: number }>();
+    (Array.isArray(event.players) ? event.players : []).forEach((p: Player) => {
+      if (placement.has(p.id)) {
+        playerMap.set(p.id, { name: p.name ?? p.nickname ?? p.id, played: 0, scheduled: 0 });
+      }
+    });
+
     // Build set of booked match ids by scanning tournament.timeSlots and event.globalTimeSlots
     const bookedMatchIds = new Set<string>();
     (Array.isArray(event.tournaments) ? event.tournaments : []).forEach(t => {
@@ -68,7 +73,6 @@ export default function AdminMatchCounts({
         });
       }
     });
-    // global time slots on event level (if present)
     if (Array.isArray((event as any).globalTimeSlots)) {
       (event as any).globalTimeSlots.forEach((ts: any) => {
         if (ts && ts.matchId) bookedMatchIds.add(String(ts.matchId));
@@ -86,8 +90,6 @@ export default function AdminMatchCounts({
           const isCompleted = status === "completed" || status === "finished";
 
           // Determine if this match is actually booked:
-          // - explicitly referenced in timeslots (bookedMatchIds)
-          // - or has a date/time or a timeSlotId/matchId field
           const hasDate = !!(m?.date || m?.start || m?.time);
           const hasTimeSlotField = !!(m?.timeSlotId || m?.slotId || m?.matchId);
           const isBooked = (matchId && bookedMatchIds.has(String(matchId))) || hasDate || hasTimeSlotField;
@@ -96,7 +98,6 @@ export default function AdminMatchCounts({
             const rec = playerMap.get(p1)!;
             if (isCompleted) rec.played += 1;
             else if (isBooked) rec.scheduled += 1;
-            // se non booked e non completata => non contare come scheduled
           }
           if (p2 && playerMap.has(p2)) {
             const rec = playerMap.get(p2)!;
@@ -124,7 +125,7 @@ export default function AdminMatchCounts({
     }
 
     return out
-      .filter((r) => r.played <= maxMatches)
+      .filter((r) => r.played <= maxMatches) // exclude who played > maxMatches
       .sort((a, b) => a.played - b.played || a.name.localeCompare(b.name));
   }, [event, maxMatches]);
 
@@ -140,7 +141,6 @@ export default function AdminMatchCounts({
     if (!row.tournamentId) return;
     const t = (event.tournaments ?? []).find(tt => tt.id === row.tournamentId);
     if (!t) return;
-    // apri il torneo sul tab "participants" e seleziona il gruppo del giocatore (se presente)
     onSelectTournament(t, 'participants', row.groupId);
   }
 
