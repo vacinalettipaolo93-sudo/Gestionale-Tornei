@@ -10,13 +10,11 @@ import { type Event, type Player, type Tournament } from "../types";
  *    scheduled  = numero di match non completati ma effettivamente prenotati/assegnati a uno slot (nel suo girone)
  *    expected   = numero totale di match che il giocatore deve disputare nel girone (calcolato dalle matches del girone)
  *    remaining  = expected - played (min 0)
- * - Mantiene il filtro "Mostra fino a" per escludere chi ha già giocato più di `maxMatches` (questo filtro è separato dal calcolo di remaining).
+ * - Filtro "Mostra fino a" ora supporta anche il valore speciale 'completed' che mostra
+ *   solo i giocatori che hanno finito tutte le partite del loro girone (remaining === 0).
  *
- * Note implementative:
- * - "Prenotata" (scheduled) è determinata verificando:
- *     a) match.id è referenziato in tournament.timeSlots[*].matchId oppure in event.globalTimeSlots[*].matchId
- *     b) oppure il match ha campi come date/start o timeSlotId/slotId/matchId
- * - I conteggi (played/scheduled/expected) sono calcolati solo sui match presenti nel girone a cui il giocatore è assegnato.
+ * - Quando è selezionato 'completed' la lista mostra una singola sezione "Completati".
+ * - Altrimenti la lista viene raggruppata per numero di partite giocate (0..N).
  */
 
 type Row = {
@@ -41,9 +39,11 @@ export default function AdminMatchCounts({
   defaultMax?: number;
   onSelectTournament?: (t: Tournament, initialTab?: string, initialGroupId?: string) => void;
 }) {
-  const [maxMatches, setMaxMatches] = useState<number>(defaultMax);
+  // filter can be number or the special string 'completed'
+  const [filter, setFilter] = useState<number | "completed">(defaultMax);
 
-  const rows: Row[] = useMemo(() => {
+  // Compute full list of rows (no filter applied here)
+  const allRows: Row[] = useMemo(() => {
     // Build placement map: first tournament/group where player appears
     const placement = new Map<string, { tournamentId: string; tournamentName?: string; groupId: string; groupName?: string }>();
     (Array.isArray(event.tournaments) ? event.tournaments : []).forEach(t => {
@@ -145,18 +145,33 @@ export default function AdminMatchCounts({
       });
     });
 
-    // Filter by maxMatches (users asked earlier to be able to select e.g. 4 to list only players who have played <= max)
-    return resultRows
-      .filter((r) => r.played <= maxMatches)
-      .sort((a, b) => a.played - b.played || a.name.localeCompare(b.name));
-  }, [event, maxMatches]);
+    return resultRows;
+  }, [event]);
 
-  // Build groups 0..maxMatches
-  const groups: Record<number, Row[]> = {};
-  for (let i = 0; i <= maxMatches; i++) groups[i] = [];
-  rows.forEach((r) => {
-    if (r.played <= maxMatches) groups[r.played]?.push(r);
-  });
+  // Derive displayed rows based on filter
+  const displayedRows = useMemo(() => {
+    if (filter === "completed") {
+      return allRows.filter(r => r.remaining === 0).sort((a, b) => a.name.localeCompare(b.name));
+    }
+    const num = Number(filter);
+    return allRows
+      .filter(r => r.played <= num)
+      .sort((a, b) => a.played - b.played || a.name.localeCompare(b.name));
+  }, [allRows, filter]);
+
+  // Build grouping structure depending on filter
+  const grouped = useMemo(() => {
+    if (filter === "completed") {
+      return { completed: displayedRows };
+    }
+    const max = Number(filter);
+    const groups: Record<number, Row[]> = {};
+    for (let i = 0; i <= max; i++) groups[i] = [];
+    displayedRows.forEach(r => {
+      if (r.played <= max) groups[r.played]?.push(r);
+    });
+    return groups;
+  }, [displayedRows, filter]);
 
   function handlePlayerClick(row: Row) {
     if (!onSelectTournament) return;
@@ -171,24 +186,30 @@ export default function AdminMatchCounts({
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold text-accent">Controllo partite giocatori (Admin)</h3>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-text-secondary mr-2">Mostra fino a:</label>
+          <label htmlFor="matchFilter" className="text-sm text-text-secondary mr-2">Mostra:</label>
           <select
-            value={maxMatches}
-            onChange={(e) => setMaxMatches(parseInt(e.target.value, 10))}
+            id="matchFilter"
+            value={filter}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "completed") setFilter("completed");
+              else setFilter(Number(v));
+            }}
             className="bg-primary border border-tertiary text-text-primary rounded px-2 py-1"
           >
-            {[1, 2, 3, 4, 5, 6, 7, 8, 10].map((n) => (
+            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 10].map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
+            <option value="completed">Completato</option>
           </select>
         </div>
       </div>
 
       <div>
-        {Array.from({ length: maxMatches + 1 }, (_, i) => i).map((i) => (
-          <section key={i} className="mb-4">
-            <h4 className="text-sm font-semibold text-text-secondary mb-2">{i} partite</h4>
-            {groups[i] && groups[i].length > 0 ? (
+        {filter === "completed" ? (
+          <section>
+            <h4 className="text-sm font-semibold text-text-secondary mb-2">Completati</h4>
+            {grouped.completed && grouped.completed.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full table-auto text-sm">
                   <thead>
@@ -197,17 +218,14 @@ export default function AdminMatchCounts({
                       <th className="pr-6">Torneo / Girone</th>
                       <th className="pr-6">Previste</th>
                       <th className="pr-6">Giocate</th>
-                      <th className="pr-6">In programma</th>
-                      <th className="pr-6">Rimanenti</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {groups[i].map((r) => (
+                    {grouped.completed.map(r => (
                       <tr key={r.playerId} className="border-t border-tertiary/40">
                         <td
                           className={`py-2 ${r.tournamentId ? 'cursor-pointer text-accent hover:underline' : ''}`}
                           onClick={() => r.tournamentId && handlePlayerClick(r)}
-                          title={r.tournamentId ? 'Vai al torneo e al girone del giocatore' : 'Giocatore non assegnato a nessun torneo'}
                         >
                           {r.name}
                         </td>
@@ -217,24 +235,74 @@ export default function AdminMatchCounts({
                               <span className="font-semibold text-text-primary">{r.tournamentName}</span>
                               {r.groupName ? <span className="ml-2">/ <span className="font-medium">{r.groupName}</span></span> : null}
                             </>
-                          ) : (
-                            <span className="text-text-secondary">—</span>
-                          )}
+                          ) : <span className="text-text-secondary">—</span>}
                         </td>
                         <td className="py-2">{r.expected}</td>
                         <td className="py-2">{r.played}</td>
-                        <td className="py-2">{r.scheduled}</td>
-                        <td className="py-2">{r.remaining}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <div className="text-text-secondary text-sm">Nessun giocatore con {i} partite</div>
+              <div className="text-text-secondary text-sm">Nessun giocatore completato.</div>
             )}
           </section>
-        ))}
+        ) : (
+          // numeric grouping 0..N
+          Object.keys(grouped).map((k) => {
+            const idx = Number(k);
+            const groupRows = (grouped as Record<number, Row[]>)[idx] || [];
+            return (
+              <section key={k} className="mb-4">
+                <h4 className="text-sm font-semibold text-text-secondary mb-2">{idx} partite</h4>
+                {groupRows.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full table-auto text-sm">
+                      <thead>
+                        <tr className="text-left text-text-secondary">
+                          <th className="pr-6">Giocatore</th>
+                          <th className="pr-6">Torneo / Girone</th>
+                          <th className="pr-6">Previste</th>
+                          <th className="pr-6">Giocate</th>
+                          <th className="pr-6">In programma</th>
+                          <th className="pr-6">Rimanenti</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupRows.map(r => (
+                          <tr key={r.playerId} className="border-t border-tertiary/40">
+                            <td
+                              className={`py-2 ${r.tournamentId ? 'cursor-pointer text-accent hover:underline' : ''}`}
+                              onClick={() => r.tournamentId && handlePlayerClick(r)}
+                              title={r.tournamentId ? 'Vai al torneo e al girone del giocatore' : 'Giocatore non assegnato a nessun torneo'}
+                            >
+                              {r.name}
+                            </td>
+                            <td className="py-2 text-text-secondary text-sm">
+                              {r.tournamentName ? (
+                                <>
+                                  <span className="font-semibold text-text-primary">{r.tournamentName}</span>
+                                  {r.groupName ? <span className="ml-2">/ <span className="font-medium">{r.groupName}</span></span> : null}
+                                </>
+                              ) : <span className="text-text-secondary">—</span>}
+                            </td>
+                            <td className="py-2">{r.expected}</td>
+                            <td className="py-2">{r.played}</td>
+                            <td className="py-2">{r.scheduled}</td>
+                            <td className="py-2">{r.remaining}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-text-secondary text-sm">Nessun giocatore con {idx} partite</div>
+                )}
+              </section>
+            );
+          })
+        )}
       </div>
     </div>
   );
