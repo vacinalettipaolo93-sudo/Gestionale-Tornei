@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { type Event, type Tournament, type Player, type PlayoffBracket, type PlayoffMatch } from '../types';
+import { type Event, type Tournament, type Player, type PlayoffBracket, type PlayoffMatch, type Match } from '../types';
 import { calculateStandings } from '../utils/standings';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
@@ -10,6 +10,32 @@ interface PlayoffsProps {
     setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
     isOrganizer: boolean;
     loggedInPlayerId?: string;
+}
+
+function playoffMatchToLeagueMatchId(playoffMatchId: string) {
+  return `po-${playoffMatchId}`;
+}
+
+function buildLeagueMatchFromPlayoffMatch(pm: PlayoffMatch): Match | null {
+  if (!pm.player1Id || !pm.player2Id) return null;
+  if (pm.isBronzeFinal) {
+    return {
+      id: playoffMatchToLeagueMatchId(pm.id),
+      player1Id: pm.player1Id,
+      player2Id: pm.player2Id,
+      score1: pm.score1,
+      score2: pm.score2,
+      status: pm.score1 != null && pm.score2 != null ? 'completed' : 'pending',
+    };
+  }
+  return {
+    id: playoffMatchToLeagueMatchId(pm.id),
+    player1Id: pm.player1Id,
+    player2Id: pm.player2Id,
+    score1: pm.score1,
+    score2: pm.score2,
+    status: pm.score1 != null && pm.score2 != null ? 'completed' : 'pending',
+  };
 }
 
 const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrganizer, loggedInPlayerId }) => {
@@ -65,7 +91,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
         });
     };
 
-    // GENERA BRACKET E SALVA SU FIRESTORE
     const handleGenerateBracket = async () => {
         if (firstRoundAssignments.some(a => a === null)) {
             alert("Per favore, riempi tutti gli slot del primo turno.");
@@ -99,7 +124,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
             }
         });
         
-        let bronzeFinalId = null;
+        let bronzeFinalId: string | null = null;
         if (bracketSize > 2 && tournament.settings.hasBronzeFinal) {
              const bronzeMatch: PlayoffMatch = { 
                 id: `plm-bronze`, isBronzeFinal: true, round: numRounds, matchIndex: 999,
@@ -109,7 +134,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
             bronzeFinalId = bronzeMatch.id;
         }
 
-        const firstRoundMatches = newMatches.filter(m => m.round === 1);
+        const firstRoundMatches = newMatches.filter(m => m.round === 1 && !m.isBronzeFinal);
         firstRoundMatches.forEach((match, i) => {
             const p1Id = firstRoundAssignments[i * 2];
             const p2Id = firstRoundAssignments[i * 2 + 1];
@@ -119,7 +144,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
             match.player1Id = isP1Bye ? null : p1Id;
             match.player2Id = isP2Bye ? null : p2Id;
 
-            let winnerId = null;
+            let winnerId: string | null = null;
             if (!isP1Bye && isP2Bye) winnerId = p1Id;
             if (isP1Bye && !isP2Bye) winnerId = p2Id;
             
@@ -140,31 +165,55 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
             bronzeFinalId: bronzeFinalId,
         };
 
-        // Salva su React state
-        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: e.tournaments.map(t => t.id === tournament.id ? { ...t, playoffs: finalBracket } : t) } : e));
-        // Salva su Firestore!
-        await updateDoc(doc(db, "events", event.id), {
-            tournaments: event.tournaments.map(t =>
-                t.id === tournament.id ? { ...t, playoffs: finalBracket } : t
-            )
-        });
+        // Crea le partite "league" (Match[]) da mostrare nel tab Partite:
+        // - creiamo i match per tutti i PlayoffMatch che hanno entrambi i player assegnati
+        // - questo include anche match che diventano già pronti per BYE
+        const playoffMatches: Match[] = [];
+        for (const pm of newMatches) {
+          if (pm.isBronzeFinal) continue; // bronze si genera quando si riempie, lo faremo dopo
+          const m = buildLeagueMatchFromPlayoffMatch(pm);
+          if (m) playoffMatches.push(m);
+        }
+
+        const updatedTournaments = event.tournaments.map(t =>
+          t.id === tournament.id
+            ? { ...t, playoffs: finalBracket, playoffMatches }
+            : t
+        );
+
+        setEvents(prev =>
+          prev.map(e =>
+            e.id === event.id ? { ...e, tournaments: updatedTournaments } : e
+          )
+        );
+
+        await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
 
         setView('bracket');
     };
 
-    // RESET BRACKET E SALVA SU FIRESTORE
     const handleResetBracket = async () => {
-        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: e.tournaments.map(t => t.id === tournament.id ? { ...t, playoffs: { ...(t.playoffs!), isGenerated: false, matches: [], finalId: null, bronzeFinalId: null, } } : t) } : e));
-        await updateDoc(doc(db, "events", event.id), {
-            tournaments: event.tournaments.map(t =>
-                t.id === tournament.id ? { ...t, playoffs: { ...(t.playoffs!), isGenerated: false, matches: [], finalId: null, bronzeFinalId: null, } } : t
-            )
-        });
+        const resetBracket: PlayoffBracket = {
+          ...(tournament.playoffs ?? { matches: [], isGenerated: false, finalId: null, bronzeFinalId: null }),
+          isGenerated: false,
+          matches: [],
+          finalId: null,
+          bronzeFinalId: null,
+        };
+
+        const updatedTournaments = event.tournaments.map(t =>
+          t.id === tournament.id
+            ? { ...t, playoffs: resetBracket, playoffMatches: [] }
+            : t
+        );
+
+        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+        await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
         setView('setup');
         setIsResetModalOpen(false);
     };
 
-    // SALVA RISULTATO MATCH E AGGIORNA FIRESTORE (FIX: salva anche nextMatch e bronze su Firebase)
     const handleSaveResult = async () => {
         if (!editingMatch) return;
 
@@ -175,9 +224,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
         const currentBracket = tournament.playoffs;
         if (!currentBracket) return;
 
-        // Copia profonda per evitare mutazioni sullo stato/props
         const bracketCopy: PlayoffBracket = JSON.parse(JSON.stringify(currentBracket));
-
         const match = bracketCopy.matches.find((m: PlayoffMatch) => m.id === editingMatch.id);
         if (!match) return;
 
@@ -191,12 +238,10 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
 
         const winnerId = s1 > s2 ? match.player1Id : match.player2Id;
         const loserId = s1 > s2 ? match.player2Id : match.player1Id;
-
         if (!winnerId || !loserId) return;
 
         match.winnerId = winnerId;
 
-        // Avanza vincitore al match successivo
         if (match.nextMatchId) {
             const nextMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === match.nextMatchId);
             if (nextMatch) {
@@ -211,7 +256,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
             }
         }
 
-        // Perde e va alla finale 3° posto (se abilitata)
         if (match.loserGoesToBronzeFinal && bracketCopy.bronzeFinalId && tournament.settings.hasBronzeFinal) {
             const bronzeMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === bracketCopy.bronzeFinalId);
             if (bronzeMatch) {
@@ -220,34 +264,64 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
             }
         }
 
-        // Aggiorna React state
-        setEvents(prevEvents =>
-            prevEvents.map(e => {
-                if (e.id !== event.id) return e;
-                return {
-                    ...e,
-                    tournaments: e.tournaments.map(t =>
-                        t.id === tournament.id ? { ...t, playoffs: bracketCopy } : t
-                    )
-                };
-            })
-        );
+        // Aggiorna/crea la lista playoffMatches (Match[])
+        const playoffMatches = Array.isArray(tournament.playoffMatches)
+          ? JSON.parse(JSON.stringify(tournament.playoffMatches)) as Match[]
+          : [];
 
-        // Salva su Firestore (coerente con bracketCopy)
+        // aggiorna match corrente
+        const leagueMatchId = playoffMatchToLeagueMatchId(match.id);
+        const idx = playoffMatches.findIndex(m => m.id === leagueMatchId);
+        if (idx !== -1) {
+          playoffMatches[idx] = {
+            ...playoffMatches[idx],
+            score1: s1,
+            score2: s2,
+            status: 'completed',
+          };
+        } else {
+          const built = buildLeagueMatchFromPlayoffMatch(match);
+          if (built) {
+            playoffMatches.push({ ...built, score1: s1, score2: s2, status: 'completed' });
+          }
+        }
+
+        // se il nextMatch ora ha entrambi i player, crea/aggiorna anche quel Match
+        if (match.nextMatchId) {
+          const nextMatch = bracketCopy.matches.find(m => m.id === match.nextMatchId);
+          const builtNext = nextMatch ? buildLeagueMatchFromPlayoffMatch(nextMatch) : null;
+          if (builtNext) {
+            const nidx = playoffMatches.findIndex(m => m.id === builtNext.id);
+            if (nidx === -1) playoffMatches.push(builtNext);
+            else playoffMatches[nidx] = { ...playoffMatches[nidx], ...builtNext, score1: playoffMatches[nidx].score1 ?? null, score2: playoffMatches[nidx].score2 ?? null };
+          }
+        }
+
+        // se la bronze final ora ha entrambi i player, crea/aggiorna anche quel Match
+        if (bracketCopy.bronzeFinalId && tournament.settings.hasBronzeFinal) {
+          const bronze = bracketCopy.matches.find(m => m.id === bracketCopy.bronzeFinalId);
+          const builtBronze = bronze ? buildLeagueMatchFromPlayoffMatch(bronze) : null;
+          if (builtBronze) {
+            const bidx = playoffMatches.findIndex(m => m.id === builtBronze.id);
+            if (bidx === -1) playoffMatches.push(builtBronze);
+            else playoffMatches[bidx] = { ...playoffMatches[bidx], ...builtBronze, score1: playoffMatches[bidx].score1 ?? null, score2: playoffMatches[bidx].score2 ?? null };
+          }
+        }
+
         const updatedTournaments = event.tournaments.map(t =>
-            t.id === tournament.id ? { ...t, playoffs: bracketCopy } : t
+          t.id === tournament.id
+            ? { ...t, playoffs: bracketCopy, playoffMatches }
+            : t
         );
 
-        await updateDoc(doc(db, "events", event.id), {
-            tournaments: updatedTournaments
-        });
+        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+        await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
 
         setEditingMatch(null);
         setScore1('');
         setScore2('');
     };
 
-    // SETUP VIEW
     if (view === 'setup') { 
         if (!isOrganizer) return <p className="text-text-secondary text-center">Il tabellone dei playoff non è stato ancora generato.</p>;
 
@@ -326,7 +400,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
         );
     }
     
-    // RENDER BRACKET
+    // RENDER BRACKET (resto invariato rispetto al tuo file)
     const { matches, bronzeFinalId } = tournament.playoffs!;
     const maxRound = Math.max(0, ...matches.filter(m => !m.isBronzeFinal).map(m => m.round));
     
@@ -408,7 +482,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
                         </div>
                     </div>
                 )})}
-                 {/* Champion Column */}
                  <div className="flex flex-col w-60 flex-shrink-0 justify-center items-center">
                     <h4 className="text-lg font-semibold text-center text-text-secondary mb-4">Campione</h4>
                     {finalMatch ? <MatchCard match={finalMatch} /> : null}
@@ -423,7 +496,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
                 </div>
              )}
             {(!bronzeFinalId || !tournament.settings.hasBronzeFinal) && <p className="text-center text-xs text-text-secondary/50 mt-4">Finale 3° Posto disabilitata nelle impostazioni.</p>}
-
 
              {isOrganizer && editingMatch && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
