@@ -93,6 +93,10 @@ export interface Tournament {
   timeSlots: TimeSlot[];
   playoffs: PlayoffBracket | null;
   consolationBracket: PlayoffBracket | null;
+
+  // NEW: partite “prenotabili” visibili nel tab Partite
+  playoffMatches?: Match[];
+  consolationMatches?: Match[];
 }
 
 export interface Event {
