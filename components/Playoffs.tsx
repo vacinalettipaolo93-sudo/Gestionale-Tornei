@@ -164,62 +164,87 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
         setIsResetModalOpen(false);
     };
 
-    // SALVA RISULTATO MATCH E AGGIORNA FIRESTORE
+    // SALVA RISULTATO MATCH E AGGIORNA FIRESTORE (FIX: salva anche nextMatch e bronze su Firebase)
     const handleSaveResult = async () => {
         if (!editingMatch) return;
+
         const s1 = parseInt(score1, 10);
         const s2 = parseInt(score2, 10);
         if (isNaN(s1) || isNaN(s2)) return;
 
-        // Aggiorna React state
-        setEvents(prevEvents => {
-            const newEvents = JSON.parse(JSON.stringify(prevEvents));
-            const currentTournament = newEvents.find((e: Event) => e.id === event.id)!.tournaments.find((t: Tournament) => t.id === tournament.id)!;
-            const bracket = currentTournament.playoffs!;
-            const match = bracket.matches.find((m: PlayoffMatch) => m.id === editingMatch.id)!;
-            match.score1 = s1;
-            match.score2 = s2;
-            const winnerId = s1 > s2 ? match.player1Id : match.player2Id;
-            const loserId = s1 > s2 ? match.player2Id : match.player1Id;
-            match.winnerId = winnerId;
+        const currentBracket = tournament.playoffs;
+        if (!currentBracket) return;
 
-            if (match.nextMatchId) {
-                const nextMatch = bracket.matches.find((m: PlayoffMatch) => m.id === match.nextMatchId)!;
-                const allMatchesInRound = bracket.matches.filter((m: PlayoffMatch) => m.round === match.round).sort((a:PlayoffMatch, b:PlayoffMatch) => a.matchIndex - b.matchIndex);
-                const matchIndexInRound = allMatchesInRound.findIndex((m:PlayoffMatch) => m.id === match.id);
+        // Copia profonda per evitare mutazioni sullo stato/props
+        const bracketCopy: PlayoffBracket = JSON.parse(JSON.stringify(currentBracket));
+
+        const match = bracketCopy.matches.find((m: PlayoffMatch) => m.id === editingMatch.id);
+        if (!match) return;
+
+        match.score1 = s1;
+        match.score2 = s2;
+
+        if (s1 === s2) {
+            alert("Pareggio non valido nei playoff. Inserisci un vincitore.");
+            return;
+        }
+
+        const winnerId = s1 > s2 ? match.player1Id : match.player2Id;
+        const loserId = s1 > s2 ? match.player2Id : match.player1Id;
+
+        if (!winnerId || !loserId) return;
+
+        match.winnerId = winnerId;
+
+        // Avanza vincitore al match successivo
+        if (match.nextMatchId) {
+            const nextMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === match.nextMatchId);
+            if (nextMatch) {
+                const allMatchesInRound = bracketCopy.matches
+                    .filter((m: PlayoffMatch) => m.round === match.round && !m.isBronzeFinal)
+                    .sort((a: PlayoffMatch, b: PlayoffMatch) => a.matchIndex - b.matchIndex);
+
+                const matchIndexInRound = allMatchesInRound.findIndex((m: PlayoffMatch) => m.id === match.id);
+
                 if (matchIndexInRound % 2 === 0) nextMatch.player1Id = winnerId;
                 else nextMatch.player2Id = winnerId;
             }
+        }
 
-            if (match.loserGoesToBronzeFinal && bracket.bronzeFinalId && tournament.settings.hasBronzeFinal) {
-                const bronzeMatch = bracket.matches.find((m: PlayoffMatch) => m.id === bracket.bronzeFinalId)!;
+        // Perde e va alla finale 3° posto (se abilitata)
+        if (match.loserGoesToBronzeFinal && bracketCopy.bronzeFinalId && tournament.settings.hasBronzeFinal) {
+            const bronzeMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === bracketCopy.bronzeFinalId);
+            if (bronzeMatch) {
                 if (bronzeMatch.player1Id === null) bronzeMatch.player1Id = loserId;
                 else if (bronzeMatch.player2Id === null) bronzeMatch.player2Id = loserId;
             }
-            return newEvents;
+        }
+
+        // Aggiorna React state
+        setEvents(prevEvents =>
+            prevEvents.map(e => {
+                if (e.id !== event.id) return e;
+                return {
+                    ...e,
+                    tournaments: e.tournaments.map(t =>
+                        t.id === tournament.id ? { ...t, playoffs: bracketCopy } : t
+                    )
+                };
+            })
+        );
+
+        // Salva su Firestore (coerente con bracketCopy)
+        const updatedTournaments = event.tournaments.map(t =>
+            t.id === tournament.id ? { ...t, playoffs: bracketCopy } : t
+        );
+
+        await updateDoc(doc(db, "events", event.id), {
+            tournaments: updatedTournaments
         });
 
-        // Salva su Firestore!
-        const eventDoc = await doc(db, "events", event.id);
-        const updatedTournament = {
-            ...tournament,
-            playoffs: (() => {
-                const bracketCopy = { ...tournament.playoffs! };
-                const match = bracketCopy.matches.find((m: PlayoffMatch) => m.id === editingMatch.id)!;
-                match.score1 = s1;
-                match.score2 = s2;
-                match.winnerId = s1 > s2 ? match.player1Id : match.player2Id;
-                // aggiorna bracket come sopra se serve...
-                return bracketCopy;
-            })()
-        };
-        await updateDoc(eventDoc, {
-            tournaments: event.tournaments.map(t =>
-                t.id === tournament.id ? updatedTournament : t
-            )
-        });
-
-        setEditingMatch(null); setScore1(''); setScore2('');
+        setEditingMatch(null);
+        setScore1('');
+        setScore2('');
     };
 
     // SETUP VIEW
