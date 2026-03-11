@@ -1,7 +1,15 @@
 // components/TournamentView.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { type Event, type Tournament, type Match, type TimeSlot, type Player } from '../types';
+import {
+  type Event,
+  type Tournament,
+  type Match,
+  type TimeSlot,
+  type Player,
+  type PlayoffBracket,
+  type PlayoffMatch
+} from '../types';
 import StandingsTable from './StandingsTable';
 import MatchList from './MatchList';
 import ParticipantsTab from './ParticipantsTab';
@@ -44,10 +52,130 @@ const Portal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return createPortal(children, elRef.current!);
 };
 
+// Helpers for playoff/consolation IDs shown in "Partite" tab
+function isPlayoffLeagueMatchId(matchId: string) {
+  return matchId.startsWith('po-');
+}
+function isConsolationLeagueMatchId(matchId: string) {
+  return matchId.startsWith('co-');
+}
+function stripPrefix(matchId: string, prefix: string) {
+  return matchId.startsWith(prefix) ? matchId.slice(prefix.length) : matchId;
+}
+
+function computeWinnerIdFromScores(match: { player1Id: string | null; player2Id: string | null }, s1: number, s2: number) {
+  if (!match.player1Id || !match.player2Id) return null;
+  if (s1 === s2) return null;
+  return s1 > s2 ? match.player1Id : match.player2Id;
+}
+
+function buildBracketCopyWithResultAndAdvance(params: {
+  bracket: PlayoffBracket;
+  playoffMatchId: string;
+  score1: number;
+  score2: number;
+  hasBronzeFinal: boolean;
+}) {
+  const { bracket, playoffMatchId, score1, score2, hasBronzeFinal } = params;
+
+  const bracketCopy: PlayoffBracket = JSON.parse(JSON.stringify(bracket));
+  const match = bracketCopy.matches.find((m: PlayoffMatch) => m.id === playoffMatchId);
+  if (!match) return { bracketCopy, updatedMatch: null as PlayoffMatch | null };
+
+  match.score1 = score1;
+  match.score2 = score2;
+
+  const winnerId = computeWinnerIdFromScores({ player1Id: match.player1Id, player2Id: match.player2Id }, score1, score2);
+  if (!winnerId) {
+    return { bracketCopy, updatedMatch: match };
+  }
+
+  const loserId = winnerId === match.player1Id ? match.player2Id : match.player1Id;
+  match.winnerId = winnerId;
+
+  // advance to next match
+  if (match.nextMatchId) {
+    const nextMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === match.nextMatchId);
+    if (nextMatch) {
+      const allMatchesInRound = bracketCopy.matches
+        .filter((m: PlayoffMatch) => m.round === match.round && !m.isBronzeFinal)
+        .sort((a: PlayoffMatch, b: PlayoffMatch) => a.matchIndex - b.matchIndex);
+
+      const matchIndexInRound = allMatchesInRound.findIndex((m: PlayoffMatch) => m.id === match.id);
+
+      if (matchIndexInRound % 2 === 0) nextMatch.player1Id = winnerId;
+      else nextMatch.player2Id = winnerId;
+    }
+  }
+
+  // bronze final
+  if (match.loserGoesToBronzeFinal && bracketCopy.bronzeFinalId && hasBronzeFinal) {
+    const bronzeMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === bracketCopy.bronzeFinalId);
+    if (bronzeMatch && loserId) {
+      if (bronzeMatch.player1Id === null) bronzeMatch.player1Id = loserId;
+      else if (bronzeMatch.player2Id === null) bronzeMatch.player2Id = loserId;
+    }
+  }
+
+  return { bracketCopy, updatedMatch: match };
+}
+
+function ensureLeagueMatchExistsAndUpToDate(params: {
+  leagueMatches: Match[];
+  leagueMatchId: string;
+  player1Id: string | null;
+  player2Id: string | null;
+  score1: number | null;
+  score2: number | null;
+}) {
+  const { leagueMatches, leagueMatchId, player1Id, player2Id, score1, score2 } = params;
+
+  // only create if both players exist
+  if (!player1Id || !player2Id) return leagueMatches;
+
+  const idx = leagueMatches.findIndex(m => m.id === leagueMatchId);
+  const nextStatus: Match['status'] =
+    score1 != null && score2 != null ? 'completed' : 'pending';
+
+  const updated: Match = {
+    id: leagueMatchId,
+    player1Id,
+    player2Id,
+    score1,
+    score2,
+    status: nextStatus,
+  };
+
+  if (idx === -1) return [...leagueMatches, updated];
+
+  // keep booking fields if already booked
+  const prev = leagueMatches[idx];
+  const merged: Match = {
+    ...prev,
+    ...updated,
+    status: nextStatus,
+    scheduledTime: prev.scheduledTime ?? undefined,
+    slotId: prev.slotId ?? undefined,
+    location: prev.location ?? "",
+    field: prev.field ?? "",
+  };
+
+  const copy = leagueMatches.slice();
+  copy[idx] = merged;
+  return copy;
+}
+
+interface TournamentViewPropsWithOptionalMatches extends Tournament {
+  playoffMatches?: Match[];
+  consolationMatches?: Match[];
+}
+
 const TournamentView: React.FC<TournamentViewProps> = ({
   event, tournament, setEvents, isOrganizer, loggedInPlayerId,
   initialActiveTab, initialSelectedGroupId, onPlayerContact
 }) => {
+  const t = tournament as TournamentViewPropsWithOptionalMatches;
+
   const userGroup = tournament.groups.find(g => g.playerIds.includes(loggedInPlayerId ?? ""));
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(
     initialSelectedGroupId ?? (userGroup ? userGroup.id : tournament.groups[0]?.id)
@@ -87,8 +215,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const [slotToBook, setSlotToBook] = useState<null | TimeSlot>(null);
   const myPendingMatches = selectedGroup
     ? selectedGroup.matches.filter(m =>
-        m.status === "pending" &&
-        (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId))
+      m.status === "pending" &&
+      (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId))
     : [];
 
   // --- TRIGGER RECTS for anchored modals ---
@@ -121,8 +249,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) }
         : g
     );
-    const updatedTournaments = event.tournaments.map(t =>
-      t.id === tournament.id ? { ...t, groups: updatedGroups } : t
+    const updatedTournaments = event.tournaments.map(t0 =>
+      t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0
     );
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
@@ -131,13 +259,13 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   };
 
   function getAllBookedSlotIds(): string[] {
-    return event.tournaments.flatMap(tournament =>
-      tournament.groups
-        ? tournament.groups.flatMap(group =>
-            group.matches
-              .filter(match => match.slotId && (match.status === "scheduled" || match.status === "completed"))
-              .map(match => match.slotId!)
-          )
+    return event.tournaments.flatMap(t0 =>
+      t0.groups
+        ? t0.groups.flatMap(group =>
+          group.matches
+            .filter(match => match.slotId && (match.status === "scheduled" || match.status === "completed"))
+            .map(match => match.slotId!)
+        )
         : []
     );
   }
@@ -176,15 +304,152 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setScore1(match.score1 !== null ? String(match.score1) : "");
     setScore2(match.score2 !== null ? String(match.score2) : "");
   };
+
   async function saveMatchResult(match: Match) {
+    const s1 = Number(score1);
+    const s2 = Number(score2);
+
+    if (Number.isNaN(s1) || Number.isNaN(s2)) return;
+
+    // --- PLAYOFF match saved from "Partite" tab ---
+    if (isPlayoffLeagueMatchId(match.id)) {
+      const playoffMatchId = stripPrefix(match.id, 'po-');
+      if (!tournament.playoffs) return;
+
+      const { bracketCopy } = buildBracketCopyWithResultAndAdvance({
+        bracket: tournament.playoffs,
+        playoffMatchId,
+        score1: s1,
+        score2: s2,
+        hasBronzeFinal: !!tournament.settings.hasBronzeFinal,
+      });
+
+      // update playoffMatches list
+      let playoffMatches: Match[] = Array.isArray(t.playoffMatches) ? JSON.parse(JSON.stringify(t.playoffMatches)) : [];
+      // current match
+      playoffMatches = ensureLeagueMatchExistsAndUpToDate({
+        leagueMatches: playoffMatches,
+        leagueMatchId: match.id,
+        player1Id: match.player1Id,
+        player2Id: match.player2Id,
+        score1: s1,
+        score2: s2,
+      });
+
+      // ensure next match exists if ready
+      const pm = bracketCopy.matches.find(m => m.id === playoffMatchId);
+      if (pm?.nextMatchId) {
+        const nextPm = bracketCopy.matches.find(m => m.id === pm.nextMatchId);
+        if (nextPm && nextPm.player1Id && nextPm.player2Id) {
+          playoffMatches = ensureLeagueMatchExistsAndUpToDate({
+            leagueMatches: playoffMatches,
+            leagueMatchId: `po-${nextPm.id}`,
+            player1Id: nextPm.player1Id,
+            player2Id: nextPm.player2Id,
+            score1: nextPm.score1,
+            score2: nextPm.score2,
+          });
+        }
+      }
+
+      // ensure bronze exists if ready
+      if (bracketCopy.bronzeFinalId && tournament.settings.hasBronzeFinal) {
+        const bronzePm = bracketCopy.matches.find(m => m.id === bracketCopy.bronzeFinalId);
+        if (bronzePm && bronzePm.player1Id && bronzePm.player2Id) {
+          playoffMatches = ensureLeagueMatchExistsAndUpToDate({
+            leagueMatches: playoffMatches,
+            leagueMatchId: `po-${bronzePm.id}`,
+            player1Id: bronzePm.player1Id,
+            player2Id: bronzePm.player2Id,
+            score1: bronzePm.score1,
+            score2: bronzePm.score2,
+          });
+        }
+      }
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id
+          ? { ...t0, playoffs: bracketCopy, playoffMatches }
+          : t0
+      );
+
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+      setEditingMatch(null);
+      setEditingTriggerRect(null);
+      setScore1("");
+      setScore2("");
+      return;
+    }
+
+    // --- CONSOLATION match saved from "Partite" tab ---
+    if (isConsolationLeagueMatchId(match.id)) {
+      const consolationMatchId = stripPrefix(match.id, 'co-');
+      if (!tournament.consolationBracket) return;
+
+      const { bracketCopy } = buildBracketCopyWithResultAndAdvance({
+        bracket: tournament.consolationBracket,
+        playoffMatchId: consolationMatchId,
+        score1: s1,
+        score2: s2,
+        // consolation doesn't use bronzeFinalId (but function is generic)
+        hasBronzeFinal: false,
+      });
+
+      let consolationMatches: Match[] = Array.isArray(t.consolationMatches) ? JSON.parse(JSON.stringify(t.consolationMatches)) : [];
+
+      consolationMatches = ensureLeagueMatchExistsAndUpToDate({
+        leagueMatches: consolationMatches,
+        leagueMatchId: match.id,
+        player1Id: match.player1Id,
+        player2Id: match.player2Id,
+        score1: s1,
+        score2: s2,
+      });
+
+      const cm = bracketCopy.matches.find(m => m.id === consolationMatchId);
+      if (cm?.nextMatchId) {
+        const nextCm = bracketCopy.matches.find(m => m.id === cm.nextMatchId);
+        if (nextCm && nextCm.player1Id && nextCm.player2Id) {
+          consolationMatches = ensureLeagueMatchExistsAndUpToDate({
+            leagueMatches: consolationMatches,
+            leagueMatchId: `co-${nextCm.id}`,
+            player1Id: nextCm.player1Id,
+            player2Id: nextCm.player2Id,
+            score1: nextCm.score1,
+            score2: nextCm.score2,
+          });
+        }
+      }
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id
+          ? { ...t0, consolationBracket: bracketCopy, consolationMatches }
+          : t0
+      );
+
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+      setEditingMatch(null);
+      setEditingTriggerRect(null);
+      setScore1("");
+      setScore2("");
+      return;
+    }
+
+    // --- Group matches (original behavior) ---
     if (!selectedGroup) return;
-    const updatedMatch = { ...match, score1: Number(score1), score2: Number(score2), status: "completed" };
+
+    const updatedMatch = { ...match, score1: s1, score2: s2, status: "completed" as const };
     const updatedGroups = tournament.groups.map(g =>
       g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
     );
-    const updatedTournaments = event.tournaments.map(t => t.id === tournament.id ? { ...t, groups: updatedGroups } : t);
+    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
     setEditingMatch(null);
     setEditingTriggerRect(null);
     setScore1("");
@@ -196,13 +461,16 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setDeletingMatch(match);
     setDeletingTriggerRect(triggerRect ?? null);
   };
+
   async function deleteMatchResult(match: Match) {
+    // NOTE: delete for playoff/consolation not implemented here.
+    // Keep existing behavior for group matches only.
     if (!selectedGroup) return;
     const updatedMatch: Match = { ...match, score1: null, score2: null, status: "pending" };
     const updatedGroups = tournament.groups.map(g =>
       g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
     );
-    const updatedTournaments = event.tournaments.map(t => t.id === tournament.id ? { ...t, groups: updatedGroups } : t);
+    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
     setDeletingMatch(null);
@@ -216,6 +484,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setSelectedSlotId("");
     setBookingError("");
   };
+
   async function saveMatchBooking(match: Match) {
     if (!selectedGroup) return;
     const globalSlots = Array.isArray(event.globalTimeSlots) ? event.globalTimeSlots : [];
@@ -249,7 +518,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     const updatedGroups = tournament.groups.map(g =>
       g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
     );
-    const updatedTournaments = event.tournaments.map(t => t.id === tournament.id ? { ...t, groups: updatedGroups } : t);
+    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
     setBookingMatch(null);
@@ -264,6 +533,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setRescheduleTriggerRect(triggerRect ?? null);
     setRescheduleSlotId("");
   };
+
   async function saveRescheduleMatch(match: Match) {
     if (!selectedGroup) return;
     const globalSlots = Array.isArray(event.globalTimeSlots) ? event.globalTimeSlots : [];
@@ -288,7 +558,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     const updatedGroups = tournament.groups.map(g =>
       g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
     );
-    const updatedTournaments = event.tournaments.map(t => t.id === tournament.id ? { ...t, groups: updatedGroups } : t);
+    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
     setReschedulingMatch(null);
@@ -304,7 +574,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     const updatedGroups = tournament.groups.map(g =>
       g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
     );
-    const updatedTournaments = event.tournaments.map(t => t.id === tournament.id ? { ...t, groups: updatedGroups } : t);
+    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
   }
@@ -502,6 +772,21 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const modalBackdrop = "fixed inset-0 bg-black/70 z-50";
   const modalBox = "bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary";
 
+  // Virtual groups for playoff/consolation matches (so we can reuse MatchList UI)
+  const playoffVirtualGroup = {
+    id: `${tournament.id}-playoffs`,
+    name: "Playoff",
+    playerIds: [],
+    matches: Array.isArray(t.playoffMatches) ? t.playoffMatches : [],
+  };
+
+  const consolationVirtualGroup = {
+    id: `${tournament.id}-consolation`,
+    name: "Consolazione",
+    playerIds: [],
+    matches: Array.isArray(t.consolationMatches) ? t.consolationMatches : [],
+  };
+
   return (
     <div>
       {/* Tabs menu */}
@@ -634,23 +919,68 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           </div>
         )}
 
-        {activeTab === 'matches' && selectedGroup && (
-          <div>
-            <h3 className="text-xl font-bold mb-3 text-accent">{selectedGroup.name}</h3>
-            <MatchList
-              group={selectedGroup}
-              players={event.players}
-              onEditResult={handleEditResult}
-              onBookMatch={handleBookMatch}
-              isOrganizer={isOrganizer}
-              loggedInPlayerId={loggedInPlayerId}
-              onPlayerContact={handlePlayerContact}
-              onRescheduleMatch={handleRescheduleMatch}
-              onCancelBooking={handleCancelBooking}
-              onDeleteResult={handleOpenDeleteResult}
-              viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
-            />
-            {/* Modals (unchanged) */}
+        {/* TAB PARTITE */}
+        {activeTab === 'matches' && (
+          <div className="space-y-10">
+            {selectedGroup && (
+              <div>
+                <h3 className="text-xl font-bold mb-3 text-accent">{selectedGroup.name}</h3>
+                <MatchList
+                  group={selectedGroup}
+                  players={event.players}
+                  onEditResult={handleEditResult}
+                  onBookMatch={handleBookMatch}
+                  isOrganizer={isOrganizer}
+                  loggedInPlayerId={loggedInPlayerId}
+                  onPlayerContact={handlePlayerContact as any}
+                  onRescheduleMatch={handleRescheduleMatch}
+                  onCancelBooking={handleCancelBooking}
+                  onDeleteResult={handleOpenDeleteResult}
+                  viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
+                />
+              </div>
+            )}
+
+            {Array.isArray(t.playoffMatches) && t.playoffMatches.length > 0 && (
+              <div>
+                <h3 className="text-xl font-bold mb-3 text-accent">Playoff</h3>
+                <MatchList
+                  group={playoffVirtualGroup as any}
+                  players={event.players}
+                  onEditResult={handleEditResult}
+                  onBookMatch={handleBookMatch}
+                  isOrganizer={isOrganizer}
+                  loggedInPlayerId={loggedInPlayerId}
+                  onPlayerContact={handlePlayerContact as any}
+                  onRescheduleMatch={handleRescheduleMatch}
+                  onCancelBooking={handleCancelBooking}
+                  onDeleteResult={handleOpenDeleteResult}
+                  // enable for the two players; MatchList checks isParticipant
+                  viewingOwnGroup={true}
+                />
+              </div>
+            )}
+
+            {Array.isArray(t.consolationMatches) && t.consolationMatches.length > 0 && (
+              <div>
+                <h3 className="text-xl font-bold mb-3 text-accent">Consolazione</h3>
+                <MatchList
+                  group={consolationVirtualGroup as any}
+                  players={event.players}
+                  onEditResult={handleEditResult}
+                  onBookMatch={handleBookMatch}
+                  isOrganizer={isOrganizer}
+                  loggedInPlayerId={loggedInPlayerId}
+                  onPlayerContact={handlePlayerContact as any}
+                  onRescheduleMatch={handleRescheduleMatch}
+                  onCancelBooking={handleCancelBooking}
+                  onDeleteResult={handleOpenDeleteResult}
+                  viewingOwnGroup={true}
+                />
+              </div>
+            )}
+
+            {/* Modals */}
             {editingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
@@ -674,6 +1004,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 </div>
               </Portal>
             )}
+
             {bookingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
@@ -699,6 +1030,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 </div>
               </Portal>
             )}
+
             {reschedulingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
@@ -724,6 +1056,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 </div>
               </Portal>
             )}
+
             {deletingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
