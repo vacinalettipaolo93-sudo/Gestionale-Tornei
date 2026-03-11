@@ -919,28 +919,9 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           </div>
         )}
 
-        {/* TAB PARTITE */}
+        {/* TAB PARTITE (Playoff in alto) */}
         {activeTab === 'matches' && (
           <div className="space-y-10">
-            {selectedGroup && (
-              <div>
-                <h3 className="text-xl font-bold mb-3 text-accent">{selectedGroup.name}</h3>
-                <MatchList
-                  group={selectedGroup}
-                  players={event.players}
-                  onEditResult={handleEditResult}
-                  onBookMatch={handleBookMatch}
-                  isOrganizer={isOrganizer}
-                  loggedInPlayerId={loggedInPlayerId}
-                  onPlayerContact={handlePlayerContact as any}
-                  onRescheduleMatch={handleRescheduleMatch}
-                  onCancelBooking={handleCancelBooking}
-                  onDeleteResult={handleOpenDeleteResult}
-                  viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
-                />
-              </div>
-            )}
-
             {Array.isArray(t.playoffMatches) && t.playoffMatches.length > 0 && (
               <div>
                 <h3 className="text-xl font-bold mb-3 text-accent">Playoff</h3>
@@ -955,7 +936,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                   onRescheduleMatch={handleRescheduleMatch}
                   onCancelBooking={handleCancelBooking}
                   onDeleteResult={handleOpenDeleteResult}
-                  // enable for the two players; MatchList checks isParticipant
                   viewingOwnGroup={true}
                 />
               </div>
@@ -976,6 +956,25 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                   onCancelBooking={handleCancelBooking}
                   onDeleteResult={handleOpenDeleteResult}
                   viewingOwnGroup={true}
+                />
+              </div>
+            )}
+
+            {selectedGroup && (
+              <div>
+                <h3 className="text-xl font-bold mb-3 text-accent">{selectedGroup.name}</h3>
+                <MatchList
+                  group={selectedGroup}
+                  players={event.players}
+                  onEditResult={handleEditResult}
+                  onBookMatch={handleBookMatch}
+                  isOrganizer={isOrganizer}
+                  loggedInPlayerId={loggedInPlayerId}
+                  onPlayerContact={handlePlayerContact as any}
+                  onRescheduleMatch={handleRescheduleMatch}
+                  onCancelBooking={handleCancelBooking}
+                  onDeleteResult={handleOpenDeleteResult}
+                  viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
                 />
               </div>
             )}
