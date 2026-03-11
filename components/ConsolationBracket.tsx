@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { type Event, type Tournament, type Player, type PlayoffBracket, type PlayoffMatch } from '../types';
+import { type Event, type Tournament, type Player, type PlayoffBracket, type PlayoffMatch, type Match } from '../types';
 import { calculateStandings } from '../utils/standings';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
@@ -10,6 +10,22 @@ interface ConsolationBracketProps {
     setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
     isOrganizer: boolean;
     loggedInPlayerId?: string;
+}
+
+function consolationMatchToLeagueMatchId(conMatchId: string) {
+  return `co-${conMatchId}`;
+}
+
+function buildLeagueMatchFromConsolationPlayoffMatch(pm: PlayoffMatch): Match | null {
+  if (!pm.player1Id || !pm.player2Id) return null;
+  return {
+    id: consolationMatchToLeagueMatchId(pm.id),
+    player1Id: pm.player1Id,
+    player2Id: pm.player2Id,
+    score1: pm.score1,
+    score2: pm.score2,
+    status: pm.score1 != null && pm.score2 != null ? 'completed' : 'pending',
+  };
 }
 
 const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tournament, setEvents, isOrganizer, loggedInPlayerId }) => {
@@ -65,7 +81,6 @@ const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tourname
         });
     };
 
-    // GENERA BRACKET E SALVA SU FIRESTORE
     const handleGenerateBracket = async () => {
         if (firstRoundAssignments.some(a => a === null)) {
             alert("Per favore, riempi tutti gli slot del primo turno.");
@@ -106,7 +121,8 @@ const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tourname
             const isP2Bye = p2Id === 'BYE';
             match.player1Id = isP1Bye ? null : p1Id;
             match.player2Id = isP2Bye ? null : p2Id;
-            let winnerId = null;
+
+            let winnerId: string | null = null;
             if (!isP1Bye && isP2Bye) winnerId = p1Id;
             if (isP1Bye && !isP2Bye) winnerId = p2Id;
             
@@ -127,71 +143,129 @@ const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tourname
             bronzeFinalId: null,
         };
 
-        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: e.tournaments.map(t => t.id === tournament.id ? { ...t, consolationBracket: finalBracket } : t) } : e));
-        await updateDoc(doc(db, "events", event.id), {
-            tournaments: event.tournaments.map(t =>
-                t.id === tournament.id ? { ...t, consolationBracket: finalBracket } : t
-            )
-        });
+        // genera anche le partite "league"
+        const consolationMatches: Match[] = [];
+        for (const pm of newMatches) {
+          const m = buildLeagueMatchFromConsolationPlayoffMatch(pm);
+          if (m) consolationMatches.push(m);
+        }
+
+        const updatedTournaments = event.tournaments.map(t =>
+          t.id === tournament.id
+            ? { ...t, consolationBracket: finalBracket, consolationMatches }
+            : t
+        );
+
+        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+        await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
         setView('bracket');
     };
 
-    // RESET BRACKET E SALVA SU FIRESTORE
     const handleResetBracket = async () => {
-        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: e.tournaments.map(t => t.id === tournament.id ? { ...t, consolationBracket: { ...(t.consolationBracket!), isGenerated: false, matches: [], finalId: null, bronzeFinalId: null, } } : t) } : e));
-        await updateDoc(doc(db, "events", event.id), {
-            tournaments: event.tournaments.map(t =>
-                t.id === tournament.id ? { ...t, consolationBracket: { ...(t.consolationBracket!), isGenerated: false, matches: [], finalId: null, bronzeFinalId: null, } } : t
-            )
-        });
+        const resetBracket: PlayoffBracket = {
+          ...(tournament.consolationBracket ?? { matches: [], isGenerated: false, finalId: null, bronzeFinalId: null }),
+          isGenerated: false,
+          matches: [],
+          finalId: null,
+          bronzeFinalId: null,
+        };
+
+        const updatedTournaments = event.tournaments.map(t =>
+          t.id === tournament.id
+            ? { ...t, consolationBracket: resetBracket, consolationMatches: [] }
+            : t
+        );
+
+        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+        await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
         setView('setup');
         setIsResetModalOpen(false);
     };
 
-    // SALVA RISULTATO MATCH E AGGIORNA FIRESTORE
     const handleSaveResult = async () => {
         if (!editingMatch) return;
+
         const s1 = parseInt(score1, 10);
         const s2 = parseInt(score2, 10);
         if (isNaN(s1) || isNaN(s2)) return;
 
-        setEvents(prevEvents => {
-            const newEvents = JSON.parse(JSON.stringify(prevEvents));
-            const currentTournament = newEvents.find((e: Event) => e.id === event.id)!.tournaments.find((t: Tournament) => t.id === tournament.id)!;
-            const bracket = currentTournament.consolationBracket!;
-            const match = bracket.matches.find((m: PlayoffMatch) => m.id === editingMatch.id)!;
-            match.score1 = s1;
-            match.score2 = s2;
-            const winnerId = s1 > s2 ? match.player1Id : match.player2Id;
-            match.winnerId = winnerId;
+        const currentBracket = tournament.consolationBracket;
+        if (!currentBracket) return;
 
-            if (match.nextMatchId) {
-                const nextMatch = bracket.matches.find((m: PlayoffMatch) => m.id === match.nextMatchId)!;
-                const allMatchesInRound = bracket.matches.filter((m: PlayoffMatch) => m.round === match.round).sort((a:PlayoffMatch, b:PlayoffMatch) => a.matchIndex - b.matchIndex);
-                const matchIndexInRound = allMatchesInRound.findIndex((m:PlayoffMatch) => m.id === match.id);
+        const bracketCopy: PlayoffBracket = JSON.parse(JSON.stringify(currentBracket));
+        const match = bracketCopy.matches.find((m: PlayoffMatch) => m.id === editingMatch.id);
+        if (!match) return;
+
+        match.score1 = s1;
+        match.score2 = s2;
+
+        if (s1 === s2) {
+          alert("Pareggio non valido. Inserisci un vincitore.");
+          return;
+        }
+
+        const winnerId = s1 > s2 ? match.player1Id : match.player2Id;
+        if (!winnerId) return;
+        match.winnerId = winnerId;
+
+        if (match.nextMatchId) {
+            const nextMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === match.nextMatchId);
+            if (nextMatch) {
+                const allMatchesInRound = bracketCopy.matches
+                  .filter((m: PlayoffMatch) => m.round === match.round)
+                  .sort((a: PlayoffMatch, b: PlayoffMatch) => a.matchIndex - b.matchIndex);
+
+                const matchIndexInRound = allMatchesInRound.findIndex((m: PlayoffMatch) => m.id === match.id);
                 if (matchIndexInRound % 2 === 0) nextMatch.player1Id = winnerId;
                 else nextMatch.player2Id = winnerId;
             }
-            return newEvents;
-        });
+        }
 
-        await updateDoc(doc(db, "events", event.id), {
-            tournaments: event.tournaments.map(t =>
-                t.id === tournament.id ? { ...t, consolationBracket: (() => {
-                    const bracketCopy = { ...t.consolationBracket! };
-                    const match = bracketCopy.matches.find((m: PlayoffMatch) => m.id === editingMatch.id)!;
-                    match.score1 = s1;
-                    match.score2 = s2;
-                    match.winnerId = s1 > s2 ? match.player1Id : match.player2Id;
-                    return bracketCopy;
-                })() } : t
-            )
-        });
+        const consolationMatches = Array.isArray(tournament.consolationMatches)
+          ? JSON.parse(JSON.stringify(tournament.consolationMatches)) as Match[]
+          : [];
 
-        setEditingMatch(null); setScore1(''); setScore2('');
+        const leagueMatchId = consolationMatchToLeagueMatchId(match.id);
+        const idx = consolationMatches.findIndex(m => m.id === leagueMatchId);
+        if (idx !== -1) {
+          consolationMatches[idx] = {
+            ...consolationMatches[idx],
+            score1: s1,
+            score2: s2,
+            status: 'completed',
+          };
+        } else {
+          const built = buildLeagueMatchFromConsolationPlayoffMatch(match);
+          if (built) consolationMatches.push({ ...built, score1: s1, score2: s2, status: 'completed' });
+        }
+
+        // crea/aggiorna match del turno successivo se pronto
+        if (match.nextMatchId) {
+          const nextMatch = bracketCopy.matches.find(m => m.id === match.nextMatchId);
+          const builtNext = nextMatch ? buildLeagueMatchFromConsolationPlayoffMatch(nextMatch) : null;
+          if (builtNext) {
+            const nidx = consolationMatches.findIndex(m => m.id === builtNext.id);
+            if (nidx === -1) consolationMatches.push(builtNext);
+            else consolationMatches[nidx] = { ...consolationMatches[nidx], ...builtNext, score1: consolationMatches[nidx].score1 ?? null, score2: consolationMatches[nidx].score2 ?? null };
+          }
+        }
+
+        const updatedTournaments = event.tournaments.map(t =>
+          t.id === tournament.id
+            ? { ...t, consolationBracket: bracketCopy, consolationMatches }
+            : t
+        );
+
+        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+        await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+        setEditingMatch(null);
+        setScore1('');
+        setScore2('');
     };
 
-    // SETUP VIEW
     if (view === 'setup') {
         if (!isOrganizer) return <p className="text-text-secondary text-center">Il tabellone di consolazione non è stato ancora generato.</p>;
         
@@ -286,7 +360,6 @@ const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tourname
         );
     }
     
-    // RENDER BRACKET
     const { matches } = tournament.consolationBracket!;
     const maxRound = Math.max(0, ...matches.map(m => m.round));
     
@@ -341,8 +414,7 @@ const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tourname
         <div className="bg-secondary p-2 md:p-6 rounded-xl shadow-lg">
              <div className="text-center mb-6">
                  <h3 className="text-2xl font-bold text-accent">Tabellone di Consolazione</h3>
-                 {winner && <div className="mt-2 text-lg text-yellow-400 font-bold animate-subtlePulse">
-🏆 Vincitore: {winner.name} 🏆</div>}
+                 {winner && <div className="mt-2 text-lg text-yellow-400 font-bold animate-subtlePulse">🏆 Vincitore: {winner.name} 🏆</div>}
                  {isOrganizer && <button onClick={() => setIsResetModalOpen(true)} className="mt-2 text-sm text-yellow-500 hover:text-yellow-400 underline">Modifica Tabellone</button>}
              </div>
              <div className="flex justify-start items-stretch gap-4 md:gap-10 overflow-x-auto pb-4 px-2">
@@ -367,7 +439,6 @@ const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tourname
                         </div>
                     </div>
                 )})}
-                 {/* Champion Column */}
                  <div className="flex flex-col w-60 flex-shrink-0 justify-center items-center">
                     <h4 className="text-lg font-semibold text-center text-text-secondary mb-4">Campione</h4>
                     {finalMatch ? <MatchCard match={finalMatch} /> : null}
