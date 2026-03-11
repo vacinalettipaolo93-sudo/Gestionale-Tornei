@@ -10,7 +10,7 @@ import TournamentSettings from './TournamentSettings';
 import Playoffs from './Playoffs';
 import ConsolationBracket from './ConsolationBracket';
 import PlayerManagement from './PlayerManagement';
-import PlayoffBracketBuilder from './PlayoffBracketBuilder';
+// import PlayoffBracketBuilder from './PlayoffBracketBuilder'; // <-- RIMOSSO: mostrava alert "collega il salvataggio"
 import AvailableSlotsList from './AvailableSlotsList';
 import AvailabilityTab from './AvailabilityTab';
 import { db } from "../firebase";
@@ -805,19 +805,19 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           />
         )}
 
-        {activeTab === 'playoffs' && isOrganizer && (
-          <PlayoffBracketBuilder
-            event={event}
-            tournament={tournament}
-            setEvents={setEvents}
-            isOrganizer={isOrganizer}
-          />
-        )}
-        {activeTab === 'playoffs' && !isOrganizer && tournament.playoffs?.isGenerated && (
+        {/* PLAYOFF: ora usa sempre Playoffs.tsx (che salva su Firestore) */}
+        {activeTab === 'playoffs' && (
           <div className="bg-secondary p-6 rounded-xl shadow-lg max-w-3xl mx-auto">
-            <Playoffs event={event} tournament={tournament} setEvents={setEvents} />
+            <Playoffs
+              event={event}
+              tournament={tournament}
+              setEvents={setEvents}
+              isOrganizer={isOrganizer}
+              loggedInPlayerId={loggedInPlayerId}
+            />
           </div>
         )}
+
         {activeTab === 'consolation' && (
           <ConsolationBracket event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInPlayerId} />
         )}
