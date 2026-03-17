@@ -11,26 +11,95 @@ interface TimeSlotsProps {
   loggedInPlayerId?: string;
   selectedGroupId?: string;
   globalTimeSlots: TimeSlot[];
-  onSelectTournament?: (tournament: Tournament, initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players', initialGroupId?: string) => void;
+  onSelectTournament?: (
+    tournament: Tournament,
+    initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players',
+    initialGroupId?: string
+  ) => void;
 }
 
 function generateSlotId() {
   return 'slot_' + Math.random().toString(36).slice(2, 10);
 }
 
-// Helper: Mappa slot prenotati in tutto l'evento (scheduled e completed)
+type TournamentWithExtraMatches = Tournament & {
+  playoffMatches?: Match[];
+  consolationMatches?: Match[];
+};
+
+type SlotPayload = {
+  match: Match;
+  group: Group | null;
+  tournament: Tournament;
+  phase: 'girone' | 'playoff' | 'consolazione';
+};
+
+// Helper: Mappa slot prenotati in tutto l'evento (scheduled e completed) includendo Gironi + Playoff + Consolazione
 function getBookedSlotsData(event: Event) {
-  const booked: Record<string, { match: Match; group: Group; tournament: Tournament }> = {};
-  (event.tournaments || []).forEach(t => {
+  const booked: Record<string, SlotPayload> = {};
+
+  (event.tournaments || []).forEach((t0) => {
+    const t = t0 as TournamentWithExtraMatches;
+
+    // GIRONE
     (t.groups || []).forEach(g => {
       (g.matches || []).forEach(m => {
         if (m.slotId && (m.status === "scheduled" || m.status === "completed")) {
-          booked[m.slotId] = { match: m, group: g, tournament: t };
+          booked[m.slotId] = { match: m, group: g, tournament: t0, phase: 'girone' };
         }
       });
     });
+
+    // PLAYOFF
+    (t.playoffMatches || []).forEach(m => {
+      if (m.slotId && (m.status === "scheduled" || m.status === "completed")) {
+        booked[m.slotId] = { match: m, group: null, tournament: t0, phase: 'playoff' };
+      }
+    });
+
+    // CONSOLAZIONE
+    (t.consolationMatches || []).forEach(m => {
+      if (m.slotId && (m.status === "scheduled" || m.status === "completed")) {
+        booked[m.slotId] = { match: m, group: null, tournament: t0, phase: 'consolazione' };
+      }
+    });
   });
+
   return booked;
+}
+
+// Nuovo helper: mostra SOLO le partite programmate (status === "scheduled") nello spazio slot prenotati
+function getScheduledSlotsData(event: Event) {
+  const scheduled: Record<string, SlotPayload> = {};
+
+  (event.tournaments || []).forEach((t0) => {
+    const t = t0 as TournamentWithExtraMatches;
+
+    // GIRONE
+    (t.groups || []).forEach(g => {
+      (g.matches || []).forEach(m => {
+        if (m.slotId && m.status === "scheduled") {
+          scheduled[m.slotId] = { match: m, group: g, tournament: t0, phase: 'girone' };
+        }
+      });
+    });
+
+    // PLAYOFF
+    (t.playoffMatches || []).forEach(m => {
+      if (m.slotId && m.status === "scheduled") {
+        scheduled[m.slotId] = { match: m, group: null, tournament: t0, phase: 'playoff' };
+      }
+    });
+
+    // CONSOLAZIONE
+    (t.consolationMatches || []).forEach(m => {
+      if (m.slotId && m.status === "scheduled") {
+        scheduled[m.slotId] = { match: m, group: null, tournament: t0, phase: 'consolazione' };
+      }
+    });
+  });
+
+  return scheduled;
 }
 
 // Formatting: da ISO -> "gg/mm/aaaa, hh:mm"
@@ -46,21 +115,6 @@ function formatDateTime(dateStr: string) {
   return `${gg}/${mm}/${aaaa}, ${h}:${min}`;
 }
 
-// Nuovo helper: mostra SOLO le partite programmate (status === "scheduled") nello spazio slot prenotati
-function getScheduledSlotsData(event: Event) {
-  const scheduled: Record<string, { match: Match; group: Group; tournament: Tournament }> = {};
-  (event.tournaments || []).forEach(t => {
-    (t.groups || []).forEach(g => {
-      (g.matches || []).forEach(m => {
-        if (m.slotId && m.status === "scheduled") {
-          scheduled[m.slotId] = { match: m, group: g, tournament: t };
-        }
-      });
-    });
-  });
-  return scheduled;
-}
-
 const TimeSlots: React.FC<TimeSlotsProps> = ({
   event,
   tournament,
@@ -71,11 +125,7 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
   globalTimeSlots = [],
   onSelectTournament,
 }) => {
-  const [slotInput, setSlotInput] = useState<{
-    start: string;
-    location: string;
-    field: string;
-  }>({ start: "", location: "", field: "" });
+  const [slotInput, setSlotInput] = useState<{ start: string; location: string; field: string; }>({ start: "", location: "", field: "" });
   const [slotError, setSlotError] = useState("");
   const [modalSlotId, setModalSlotId] = useState<string | null>(null);
   const [modalMatchId, setModalMatchId] = useState<string>("");
@@ -136,27 +186,46 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
     };
 
     // Annulla prenotazione per una partita prenotata su uno slot (reimposta a pending)
+    // ORA: funziona per gironi + playoff + consolazione
     const handleCancelBookedMatch = async (matchId: string, tournamentId: string) => {
       if (!confirm("Sei sicuro di voler annullare la prenotazione di questa partita?")) return;
 
-      const updatedTournaments = (event.tournaments || []).map(t => {
-        if (t.id !== tournamentId) return t;
+      const updatedTournaments = (event.tournaments || []).map(t0 => {
+        if (t0.id !== tournamentId) return t0;
+
+        const t = t0 as TournamentWithExtraMatches;
+
+        // 1) gironi
+        const updatedGroups = (t.groups || []).map(g => ({
+          ...g,
+          matches: (g.matches || []).map(m => {
+            if (m.id !== matchId) return m;
+            return { ...m, status: 'pending', scheduledTime: undefined, slotId: undefined, location: undefined, field: undefined };
+          })
+        }));
+
+        // 2) playoff
+        const updatedPlayoffMatches = (t.playoffMatches || []).map(m => {
+          if (m.id !== matchId) return m;
+          return { ...m, status: 'pending', scheduledTime: undefined, slotId: undefined, location: undefined, field: undefined };
+        });
+
+        // 3) consolazione
+        const updatedConsolationMatches = (t.consolationMatches || []).map(m => {
+          if (m.id !== matchId) return m;
+          return { ...m, status: 'pending', scheduledTime: undefined, slotId: undefined, location: undefined, field: undefined };
+        });
+
         return {
-          ...t,
-          groups: (t.groups || []).map(g => ({
-            ...g,
-            matches: (g.matches || []).map(m => {
-              if (m.id !== matchId) return m;
-              return { ...m, status: 'pending', scheduledTime: undefined, slotId: undefined, location: undefined, field: undefined };
-            })
-          }))
-        };
+          ...t0,
+          groups: updatedGroups,
+          playoffMatches: updatedPlayoffMatches,
+          consolationMatches: updatedConsolationMatches,
+        } as any;
       });
 
-      // update local UI
       setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, tournaments: updatedTournaments } : ev));
 
-      // persist
       try {
         await updateDoc(doc(db, "events", event.id), {
           tournaments: updatedTournaments
@@ -166,10 +235,17 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
       }
     };
 
+    const phaseLabel = (phase: SlotPayload['phase']) => {
+      if (phase === 'playoff') return 'Playoff';
+      if (phase === 'consolazione') return 'Consolazione';
+      return 'Girone';
+    };
+
     return (
       <div>
         <h2 className="text-2xl font-bold mb-4 text-accent">Slot Orari Globali</h2>
         <h3 className="text-xl font-bold mb-6 text-accent">Gestione slot orari globali</h3>
+
         {/* BOX AGGIUNGI NUOVO SLOT */}
         {isOrganizer && (
           <div className="bg-[#212737] rounded-xl p-5 mb-6 shadow-lg w-full max-w-md flex flex-col gap-3">
@@ -219,7 +295,6 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                     <span className="text-white">-</span>{" "}
                     <span className="text-accent font-bold">{slot.location}</span>{" "}
                     <span className="text-white">-</span>{" "}
-                    {/* campo: ora in rosso */}
                     <span className="text-red-500 font-bold">{slot.field}</span>
                   </div>
                   <div>
@@ -237,6 +312,7 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
             </ul>
           )}
         </div>
+
         {/* SLOT PRENOTATI: SOLO PARTITE PROGRAMMATE (scheduled) */}
         <div className="bg-[#212737] rounded-xl shadow-lg p-5 mb-6 w-full max-w-xl">
           <h4 className="font-bold text-[#3AF2C5] text-lg mb-3">Slot prenotati</h4>
@@ -244,10 +320,6 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
             <p className="text-gray-400 font-bold">Nessuna partita programmata.</p>
           ) : (
             <ul className="space-y-2">
-              {/*
-                Costruiamo un array di entry { slot, match, group, tournament }
-                e lo ordiniamo per slot.start (data/ora), così la visualizzazione è cronologica.
-              */}
               {Object.entries(scheduledSlotsData)
                 .map(([slotId, payload]) => {
                   const slot = globalTimeSlots.find(s => s.id === slotId);
@@ -255,14 +327,24 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                   return { slot, ...payload };
                 })
                 .filter(Boolean)
-                .sort((a, b) => {
+                .sort((a: any, b: any) => {
                   const ta = a.slot?.start ? new Date(a.slot.start).getTime() : 0;
                   const tb = b.slot?.start ? new Date(b.slot.start).getTime() : 0;
                   return ta - tb;
                 })
-                .map(({ slot, match, group, tournament }) => {
+                .map(({ slot, match, group, tournament, phase }: any) => {
                   const player1 = event.players.find(p => p.id === match.player1Id)?.name || match.player1Id;
                   const player2 = event.players.find(p => p.id === match.player2Id)?.name || match.player2Id;
+
+                  const phaseText = phaseLabel(phase);
+                  const groupText = group ? `, girone: ${group.name}` : '';
+
+                  // Se è playoff/consolazione, meglio entrare direttamente nel tab "matches" del torneo (senza groupId)
+                  const goToTab: any =
+                    phase === 'girone'
+                      ? ['matches', group?.id]
+                      : ['matches', undefined];
+
                   return (
                     <li key={slot.id} className="flex flex-col px-2 py-2 rounded bg-[#22283A] mb-2">
                       <div className="flex items-start justify-between">
@@ -270,24 +352,27 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
                           <span className="font-bold text-white">
                             {formatDateTime(slot.start)} - <span className="text-accent">{slot.location}</span> - <span className="text-red-500">{slot.field}</span>
                           </span>
+
                           <div className="font-bold text-accent mt-1">
                             Partita programmata:
                           </div>
+
                           <div className="text-white font-bold">
                             {player1} vs {player2}
-                            {" "}({tournament.name}, girone: {group.name})
+                            {" "}({tournament.name}{groupText}){" "}
+                            <span className="text-xs text-gray-300">[{phaseText}]</span>
                           </div>
+
                           <div className="text-sm text-gray-300">
                             Stato: Programmata
                           </div>
                         </div>
 
-                        {/* Bottoni: Vai al torneo (se fornita la callback) e Annulla pren. */}
                         <div className="ml-4 flex flex-col gap-2">
                           {onSelectTournament && (
                             <button
                               className="px-3 py-1 rounded bg-tertiary text-white"
-                              onClick={() => onSelectTournament(tournament, 'matches', group.id)}
+                              onClick={() => onSelectTournament(tournament, goToTab[0], goToTab[1])}
                             >
                               Vai al torneo
                             </button>
@@ -313,28 +398,22 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
   }
 
   // ================================
-  // 2. Prenotazione slot inside torneo/girone (resto invariato)
+  // 2. Prenotazione slot inside torneo/girone
   // ================================
 
+  // pending solo gironi (come prima). Se vuoi includere pending playoff qui, dimmelo.
   const myPendingMatches: Match[] = tournament?.groups
     ? tournament.groups.flatMap(g =>
-        g.matches.filter(m =>
-          m.status === "pending" &&
-          (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId)
-        )
+      g.matches.filter(m =>
+        m.status === "pending" &&
+        (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId)
       )
+    )
     : [];
 
-  const allBookedSlotIds: string[] = event.tournaments
-    .flatMap(tournament =>
-      tournament.groups
-        ? tournament.groups.flatMap(group =>
-            group.matches
-              .filter(match => match.slotId && (match.status === "scheduled" || match.status === "completed"))
-              .map(match => match.slotId!)
-          )
-        : []
-    );
+  // ORA booked slot IDs includono anche playoff/consolazione (global lock corretto)
+  const bookedSlotsData = getBookedSlotsData(event);
+  const allBookedSlotIds: string[] = Object.keys(bookedSlotsData);
   const availableSlots = globalTimeSlots.filter(slot => !allBookedSlotIds.includes(slot.id));
 
   const handleAddSlot = async () => {
@@ -403,66 +482,71 @@ const TimeSlots: React.FC<TimeSlotsProps> = ({
       field: slot.field ?? (slot.location ?? ""),
       slotId: slot.id
     };
+
     const updatedGroups = tournament.groups.map(g =>
       g.matches.some(m => m.id === match.id)
         ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) }
         : g
     );
+
     setEvents(prevEvents =>
       prevEvents.map(ev =>
         ev.id === event.id
           ? {
-              ...ev,
-              tournaments: ev.tournaments.map(t =>
-                t.id === tournament.id ? { ...t, groups: updatedGroups } : t
-              ),
-            }
+            ...ev,
+            tournaments: ev.tournaments.map(t =>
+              t.id === tournament.id ? { ...t, groups: updatedGroups } : t
+            ),
+          }
           : ev
       )
     );
+
     await updateDoc(doc(db, "events", event.id), {
       tournaments: event.tournaments.map(t =>
         t.id === tournament.id ? { ...t, groups: updatedGroups } : t
       )
     });
+
     setModalSlotId(null);
     setModalMatchId("");
     setModalBookError("");
   };
 
   const handleCancelMatchBooking = async (matchId: string) => {
-    // Trova la partita e il gruppo
     const updatedGroups = tournament.groups.map(g =>
       g.matches.some(m => m.id === matchId)
         ? {
-            ...g,
-            matches: g.matches.map(m =>
-              m.id === matchId
-                ? {
-                    ...m,
-                    status: "pending",
-                    scheduledTime: null,
-                    location: "",
-                    field: "",
-                    slotId: undefined
-                  }
-                : m
-            ),
-          }
+          ...g,
+          matches: g.matches.map(m =>
+            m.id === matchId
+              ? {
+                ...m,
+                status: "pending",
+                scheduledTime: null as any,
+                location: "",
+                field: "",
+                slotId: undefined
+              }
+              : m
+          ),
+        }
         : g
     );
+
     setEvents(prevEvents =>
       prevEvents.map(ev =>
         ev.id === event.id
           ? {
-              ...ev,
-              tournaments: ev.tournaments.map(t =>
-                t.id === tournament.id ? { ...t, groups: updatedGroups } : t
-              ),
-            }
+            ...ev,
+            tournaments: ev.tournaments.map(t =>
+              t.id === tournament.id ? { ...t, groups: updatedGroups } : t
+            ),
+          }
           : ev
       )
     );
+
     await updateDoc(doc(db, "events", event.id), {
       tournaments: event.tournaments.map(t =>
         t.id === tournament.id ? { ...t, groups: updatedGroups } : t
