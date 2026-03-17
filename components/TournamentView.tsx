@@ -8,7 +8,8 @@ import {
   type TimeSlot,
   type Player,
   type PlayoffBracket,
-  type PlayoffMatch
+  type PlayoffMatch,
+  type Group
 } from '../types';
 import StandingsTable from './StandingsTable';
 import MatchList from './MatchList';
@@ -18,7 +19,6 @@ import TournamentSettings from './TournamentSettings';
 import Playoffs from './Playoffs';
 import ConsolationBracket from './ConsolationBracket';
 import PlayerManagement from './PlayerManagement';
-// import PlayoffBracketBuilder from './PlayoffBracketBuilder'; // <-- RIMOSSO: mostrava alert "collega il salvataggio"
 import AvailableSlotsList from './AvailableSlotsList';
 import AvailabilityTab from './AvailabilityTab';
 import { db } from "../firebase";
@@ -35,10 +35,6 @@ interface TournamentViewProps {
   onPlayerContact?: (player: Player | { phone?: string }) => void;
 }
 
-/**
- * Small portal wrapper: render children into a container appended to document.body.
- * We create the container once per mount and remove on unmount.
- */
 const Portal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const elRef = useRef<HTMLDivElement | null>(null);
   if (!elRef.current) elRef.current = document.createElement('div');
@@ -52,7 +48,7 @@ const Portal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return createPortal(children, elRef.current!);
 };
 
-// Helpers for playoff/consolation IDs shown in "Partite" tab
+// --- ID helpers ---
 function isPlayoffLeagueMatchId(matchId: string) {
   return matchId.startsWith('po-');
 }
@@ -63,6 +59,7 @@ function stripPrefix(matchId: string, prefix: string) {
   return matchId.startsWith(prefix) ? matchId.slice(prefix.length) : matchId;
 }
 
+// --- Bracket helpers ---
 function computeWinnerIdFromScores(match: { player1Id: string | null; player2Id: string | null }, s1: number, s2: number) {
   if (!match.player1Id || !match.player2Id) return null;
   if (s1 === s2) return null;
@@ -86,14 +83,11 @@ function buildBracketCopyWithResultAndAdvance(params: {
   match.score2 = score2;
 
   const winnerId = computeWinnerIdFromScores({ player1Id: match.player1Id, player2Id: match.player2Id }, score1, score2);
-  if (!winnerId) {
-    return { bracketCopy, updatedMatch: match };
-  }
+  if (!winnerId) return { bracketCopy, updatedMatch: match };
 
   const loserId = winnerId === match.player1Id ? match.player2Id : match.player1Id;
   match.winnerId = winnerId;
 
-  // advance to next match
   if (match.nextMatchId) {
     const nextMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === match.nextMatchId);
     if (nextMatch) {
@@ -108,7 +102,6 @@ function buildBracketCopyWithResultAndAdvance(params: {
     }
   }
 
-  // bronze final
   if (match.loserGoesToBronzeFinal && bracketCopy.bronzeFinalId && hasBronzeFinal) {
     const bronzeMatch = bracketCopy.matches.find((m: PlayoffMatch) => m.id === bracketCopy.bronzeFinalId);
     if (bronzeMatch && loserId) {
@@ -130,12 +123,10 @@ function ensureLeagueMatchExistsAndUpToDate(params: {
 }) {
   const { leagueMatches, leagueMatchId, player1Id, player2Id, score1, score2 } = params;
 
-  // only create if both players exist
   if (!player1Id || !player2Id) return leagueMatches;
 
   const idx = leagueMatches.findIndex(m => m.id === leagueMatchId);
-  const nextStatus: Match['status'] =
-    score1 != null && score2 != null ? 'completed' : 'pending';
+  const nextStatus: Match['status'] = score1 != null && score2 != null ? 'completed' : 'pending';
 
   const updated: Match = {
     id: leagueMatchId,
@@ -148,7 +139,6 @@ function ensureLeagueMatchExistsAndUpToDate(params: {
 
   if (idx === -1) return [...leagueMatches, updated];
 
-  // keep booking fields if already booked
   const prev = leagueMatches[idx];
   const merged: Match = {
     ...prev,
@@ -165,7 +155,21 @@ function ensureLeagueMatchExistsAndUpToDate(params: {
   return copy;
 }
 
-interface TournamentViewPropsWithOptionalMatches extends Tournament {
+type MatchContainerKind = 'group' | 'playoff' | 'consolation';
+
+function findMatchContainerInTournament(t: Tournament, matchId: string): { kind: MatchContainerKind; groupId?: string } | null {
+  // playoff/consolation first (unique prefixes)
+  if (isPlayoffLeagueMatchId(matchId)) return { kind: 'playoff' };
+  if (isConsolationLeagueMatchId(matchId)) return { kind: 'consolation' };
+
+  // groups
+  for (const g of t.groups) {
+    if (g.matches.some(m => m.id === matchId)) return { kind: 'group', groupId: g.id };
+  }
+  return null;
+}
+
+interface TournamentWithExtraMatches extends Tournament {
   playoffMatches?: Match[];
   consolationMatches?: Match[];
 }
@@ -174,7 +178,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   event, tournament, setEvents, isOrganizer, loggedInPlayerId,
   initialActiveTab, initialSelectedGroupId, onPlayerContact
 }) => {
-  const t = tournament as TournamentViewPropsWithOptionalMatches;
+  const t = tournament as TournamentWithExtraMatches;
 
   const userGroup = tournament.groups.find(g => g.playerIds.includes(loggedInPlayerId ?? ""));
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(
@@ -211,7 +215,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
 
   const [bookingError, setBookingError] = useState<string>("");
 
-  // AGGIUNTA: prenotazione dal tab Slot Disponibili
+  // prenotazione dal tab Slot Disponibili (solo gironi, come era)
   const [slotToBook, setSlotToBook] = useState<null | TimeSlot>(null);
   const myPendingMatches = selectedGroup
     ? selectedGroup.matches.filter(m =>
@@ -226,7 +230,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const [deletingTriggerRect, setDeletingTriggerRect] = useState<DOMRect | null>(null);
   const [slotToBookTriggerRect, setSlotToBookTriggerRect] = useState<DOMRect | null>(null);
 
-  // Handlers accept optional triggerRect and store it when opening modals
   const handleClickBookSlot = (slot: TimeSlot, triggerRect?: DOMRect | null) => {
     setSlotToBook(slot);
     setSlotToBookTriggerRect(triggerRect ?? null);
@@ -235,6 +238,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const handleConfirmBookSlot = async (matchId: string) => {
     const match = selectedGroup?.matches.find(m => m.id === matchId);
     if (!match || !slotToBook) return;
+
     setBookingError("");
     const updatedMatch: Match = {
       ...match,
@@ -244,33 +248,49 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       field: slotToBook.field ?? (slotToBook.location ?? ""),
       slotId: slotToBook.id
     };
+
     const updatedGroups = tournament.groups.map(g =>
       g.id === selectedGroup?.id
         ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) }
         : g
     );
+
     const updatedTournaments = event.tournaments.map(t0 =>
       t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0
     );
+
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
     setSlotToBook(null);
     setSlotToBookTriggerRect(null);
   };
 
+  // Slot locking: now includes groups + playoffMatches + consolationMatches across ALL tournaments
   function getAllBookedSlotIds(): string[] {
-    return event.tournaments.flatMap(t0 =>
-      t0.groups
-        ? t0.groups.flatMap(group =>
-          group.matches
-            .filter(match => match.slotId && (match.status === "scheduled" || match.status === "completed"))
-            .map(match => match.slotId!)
-        )
-        : []
-    );
+    return event.tournaments.flatMap(t0 => {
+      const fromGroups = (t0.groups ?? []).flatMap(g =>
+        (g.matches ?? [])
+          .filter(m => m.slotId && (m.status === "scheduled" || m.status === "completed"))
+          .map(m => m.slotId!)
+      );
+
+      const fromPlayoff = (t0 as TournamentWithExtraMatches).playoffMatches
+        ? (t0 as TournamentWithExtraMatches).playoffMatches!
+          .filter(m => m.slotId && (m.status === "scheduled" || m.status === "completed"))
+          .map(m => m.slotId!)
+        : [];
+
+      const fromCons = (t0 as TournamentWithExtraMatches).consolationMatches
+        ? (t0 as TournamentWithExtraMatches).consolationMatches!
+          .filter(m => m.slotId && (m.status === "scheduled" || m.status === "completed"))
+          .map(m => m.slotId!)
+        : [];
+
+      return [...fromGroups, ...fromPlayoff, ...fromCons];
+    });
   }
 
-  // --- UPDATED: getAvailableSlots filters out past slots and booked ones ---
   function getAvailableSlots() {
     const globalSlots = Array.isArray(event.globalTimeSlots) ? event.globalTimeSlots : [];
     const booked = getAllBookedSlotIds();
@@ -280,7 +300,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       if (!startIso) return false;
       const startDate = new Date(startIso);
       if (isNaN(startDate.getTime())) return false;
-      // exclude past or current (strictly future only)
       if (startDate.getTime() <= now.getTime()) return false;
       return !booked.includes(slot.id);
     });
@@ -308,10 +327,9 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   async function saveMatchResult(match: Match) {
     const s1 = Number(score1);
     const s2 = Number(score2);
-
     if (Number.isNaN(s1) || Number.isNaN(s2)) return;
 
-    // --- PLAYOFF match saved from "Partite" tab ---
+    // PLAYOFF
     if (isPlayoffLeagueMatchId(match.id)) {
       const playoffMatchId = stripPrefix(match.id, 'po-');
       if (!tournament.playoffs) return;
@@ -324,19 +342,17 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         hasBronzeFinal: !!tournament.settings.hasBronzeFinal,
       });
 
-      // update playoffMatches list
       let playoffMatches: Match[] = Array.isArray(t.playoffMatches) ? JSON.parse(JSON.stringify(t.playoffMatches)) : [];
-      // current match
-      playoffMatches = ensureLeagueMatchExistsAndUpToDate({
-        leagueMatches: playoffMatches,
-        leagueMatchId: match.id,
-        player1Id: match.player1Id,
-        player2Id: match.player2Id,
-        score1: s1,
-        score2: s2,
-      });
 
-      // ensure next match exists if ready
+      // keep booking fields, set completed
+      const currentIdx = playoffMatches.findIndex(m => m.id === match.id);
+      if (currentIdx !== -1) {
+        playoffMatches[currentIdx] = { ...playoffMatches[currentIdx], score1: s1, score2: s2, status: 'completed' };
+      } else {
+        playoffMatches.push({ ...match, score1: s1, score2: s2, status: 'completed' });
+      }
+
+      // ensure next exists if ready
       const pm = bracketCopy.matches.find(m => m.id === playoffMatchId);
       if (pm?.nextMatchId) {
         const nextPm = bracketCopy.matches.find(m => m.id === pm.nextMatchId);
@@ -368,9 +384,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       }
 
       const updatedTournaments = event.tournaments.map(t0 =>
-        t0.id === tournament.id
-          ? { ...t0, playoffs: bracketCopy, playoffMatches }
-          : t0
+        t0.id === tournament.id ? { ...t0, playoffs: bracketCopy, playoffMatches } : t0
       );
 
       setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
@@ -383,7 +397,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       return;
     }
 
-    // --- CONSOLATION match saved from "Partite" tab ---
+    // CONSOLATION
     if (isConsolationLeagueMatchId(match.id)) {
       const consolationMatchId = stripPrefix(match.id, 'co-');
       if (!tournament.consolationBracket) return;
@@ -393,20 +407,17 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         playoffMatchId: consolationMatchId,
         score1: s1,
         score2: s2,
-        // consolation doesn't use bronzeFinalId (but function is generic)
         hasBronzeFinal: false,
       });
 
       let consolationMatches: Match[] = Array.isArray(t.consolationMatches) ? JSON.parse(JSON.stringify(t.consolationMatches)) : [];
 
-      consolationMatches = ensureLeagueMatchExistsAndUpToDate({
-        leagueMatches: consolationMatches,
-        leagueMatchId: match.id,
-        player1Id: match.player1Id,
-        player2Id: match.player2Id,
-        score1: s1,
-        score2: s2,
-      });
+      const currentIdx = consolationMatches.findIndex(m => m.id === match.id);
+      if (currentIdx !== -1) {
+        consolationMatches[currentIdx] = { ...consolationMatches[currentIdx], score1: s1, score2: s2, status: 'completed' };
+      } else {
+        consolationMatches.push({ ...match, score1: s1, score2: s2, status: 'completed' });
+      }
 
       const cm = bracketCopy.matches.find(m => m.id === consolationMatchId);
       if (cm?.nextMatchId) {
@@ -424,9 +435,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       }
 
       const updatedTournaments = event.tournaments.map(t0 =>
-        t0.id === tournament.id
-          ? { ...t0, consolationBracket: bracketCopy, consolationMatches }
-          : t0
+        t0.id === tournament.id ? { ...t0, consolationBracket: bracketCopy, consolationMatches } : t0
       );
 
       setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
@@ -439,14 +448,25 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       return;
     }
 
-    // --- Group matches (original behavior) ---
-    if (!selectedGroup) return;
+    // GROUP MATCH (find the correct group by match id)
+    const container = findMatchContainerInTournament(tournament, match.id);
+    if (!container || container.kind !== 'group' || !container.groupId) return;
 
-    const updatedMatch = { ...match, score1: s1, score2: s2, status: "completed" as const };
-    const updatedGroups = tournament.groups.map(g =>
-      g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
+    const groupId = container.groupId;
+
+    // keep booking fields, set completed
+    const updatedGroups = tournament.groups.map(g => {
+      if (g.id !== groupId) return g;
+      return {
+        ...g,
+        matches: g.matches.map(m => m.id === match.id ? { ...m, ...match, score1: s1, score2: s2, status: 'completed' } : m)
+      };
+    });
+
+    const updatedTournaments = event.tournaments.map(t0 =>
+      t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0
     );
-    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
+
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
 
@@ -456,23 +476,85 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     setScore2("");
   }
 
-  // elimina risultato (open uses trigger rect)
   const handleOpenDeleteResult = (match: Match, triggerRect?: DOMRect | null) => {
     setDeletingMatch(match);
     setDeletingTriggerRect(triggerRect ?? null);
   };
 
   async function deleteMatchResult(match: Match) {
-    // NOTE: delete for playoff/consolation not implemented here.
-    // Keep existing behavior for group matches only.
-    if (!selectedGroup) return;
-    const updatedMatch: Match = { ...match, score1: null, score2: null, status: "pending" };
-    const updatedGroups = tournament.groups.map(g =>
-      g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
+    // PLAYOFF
+    if (isPlayoffLeagueMatchId(match.id)) {
+      const playoffMatchId = stripPrefix(match.id, 'po-');
+      if (!tournament.playoffs) return;
+
+      const bracketCopy: PlayoffBracket = JSON.parse(JSON.stringify(tournament.playoffs));
+      const m = bracketCopy.matches.find(x => x.id === playoffMatchId);
+      if (!m) return;
+
+      m.score1 = null;
+      m.score2 = null;
+      m.winnerId = null;
+
+      let playoffMatches: Match[] = Array.isArray(t.playoffMatches) ? JSON.parse(JSON.stringify(t.playoffMatches)) : [];
+      playoffMatches = playoffMatches.map(x => x.id === match.id ? { ...x, score1: null, score2: null, status: 'pending' } : x);
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id ? { ...t0, playoffs: bracketCopy, playoffMatches } : t0
+      );
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+      setDeletingMatch(null);
+      setDeletingTriggerRect(null);
+      return;
+    }
+
+    // CONSOLATION
+    if (isConsolationLeagueMatchId(match.id)) {
+      const consolationMatchId = stripPrefix(match.id, 'co-');
+      if (!tournament.consolationBracket) return;
+
+      const bracketCopy: PlayoffBracket = JSON.parse(JSON.stringify(tournament.consolationBracket));
+      const m = bracketCopy.matches.find(x => x.id === consolationMatchId);
+      if (!m) return;
+
+      m.score1 = null;
+      m.score2 = null;
+      m.winnerId = null;
+
+      let consolationMatches: Match[] = Array.isArray(t.consolationMatches) ? JSON.parse(JSON.stringify(t.consolationMatches)) : [];
+      consolationMatches = consolationMatches.map(x => x.id === match.id ? { ...x, score1: null, score2: null, status: 'pending' } : x);
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id ? { ...t0, consolationBracket: bracketCopy, consolationMatches } : t0
+      );
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+      setDeletingMatch(null);
+      setDeletingTriggerRect(null);
+      return;
+    }
+
+    // GROUP
+    const container = findMatchContainerInTournament(tournament, match.id);
+    if (!container || container.kind !== 'group' || !container.groupId) return;
+
+    const updatedGroups = tournament.groups.map(g => {
+      if (g.id !== container.groupId) return g;
+      return {
+        ...g,
+        matches: g.matches.map(m => m.id === match.id ? { ...m, score1: null, score2: null, status: 'pending' } : m)
+      };
+    });
+
+    const updatedTournaments = event.tournaments.map(t0 =>
+      t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0
     );
-    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
+
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
     setDeletingMatch(null);
     setDeletingTriggerRect(null);
   }
@@ -486,9 +568,9 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   };
 
   async function saveMatchBooking(match: Match) {
-    if (!selectedGroup) return;
     const globalSlots = Array.isArray(event.globalTimeSlots) ? event.globalTimeSlots : [];
     const allBookedSlotIds = getAllBookedSlotIds();
+
     if (!selectedSlotId) {
       setBookingError("Seleziona uno slot orario.");
       return;
@@ -497,6 +579,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       setBookingError("Slot già prenotato, scegli un altro slot.");
       return;
     }
+
     const timeSlot = globalSlots.find(s => s.id === selectedSlotId);
     if (!timeSlot) {
       setBookingError("Slot non trovato tra quelli globali.");
@@ -507,6 +590,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       setBookingError("Invalid data - campo orario non valido.");
       return;
     }
+
     const updatedMatch: Match = {
       ...match,
       status: "scheduled",
@@ -515,12 +599,60 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       location: timeSlot.location ?? "",
       field: timeSlot.field ?? (timeSlot.location ?? ""),
     };
+
+    // PLAYOFF
+    if (isPlayoffLeagueMatchId(match.id)) {
+      const current = Array.isArray(t.playoffMatches) ? t.playoffMatches : [];
+      const updatedPlayoffMatches = current.map(m => m.id === match.id ? updatedMatch : m);
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id ? { ...t0, playoffMatches: updatedPlayoffMatches } : t0
+      );
+
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+      setBookingMatch(null);
+      setBookingTriggerRect(null);
+      setSelectedSlotId("");
+      setBookingError("");
+      return;
+    }
+
+    // CONSOLATION
+    if (isConsolationLeagueMatchId(match.id)) {
+      const current = Array.isArray(t.consolationMatches) ? t.consolationMatches : [];
+      const updatedConsolationMatches = current.map(m => m.id === match.id ? updatedMatch : m);
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id ? { ...t0, consolationMatches: updatedConsolationMatches } : t0
+      );
+
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+      setBookingMatch(null);
+      setBookingTriggerRect(null);
+      setSelectedSlotId("");
+      setBookingError("");
+      return;
+    }
+
+    // GROUP
+    const container = findMatchContainerInTournament(tournament, match.id);
+    if (!container || container.kind !== 'group' || !container.groupId) return;
+
     const updatedGroups = tournament.groups.map(g =>
-      g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
+      g.id === container.groupId ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
     );
-    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
+
+    const updatedTournaments = event.tournaments.map(t0 =>
+      t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0
+    );
+
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
     setBookingMatch(null);
     setBookingTriggerRect(null);
     setSelectedSlotId("");
@@ -535,9 +667,9 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   };
 
   async function saveRescheduleMatch(match: Match) {
-    if (!selectedGroup) return;
     const globalSlots = Array.isArray(event.globalTimeSlots) ? event.globalTimeSlots : [];
     const allBookedSlotIds = getAllBookedSlotIds();
+
     if (!rescheduleSlotId) {
       setBookingError("Seleziona uno slot orario.");
       return;
@@ -546,21 +678,72 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       setBookingError("Slot già prenotato da un'altra partita.");
       return;
     }
+
     const timeSlot = globalSlots.find(s => s.id === rescheduleSlotId);
     const dateObj = timeSlot ? new Date(timeSlot.start) : null;
+
     const updatedMatch: Match = {
       ...match,
+      status: "scheduled",
       scheduledTime: timeSlot?.start ? dateObj?.toISOString() ?? "" : "",
       slotId: timeSlot?.id ?? "",
       location: timeSlot?.location ?? "",
       field: timeSlot?.field ?? (timeSlot?.location ?? ""),
     };
+
+    // PLAYOFF
+    if (isPlayoffLeagueMatchId(match.id)) {
+      const current = Array.isArray(t.playoffMatches) ? t.playoffMatches : [];
+      const updatedPlayoffMatches = current.map(m => m.id === match.id ? updatedMatch : m);
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id ? { ...t0, playoffMatches: updatedPlayoffMatches } : t0
+      );
+
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+      setReschedulingMatch(null);
+      setRescheduleTriggerRect(null);
+      setRescheduleSlotId("");
+      setBookingError("");
+      return;
+    }
+
+    // CONSOLATION
+    if (isConsolationLeagueMatchId(match.id)) {
+      const current = Array.isArray(t.consolationMatches) ? t.consolationMatches : [];
+      const updatedConsolationMatches = current.map(m => m.id === match.id ? updatedMatch : m);
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id ? { ...t0, consolationMatches: updatedConsolationMatches } : t0
+      );
+
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+      setReschedulingMatch(null);
+      setRescheduleTriggerRect(null);
+      setRescheduleSlotId("");
+      setBookingError("");
+      return;
+    }
+
+    // GROUP
+    const container = findMatchContainerInTournament(tournament, match.id);
+    if (!container || container.kind !== 'group' || !container.groupId) return;
+
     const updatedGroups = tournament.groups.map(g =>
-      g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
+      g.id === container.groupId ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
     );
-    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
+
+    const updatedTournaments = event.tournaments.map(t0 =>
+      t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0
+    );
+
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
     setReschedulingMatch(null);
     setRescheduleTriggerRect(null);
     setRescheduleSlotId("");
@@ -569,17 +752,53 @@ const TournamentView: React.FC<TournamentViewProps> = ({
 
   // cancel booking
   async function handleCancelBooking(match: Match) {
-    if (!selectedGroup) return;
-    const updatedMatch: Match = { ...match, status: "pending", scheduledTime: null, slotId: null, location: "", field: "" };
+    const updatedMatch: Match = { ...match, status: "pending", scheduledTime: null as any, slotId: null as any, location: "", field: "" };
+
+    // PLAYOFF
+    if (isPlayoffLeagueMatchId(match.id)) {
+      const current = Array.isArray(t.playoffMatches) ? t.playoffMatches : [];
+      const updatedPlayoffMatches = current.map(m => m.id === match.id ? updatedMatch : m);
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id ? { ...t0, playoffMatches: updatedPlayoffMatches } : t0
+      );
+
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+      return;
+    }
+
+    // CONSOLATION
+    if (isConsolationLeagueMatchId(match.id)) {
+      const current = Array.isArray(t.consolationMatches) ? t.consolationMatches : [];
+      const updatedConsolationMatches = current.map(m => m.id === match.id ? updatedMatch : m);
+
+      const updatedTournaments = event.tournaments.map(t0 =>
+        t0.id === tournament.id ? { ...t0, consolationMatches: updatedConsolationMatches } : t0
+      );
+
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+      await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+      return;
+    }
+
+    // GROUP
+    const container = findMatchContainerInTournament(tournament, match.id);
+    if (!container || container.kind !== 'group' || !container.groupId) return;
+
     const updatedGroups = tournament.groups.map(g =>
-      g.id === selectedGroup.id ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
+      g.id === container.groupId ? { ...g, matches: g.matches.map(m => m.id === match.id ? updatedMatch : m) } : g
     );
-    const updatedTournaments = event.tournaments.map(t0 => t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0);
+
+    const updatedTournaments = event.tournaments.map(t0 =>
+      t0.id === tournament.id ? { ...t0, groups: updatedGroups } : t0
+    );
+
     setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
     await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
   }
 
-  // --- MODAL ANCHORING LOGIC ADDED BELOW ---
+  // --- MODAL ANCHORING LOGIC (UNCHANGED FROM YOUR FILE) ---
   const editingModalRef = useRef<HTMLDivElement | null>(null);
   const bookingModalRef = useRef<HTMLDivElement | null>(null);
   const rescheduleModalRef = useRef<HTMLDivElement | null>(null);
@@ -597,42 +816,23 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     const vw = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
     const vh = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
 
-    // mobile fallback: center
     if (vw <= 480) {
-      return {
-        position: 'fixed' as const,
-        left: '50%',
-        top: '50%',
-        transform: 'translate(-50%, -50%)'
-      };
+      return { position: 'fixed' as const, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
     }
 
     let top = triggerRect.bottom + margin;
     let left = triggerRect.left;
 
-    // try to place below; if not enough space, place above
-    if (top + modalRect.height > vh - margin) {
-      top = triggerRect.top - modalRect.height - margin;
-    }
+    if (top + modalRect.height > vh - margin) top = triggerRect.top - modalRect.height - margin;
 
-    // clamp vertically
     top = Math.max(margin, Math.min(top, vh - modalRect.height - margin));
 
-    // horizontal overflow correction
-    if (left + modalRect.width > vw - margin) {
-      left = Math.max(margin, vw - modalRect.width - margin);
-    }
+    if (left + modalRect.width > vw - margin) left = Math.max(margin, vw - modalRect.width - margin);
     left = Math.max(margin, left);
 
-    return {
-      position: 'fixed' as const,
-      top: `${Math.round(top)}px`,
-      left: `${Math.round(left)}px`,
-      transform: 'none'
-    };
+    return { position: 'fixed' as const, top: `${Math.round(top)}px`, left: `${Math.round(left)}px`, transform: 'none' };
   }
 
-  // New anchorModal: applies styles directly to modalEl.style for reliability
   function anchorModal(modalRef: React.RefObject<HTMLDivElement>, setStyle: (s?: React.CSSProperties) => void, providedTriggerRect?: DOMRect | null) {
     const modalEl = modalRef.current;
     if (!modalEl) return;
@@ -645,13 +845,12 @@ const TournamentView: React.FC<TournamentViewProps> = ({
 
       if (triggerToUse) {
         const styleObj = computeAnchorStyle(triggerToUse, modalRect);
-        // apply inline style directly (imperative) — more resilient to React render timing
         try {
           modalEl.style.position = (styleObj.position as string) || 'fixed';
           modalEl.style.top = (styleObj.top as string) || '';
           modalEl.style.left = (styleObj.left as string) || '';
           modalEl.style.transform = (styleObj.transform as string) || 'none';
-        } catch (err) {
+        } catch {
           modalEl.style.cssText = `position: ${styleObj.position}; top: ${styleObj.top}; left: ${styleObj.left}; transform: ${styleObj.transform};`;
         }
         setStyle(styleObj);
@@ -672,6 +871,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         setStyle(fallbackStyle);
         return;
       }
+
       const triggerRect = active.getBoundingClientRect();
       const styleObj = computeAnchorStyle(triggerRect, modalRect);
       modalEl.style.position = (styleObj.position as string) || 'fixed';
@@ -682,17 +882,13 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     });
   }
 
-  // reposition on open for each modal (pass provided trigger rects)
   useEffect(() => {
     if (editingMatch) {
       anchorModal(editingModalRef, setEditingModalStyle, editingTriggerRect);
       const onScroll = () => anchorModal(editingModalRef, setEditingModalStyle, editingTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
-      return () => {
-        window.removeEventListener('scroll', onScroll, true);
-        window.removeEventListener('resize', onScroll);
-      };
+      return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll); };
     } else {
       if (editingModalRef.current) editingModalRef.current.style.cssText = '';
       setEditingModalStyle(undefined);
@@ -706,10 +902,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       const onScroll = () => anchorModal(bookingModalRef, setBookingModalStyle, bookingTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
-      return () => {
-        window.removeEventListener('scroll', onScroll, true);
-        window.removeEventListener('resize', onScroll);
-      };
+      return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll); };
     } else {
       if (bookingModalRef.current) bookingModalRef.current.style.cssText = '';
       setBookingModalStyle(undefined);
@@ -723,10 +916,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       const onScroll = () => anchorModal(rescheduleModalRef, setRescheduleModalStyle, rescheduleTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
-      return () => {
-        window.removeEventListener('scroll', onScroll, true);
-        window.removeEventListener('resize', onScroll);
-      };
+      return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll); };
     } else {
       if (rescheduleModalRef.current) rescheduleModalRef.current.style.cssText = '';
       setRescheduleModalStyle(undefined);
@@ -740,10 +930,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       const onScroll = () => anchorModal(deletingModalRef, setDeletingModalStyle, deletingTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
-      return () => {
-        window.removeEventListener('scroll', onScroll, true);
-        window.removeEventListener('resize', onScroll);
-      };
+      return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll); };
     } else {
       if (deletingModalRef.current) deletingModalRef.current.style.cssText = '';
       setDeletingModalStyle(undefined);
@@ -757,10 +944,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       const onScroll = () => anchorModal(slotToBookModalRef, setSlotToBookModalStyle, slotToBookTriggerRect);
       window.addEventListener('scroll', onScroll, true);
       window.addEventListener('resize', onScroll);
-      return () => {
-        window.removeEventListener('scroll', onScroll, true);
-        window.removeEventListener('resize', onScroll);
-      };
+      return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onScroll); };
     } else {
       if (slotToBookModalRef.current) slotToBookModalRef.current.style.cssText = '';
       setSlotToBookModalStyle(undefined);
@@ -768,25 +952,24 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     }
   }, [slotToBook, myPendingMatches.length, slotToBookTriggerRect]);
 
-  // End anchoring logic
   const modalBackdrop = "fixed inset-0 bg-black/70 z-50";
   const modalBox = "bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary";
 
-  // Virtual groups for playoff/consolation matches (so we can reuse MatchList UI)
-  const playoffVirtualGroup = {
+  const playoffVirtualGroup: Group = {
     id: `${tournament.id}-playoffs`,
     name: "Playoff",
     playerIds: [],
     matches: Array.isArray(t.playoffMatches) ? t.playoffMatches : [],
   };
 
-  const consolationVirtualGroup = {
+  const consolationVirtualGroup: Group = {
     id: `${tournament.id}-consolation`,
     name: "Consolazione",
     playerIds: [],
     matches: Array.isArray(t.consolationMatches) ? t.consolationMatches : [],
   };
 
+  // --- UI (same as your latest version: playoff on top) ---
   return (
     <div>
       {/* Tabs menu */}
@@ -919,14 +1102,13 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           </div>
         )}
 
-        {/* TAB PARTITE (Playoff in alto) */}
         {activeTab === 'matches' && (
           <div className="space-y-10">
             {Array.isArray(t.playoffMatches) && t.playoffMatches.length > 0 && (
               <div>
                 <h3 className="text-xl font-bold mb-3 text-accent">Playoff</h3>
                 <MatchList
-                  group={playoffVirtualGroup as any}
+                  group={playoffVirtualGroup}
                   players={event.players}
                   onEditResult={handleEditResult}
                   onBookMatch={handleBookMatch}
@@ -945,7 +1127,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               <div>
                 <h3 className="text-xl font-bold mb-3 text-accent">Consolazione</h3>
                 <MatchList
-                  group={consolationVirtualGroup as any}
+                  group={consolationVirtualGroup}
                   players={event.players}
                   onEditResult={handleEditResult}
                   onBookMatch={handleBookMatch}
@@ -979,7 +1161,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </div>
             )}
 
-            {/* Modals */}
+            {/* Modals (same as your file) */}
             {editingMatch && (
               <Portal>
                 <div className={modalBackdrop} role="dialog" aria-modal="true">
@@ -1076,7 +1258,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           </div>
         )}
 
-        {/* Tab Slot Disponibili */}
         {activeTab === 'slot' && (
           <>
             <AvailableSlotsList
@@ -1127,41 +1308,32 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           <ParticipantsTab event={event} tournament={tournament} loggedInPlayerId={loggedInPlayerId} />
         )}
 
-        {/* Nuova sezione: Disponibilità */}
         {activeTab === 'availability' && selectedGroup && (
-          <AvailabilityTab
-            event={event}
-            tournament={tournament}
-            selectedGroup={selectedGroup}
-            loggedInPlayerId={loggedInPlayerId}
-          />
+          <AvailabilityTab event={event} tournament={tournament} selectedGroup={selectedGroup} loggedInPlayerId={loggedInPlayerId} />
         )}
 
-        {/* PLAYOFF: ora usa sempre Playoffs.tsx (che salva su Firestore) */}
         {activeTab === 'playoffs' && (
           <div className="bg-secondary p-6 rounded-xl shadow-lg max-w-3xl mx-auto">
-            <Playoffs
-              event={event}
-              tournament={tournament}
-              setEvents={setEvents}
-              isOrganizer={isOrganizer}
-              loggedInPlayerId={loggedInPlayerId}
-            />
+            <Playoffs event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInPlayerId} />
           </div>
         )}
 
         {activeTab === 'consolation' && (
           <ConsolationBracket event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInPlayerId} />
         )}
+
         {activeTab === 'groups' && isOrganizer && (
           <GroupManagement event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} />
         )}
+
         {activeTab === 'players' && isOrganizer && (
           <PlayerManagement event={event} setEvents={setEvents} isOrganizer={isOrganizer} onPlayerContact={handlePlayerContact} />
         )}
+
         {activeTab === 'settings' && isOrganizer && (
           <TournamentSettings event={event} tournament={tournament} setEvents={setEvents} />
         )}
+
         {activeTab === 'rules' && (
           <div className="bg-secondary p-6 rounded-xl shadow-lg max-w-3xl mx-auto whitespace-pre-line">
             <h3 className="text-xl font-bold mb-4 text-accent">Regolamento Torneo</h3>
