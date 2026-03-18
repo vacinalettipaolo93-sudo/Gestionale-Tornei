@@ -12,6 +12,12 @@ interface PlayoffsProps {
   loggedInPlayerId?: string;
 }
 
+type PlayoffWithdrawal = { groupId: string; playerId: string };
+type TournamentWithWithdrawals = Tournament & {
+  playoffWithdrawals?: PlayoffWithdrawal[];
+  playoffMatches?: Match[];
+};
+
 function playoffMatchToLeagueMatchId(playoffMatchId: string) {
   return `po-${playoffMatchId}`;
 }
@@ -28,30 +34,51 @@ function buildLeagueMatchFromPlayoffMatch(pm: PlayoffMatch): Match | null {
   };
 }
 
-function isMatchCompleted(pm: PlayoffMatch) {
-  return pm.score1 != null && pm.score2 != null;
-}
-
 const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrganizer, loggedInPlayerId }) => {
+  const tt = tournament as TournamentWithWithdrawals;
+
   const [view, setView] = useState<'setup' | 'bracket'>(tournament.playoffs?.isGenerated ? 'bracket' : 'setup');
 
+  // --- NEW: withdrawals managed BEFORE generation (only affects playoff qualifiers) ---
+  const playoffWithdrawals = useMemo<PlayoffWithdrawal[]>(
+    () => Array.isArray(tt.playoffWithdrawals) ? tt.playoffWithdrawals : [],
+    [tt.playoffWithdrawals]
+  );
+
+  const isWithdrawn = (groupId: string, playerId: string) =>
+    playoffWithdrawals.some(w => w.groupId === groupId && w.playerId === playerId);
+
+  // NEW UI state (setup): manage withdrawals
+  const [withdrawGroupId, setWithdrawGroupId] = useState<string>('');
+  const [withdrawPlayerId, setWithdrawPlayerId] = useState<string>('');
+  const [withdrawError, setWithdrawError] = useState<string>('');
+  const [withdrawSaving, setWithdrawSaving] = useState<boolean>(false);
+
+  // Qualifiers with "scaling": if a top player withdraws, the next ranked players fill the quota.
   const qualifiers = useMemo(() => {
     const allQualifiers: { playerId: string, rank: number, fromGroup: string, groupName: string }[] = [];
+
     tournament.groups.forEach(group => {
       const setting = tournament.settings.playoffSettings.find(s => s.groupId === group.id);
-      if (setting && setting.numQualifiers > 0) {
-        const standings = calculateStandings(group, event.players, tournament.settings);
-        const groupQualifiers = standings.slice(0, setting.numQualifiers).map((entry, index) => ({
-          playerId: entry.playerId,
-          rank: index + 1,
-          fromGroup: group.id,
-          groupName: group.name,
-        }));
-        allQualifiers.push(...groupQualifiers);
-      }
+      if (!setting || !(setting.numQualifiers > 0)) return;
+
+      const standings = calculateStandings(group, event.players, tournament.settings);
+
+      // exclude withdrawals ONLY for playoff qualification
+      const eligible = standings.filter(entry => !isWithdrawn(group.id, entry.playerId));
+
+      const groupQualifiers = eligible.slice(0, setting.numQualifiers).map((entry, index) => ({
+        playerId: entry.playerId,
+        rank: index + 1, // recalculated after withdrawals => "scaling"
+        fromGroup: group.id,
+        groupName: group.name,
+      }));
+
+      allQualifiers.push(...groupQualifiers);
     });
+
     return allQualifiers;
-  }, [tournament, event.players]);
+  }, [tournament, event.players, playoffWithdrawals]);
 
   const bracketSize = useMemo(() => {
     const numPlayers = qualifiers.length;
@@ -64,12 +91,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
   const [score1, setScore1] = useState('');
   const [score2, setScore2] = useState('');
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
-
-  // --- Replacement (withdrawal) modal state ---
-  const [isReplaceModalOpen, setIsReplaceModalOpen] = useState(false);
-  const [replaceOutPlayerId, setReplaceOutPlayerId] = useState<string>('');
-  const [replaceInPlayerId, setReplaceInPlayerId] = useState<string>('');
-  const [replaceError, setReplaceError] = useState<string>('');
 
   useEffect(() => {
     if (view === 'setup') {
@@ -89,6 +110,76 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       newAssignments[slotIndex] = value === '' ? null : value;
       return newAssignments;
     });
+  };
+
+  const saveWithdrawalsToFirestore = async (nextWithdrawals: PlayoffWithdrawal[]) => {
+    const updatedTournaments = event.tournaments.map(t =>
+      t.id === tournament.id ? ({ ...t, playoffWithdrawals: nextWithdrawals } as any) : t
+    );
+
+    setEvents(prev =>
+      prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e)
+    );
+
+    await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+  };
+
+  const handleAddWithdrawal = async () => {
+    setWithdrawError('');
+
+    if (!withdrawGroupId) {
+      setWithdrawError('Seleziona un girone.');
+      return;
+    }
+    if (!withdrawPlayerId) {
+      setWithdrawError('Seleziona il giocatore che si ritira.');
+      return;
+    }
+
+    // allow only BEFORE generation (setup)
+    if (tournament.playoffs?.isGenerated) {
+      setWithdrawError('Puoi gestire i ritiri solo prima della generazione del tabellone (resetta il tabellone).');
+      return;
+    }
+
+    if (isWithdrawn(withdrawGroupId, withdrawPlayerId)) {
+      setWithdrawError('Questo giocatore è già segnato come ritirato dai playoff.');
+      return;
+    }
+
+    setWithdrawSaving(true);
+    try {
+      const next = [...playoffWithdrawals, { groupId: withdrawGroupId, playerId: withdrawPlayerId }];
+      await saveWithdrawalsToFirestore(next);
+
+      // reset selection
+      setWithdrawPlayerId('');
+    } catch (err) {
+      console.error('Errore salvataggio ritiro', err);
+      setWithdrawError('Errore durante il salvataggio del ritiro.');
+    } finally {
+      setWithdrawSaving(false);
+    }
+  };
+
+  const handleRemoveWithdrawal = async (groupId: string, playerId: string) => {
+    setWithdrawError('');
+
+    if (tournament.playoffs?.isGenerated) {
+      setWithdrawError('Puoi modificare i ritiri solo prima della generazione del tabellone (resetta il tabellone).');
+      return;
+    }
+
+    setWithdrawSaving(true);
+    try {
+      const next = playoffWithdrawals.filter(w => !(w.groupId === groupId && w.playerId === playerId));
+      await saveWithdrawalsToFirestore(next);
+    } catch (err) {
+      console.error('Errore rimozione ritiro', err);
+      setWithdrawError('Errore durante la rimozione del ritiro.');
+    } finally {
+      setWithdrawSaving(false);
+    }
   };
 
   const handleGenerateBracket = async () => {
@@ -165,7 +256,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       bronzeFinalId: bronzeFinalId,
     };
 
-    // Create "league" matches (Match[]) for tab Partite
+    // Create "league" matches for tab Partite
     const playoffMatches: Match[] = [];
     for (const pm of newMatches) {
       if (pm.isBronzeFinal) continue;
@@ -266,7 +357,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       ? JSON.parse(JSON.stringify((tournament as any).playoffMatches)) as Match[]
       : [];
 
-    // update current league match
     const leagueMatchId = playoffMatchToLeagueMatchId(match.id);
     const idx = playoffMatches.findIndex(m => m.id === leagueMatchId);
     if (idx !== -1) {
@@ -276,7 +366,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       if (built) playoffMatches.push({ ...built, score1: s1, score2: s2, status: 'completed' });
     }
 
-    // if next match is now ready, ensure it exists
     if (match.nextMatchId) {
       const nextMatch = bracketCopy.matches.find(m => m.id === match.nextMatchId);
       const builtNext = nextMatch ? buildLeagueMatchFromPlayoffMatch(nextMatch) : null;
@@ -287,7 +376,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       }
     }
 
-    // bronze final ready
     if (bracketCopy.bronzeFinalId && tournament.settings.hasBronzeFinal) {
       const bronze = bracketCopy.matches.find(m => m.id === bracketCopy.bronzeFinalId);
       const builtBronze = bronze ? buildLeagueMatchFromPlayoffMatch(bronze) : null;
@@ -310,126 +398,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
     setEditingMatch(null);
     setScore1('');
     setScore2('');
-  };
-
-  // -------------------------
-  // Replacement (withdrawal) - INTERNAL REPESCAGGIO ONLY (same group)
-  // -------------------------
-  const allPlayersInBracket = useMemo(() => {
-    const ids = new Set<string>();
-    const bracket = tournament.playoffs;
-    if (!bracket?.matches) return [];
-    for (const m of bracket.matches) {
-      if (m.player1Id) ids.add(m.player1Id);
-      if (m.player2Id) ids.add(m.player2Id);
-    }
-    return Array.from(ids);
-  }, [tournament.playoffs]);
-
-  const replaceOutGroup = useMemo(() => {
-    if (!replaceOutPlayerId) return null;
-    const q = qualifiers.find(x => x.playerId === replaceOutPlayerId);
-    if (!q) return null;
-    return { groupId: q.fromGroup, groupName: q.groupName };
-  }, [replaceOutPlayerId, qualifiers]);
-
-  const replacementCandidates = useMemo(() => {
-    // Internal repescaggio: only from same group of the OUT player.
-    if (!replaceOutGroup?.groupId) return [];
-
-    const g = tournament.groups.find(gr => gr.id === replaceOutGroup.groupId);
-    if (!g) return [];
-
-    const standings = calculateStandings(g, event.players, tournament.settings);
-
-    // exclude out player and players already in bracket (to avoid duplicates)
-    const bracketIds = new Set(allPlayersInBracket);
-
-    const ids = standings
-      .map(s => s.playerId)
-      .filter(pid => pid && pid !== replaceOutPlayerId && !bracketIds.has(pid));
-
-    // sort by rank (already in standings order)
-    return ids;
-  }, [
-    replaceOutGroup?.groupId,
-    tournament.groups,
-    tournament.settings,
-    event.players,
-    replaceOutPlayerId,
-    allPlayersInBracket
-  ]);
-
-  const handleOpenReplaceModal = () => {
-    setReplaceError('');
-    setReplaceOutPlayerId('');
-    setReplaceInPlayerId('');
-    setIsReplaceModalOpen(true);
-  };
-
-  const handleApplyReplacement = async () => {
-    setReplaceError('');
-
-    if (!tournament.playoffs?.isGenerated) {
-      setReplaceError('Il tabellone non è stato generato.');
-      return;
-    }
-    if (!replaceOutPlayerId || !replaceInPlayerId) {
-      setReplaceError('Seleziona sia il giocatore ritirato che il sostituto.');
-      return;
-    }
-    if (replaceOutPlayerId === replaceInPlayerId) {
-      setReplaceError('Il sostituto deve essere diverso dal giocatore ritirato.');
-      return;
-    }
-
-    const bracketCopy: PlayoffBracket = JSON.parse(JSON.stringify(tournament.playoffs));
-
-    // Safety: do not allow replacement if out player already played a completed match
-    const outPlayedCompleted = bracketCopy.matches.some(m =>
-      isMatchCompleted(m) && (m.player1Id === replaceOutPlayerId || m.player2Id === replaceOutPlayerId)
-    );
-    if (outPlayedCompleted) {
-      setReplaceError('Sostituzione non permessa: il giocatore ha già una partita playoff completata.');
-      return;
-    }
-
-    // Apply only on NOT completed matches
-    bracketCopy.matches = bracketCopy.matches.map(m => {
-      if (isMatchCompleted(m)) return m;
-
-      const next = { ...m };
-
-      if (next.player1Id === replaceOutPlayerId) next.player1Id = replaceInPlayerId;
-      if (next.player2Id === replaceOutPlayerId) next.player2Id = replaceInPlayerId;
-
-      if (next.winnerId === replaceOutPlayerId) next.winnerId = null;
-
-      return next;
-    });
-
-    // Sync tournament.playoffMatches (tab Partite)
-    const currentLeagueMatches: Match[] = Array.isArray((tournament as any).playoffMatches)
-      ? JSON.parse(JSON.stringify((tournament as any).playoffMatches)) as Match[]
-      : [];
-
-    const updatedLeagueMatches: Match[] = currentLeagueMatches.map(lm => {
-      const next = { ...lm };
-      if (next.player1Id === replaceOutPlayerId) next.player1Id = replaceInPlayerId;
-      if (next.player2Id === replaceOutPlayerId) next.player2Id = replaceInPlayerId;
-      return next;
-    });
-
-    const updatedTournaments = event.tournaments.map(t =>
-      t.id === tournament.id
-        ? { ...t, playoffs: bracketCopy, playoffMatches: updatedLeagueMatches }
-        : t
-    );
-
-    setEvents(prev => prev.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
-    await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
-
-    setIsReplaceModalOpen(false);
   };
 
   if (view === 'setup') {
@@ -458,11 +426,102 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       );
     };
 
+    const groupOptions = (tournament.groups ?? []).map(g => ({ id: g.id, name: g.name }));
+
+    const selectedWithdrawGroup = withdrawGroupId
+      ? tournament.groups.find(g => g.id === withdrawGroupId) ?? null
+      : null;
+
+    const withdrawGroupStandings = selectedWithdrawGroup
+      ? calculateStandings(selectedWithdrawGroup, event.players, tournament.settings)
+      : [];
+
     return (
       <div className="bg-secondary p-6 rounded-xl shadow-lg max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           <h3 className="text-xl font-bold mb-2 text-accent">Costruttore Tabellone Playoff</h3>
           <p className="text-text-secondary mb-6">Assegna manualmente i giocatori o i "bye" agli slot del primo turno.</p>
+
+          {/* NEW: Withdrawals management (pre-generation) */}
+          <div className="bg-primary/40 border border-tertiary/60 rounded-lg p-4 mb-6">
+            <h4 className="text-lg font-bold text-accent mb-2">Gestione ritiri (solo playoff)</h4>
+            <p className="text-xs text-text-secondary mb-3">
+              Se un giocatore si ritira prima della generazione, verrà escluso dai playoff e i qualificati scaleranno automaticamente (es: 1° out → entra il 5°).
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm text-text-secondary font-semibold">Girone</label>
+                <select
+                  value={withdrawGroupId}
+                  onChange={(e) => { setWithdrawGroupId(e.target.value); setWithdrawPlayerId(''); setWithdrawError(''); }}
+                  className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary"
+                >
+                  <option value="">-- seleziona girone --</option>
+                  {groupOptions.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-text-secondary font-semibold">Giocatore ritirato</label>
+                <select
+                  value={withdrawPlayerId}
+                  onChange={(e) => { setWithdrawPlayerId(e.target.value); setWithdrawError(''); }}
+                  className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary"
+                  disabled={!withdrawGroupId}
+                >
+                  <option value="">-- seleziona giocatore --</option>
+                  {withdrawGroupStandings.map((s, idx) => {
+                    const p = getPlayer(s.playerId);
+                    const already = isWithdrawn(withdrawGroupId, s.playerId);
+                    return (
+                      <option key={s.playerId} value={s.playerId} disabled={already}>
+                        {idx + 1}° {p?.name ?? s.playerId}{already ? ' (già ritirato)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mt-3">
+              <button
+                onClick={handleAddWithdrawal}
+                disabled={withdrawSaving || !withdrawGroupId || !withdrawPlayerId}
+                className="bg-highlight text-white font-bold px-4 py-2 rounded-lg disabled:bg-tertiary disabled:cursor-not-allowed"
+              >
+                {withdrawSaving ? 'Salvataggio...' : 'Segna ritiro'}
+              </button>
+              {withdrawError && <div className="text-red-500 font-bold text-sm">{withdrawError}</div>}
+            </div>
+
+            {playoffWithdrawals.length > 0 && (
+              <div className="mt-4">
+                <div className="text-sm font-bold text-text-secondary mb-2">Ritiri attivi:</div>
+                <ul className="space-y-2">
+                  {playoffWithdrawals.map(w => {
+                    const g = tournament.groups.find(gr => gr.id === w.groupId);
+                    const p = getPlayer(w.playerId);
+                    return (
+                      <li key={`${w.groupId}-${w.playerId}`} className="flex items-center justify-between bg-secondary/40 border border-tertiary/50 rounded-lg px-3 py-2">
+                        <div className="text-sm">
+                          <span className="font-bold text-white">{p?.name ?? w.playerId}</span>
+                          <span className="text-text-secondary"> — {g?.name ?? w.groupId}</span>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveWithdrawal(w.groupId, w.playerId)}
+                          disabled={withdrawSaving}
+                          className="text-xs bg-tertiary hover:bg-tertiary/80 text-white font-bold px-3 py-1 rounded disabled:opacity-60"
+                        >
+                          Rimuovi
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
 
           <div className="space-y-4">
             {bracketSize > 0 ? Array.from({ length: bracketSize / 2 }).map((_, index) => (
@@ -492,9 +551,10 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
             <div className="grid grid-cols-3 gap-4 text-center">
               <div><div className="text-2xl font-bold">{qualifiers.length}</div><div className="text-sm text-text-secondary">Qualificati</div></div>
               <div><div className="text-2xl font-bold">{bracketSize}</div><div className="text-sm text-text-secondary">Posti</div></div>
-              <div><div className="text-2xl font-bold">{numByesAvailable}</div><div className="text-sm text-text-secondary">Bye</div></div>
+              <div><div className="text-2xl font-bold">{Math.max(0, bracketSize - qualifiers.length)}</div><div className="text-sm text-text-secondary">Bye</div></div>
             </div>
           </div>
+
           <h4 className="font-semibold text-lg mb-3">Giocatori da Assegnare</h4>
           <div className="space-y-2">
             {unassignedPlayers.length > 0 ? unassignedPlayers.map(q => {
@@ -515,7 +575,9 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
     );
   }
 
-  // RENDER BRACKET
+  // ----------------
+  // BRACKET VIEW (resto invariato dal tuo file)
+  // ----------------
   const { matches, bronzeFinalId } = tournament.playoffs!;
   const maxRound = Math.max(0, ...matches.filter(m => !m.isBronzeFinal).map(m => m.round));
 
@@ -558,12 +620,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
         </div>
         {canEdit && (
           <div className="text-center mt-2">
-            <button
-              onClick={() => { setEditingMatch(match); setScore1(match.score1?.toString() ?? ''); setScore2(match.score2?.toString() ?? ''); }}
-              className="text-xs bg-highlight/80 hover:bg-highlight px-2 py-1 rounded-md text-white transition-colors"
-            >
-              Risultato
-            </button>
+            <button onClick={() => { setEditingMatch(match); setScore1(match.score1?.toString() ?? ''); setScore2(match.score2?.toString() ?? ''); }} className="text-xs bg-highlight/80 hover:bg-highlight px-2 py-1 rounded-md text-white transition-colors">Risultato</button>
           </div>
         )}
       </div>
@@ -578,24 +635,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       <div className="text-center mb-6">
         <h3 className="text-2xl font-bold text-accent">Tabellone Playoff</h3>
         {winner && <div className="mt-2 text-lg text-yellow-400 font-bold animate-subtlePulse">🏆 Vincitore: {winner.name} 🏆</div>}
-
-        {isOrganizer && (
-          <div className="mt-3 flex items-center justify-center gap-4 flex-wrap">
-            <button
-              onClick={() => setIsResetModalOpen(true)}
-              className="text-sm text-yellow-500 hover:text-yellow-400 underline"
-            >
-              Modifica Tabellone
-            </button>
-
-            <button
-              onClick={handleOpenReplaceModal}
-              className="text-sm bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg transition-colors"
-            >
-              Sostituisci giocatore (ripescaggio interno)
-            </button>
-          </div>
-        )}
+        {isOrganizer && <button onClick={() => setIsResetModalOpen(true)} className="mt-2 text-sm text-yellow-500 hover:text-yellow-400 underline">Modifica Tabellone</button>}
       </div>
 
       <div className="flex justify-start items-stretch gap-4 md:gap-10 overflow-x-auto pb-4 px-2">
@@ -635,11 +675,8 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
           </div>
         </div>
       )}
-      {(!bronzeFinalId || !tournament.settings.hasBronzeFinal) && (
-        <p className="text-center text-xs text-text-secondary/50 mt-4">Finale 3° Posto disabilitata nelle impostazioni.</p>
-      )}
+      {(!bronzeFinalId || !tournament.settings.hasBronzeFinal) && <p className="text-center text-xs text-text-secondary/50 mt-4">Finale 3° Posto disabilitata nelle impostazioni.</p>}
 
-      {/* Modal risultato */}
       {isOrganizer && editingMatch && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
           <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-sm border border-tertiary">
@@ -661,7 +698,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
         </div>
       )}
 
-      {/* Modal reset */}
       {isOrganizer && isResetModalOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
           <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
@@ -674,93 +710,6 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
           </div>
         </div>
       )}
-
-      {/* Modal sostituzione (ripescaggio interno) */}
-      {isOrganizer && isReplaceModalOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
-          <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
-            <h4 className="text-lg font-bold mb-4 text-accent">Sostituisci giocatore (ripescaggio interno)</h4>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">Giocatore ritirato (nel tabellone)</label>
-                <select
-                  value={replaceOutPlayerId}
-                  onChange={(e) => { setReplaceOutPlayerId(e.target.value); setReplaceInPlayerId(''); setReplaceError(''); }}
-                  className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary"
-                >
-                  <option value="">-- seleziona --</option>
-                  {allPlayersInBracket
-                    .slice()
-                    .sort((a, b) => (getPlayer(a)?.name || '').localeCompare(getPlayer(b)?.name || ''))
-                    .map(pid => (
-                      <option key={pid} value={pid}>{getPlayer(pid)?.name ?? pid}</option>
-                    ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm text-text-secondary mb-1">
-                  Sostituto (stesso girone)
-                  {replaceOutGroup?.groupName ? `: ${replaceOutGroup.groupName}` : ''}
-                </label>
-                <select
-                  value={replaceInPlayerId}
-                  onChange={(e) => { setReplaceInPlayerId(e.target.value); setReplaceError(''); }}
-                  className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary"
-                  disabled={!replaceOutPlayerId}
-                >
-                  <option value="">-- seleziona --</option>
-                  {replacementCandidates.map(pid => {
-                    const g = replaceOutGroup?.groupId ? tournament.groups.find(gr => gr.id === replaceOutGroup.groupId) : null;
-                    let labelExtra = '';
-                    if (g) {
-                      const standings = calculateStandings(g, event.players, tournament.settings);
-                      const pos = standings.findIndex(s => s.playerId === pid);
-                      if (pos !== -1) labelExtra = ` (${pos + 1}°)`;
-                    }
-                    return (
-                      <option key={pid} value={pid}>
-                        {getPlayer(pid)?.name ?? pid}{labelExtra}
-                      </option>
-                    );
-                  })}
-                </select>
-                {replaceOutPlayerId && replacementCandidates.length === 0 && (
-                  <div className="text-xs text-yellow-400 mt-1">
-                    Nessun candidato disponibile nello stesso girone (tutti già nel tabellone oppure non presenti).
-                  </div>
-                )}
-              </div>
-
-              {replaceError && (
-                <div className="text-red-500 font-bold">{replaceError}</div>
-              )}
-
-              <div className="text-xs text-text-secondary">
-                Nota: la sostituzione è permessa solo se il giocatore ritirato non ha match playoff completati.
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  onClick={() => setIsReplaceModalOpen(false)}
-                  className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Annulla
-                </button>
-                <button
-                  onClick={handleApplyReplacement}
-                  disabled={!replaceOutPlayerId || !replaceInPlayerId}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-tertiary disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Applica sostituzione
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 };
