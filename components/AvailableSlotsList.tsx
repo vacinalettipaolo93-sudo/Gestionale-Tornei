@@ -48,9 +48,20 @@ const AvailableSlotsList: React.FC<Props> = ({
     return [...fromGroups, ...fromPlayoffs, ...fromConsolation];
   });
 
-  const availableSlots = (event.globalTimeSlots || []).filter(
-    slot => !bookedIds.includes(slot.id)
-  );
+  const now = new Date();
+
+  // available = not booked AND in the future AND valid start
+  const availableSlots = (event.globalTimeSlots || []).filter(slot => {
+    if (bookedIds.includes(slot.id)) return false;
+
+    const start = (slot as any).start ?? (slot as any).time ?? null;
+    if (!start) return false;
+
+    const d = new Date(start);
+    if (isNaN(d.getTime())) return false;
+
+    return d.getTime() > now.getTime();
+  });
 
   return (
     <div className="bg-secondary p-5 rounded-xl shadow-lg max-w-2xl mx-auto my-8">
