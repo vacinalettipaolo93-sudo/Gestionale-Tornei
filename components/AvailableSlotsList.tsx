@@ -9,6 +9,11 @@ interface Props {
   matchesPending?: Match[];
 }
 
+type TournamentWithExtraMatches = Tournament & {
+  playoffMatches?: Match[];
+  consolationMatches?: Match[];
+};
+
 const formatSlot = (slot: TimeSlot) => {
   const d = new Date(slot.start);
   const date = d.toLocaleDateString('it-IT');
@@ -23,12 +28,25 @@ const AvailableSlotsList: React.FC<Props> = ({
   onClickBook,
   matchesPending = [],
 }) => {
-  // compute booked slots (valgono in tutto l'evento)
-  const bookedIds = event.tournaments
-    .flatMap(t => t.groups || [])
-    .flatMap(g => g.matches || [])
-    .filter(m => m.slotId && (m.status === 'scheduled' || m.status === 'completed'))
-    .map(m => m.slotId!);
+  // compute booked slots (valgono in tutto l'evento) INCLUDING: groups + playoffMatches + consolationMatches
+  const bookedIds = (event.tournaments || []).flatMap(t0 => {
+    const t = t0 as TournamentWithExtraMatches;
+
+    const fromGroups = (t.groups || [])
+      .flatMap(g => g.matches || [])
+      .filter(m => m.slotId && (m.status === 'scheduled' || m.status === 'completed'))
+      .map(m => m.slotId!);
+
+    const fromPlayoffs = (t.playoffMatches || [])
+      .filter(m => m.slotId && (m.status === 'scheduled' || m.status === 'completed'))
+      .map(m => m.slotId!);
+
+    const fromConsolation = (t.consolationMatches || [])
+      .filter(m => m.slotId && (m.status === 'scheduled' || m.status === 'completed'))
+      .map(m => m.slotId!);
+
+    return [...fromGroups, ...fromPlayoffs, ...fromConsolation];
+  });
 
   const availableSlots = (event.globalTimeSlots || []).filter(
     slot => !bookedIds.includes(slot.id)
