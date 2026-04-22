@@ -10,7 +10,15 @@ import ContactModal from './components/ContactModal';
 import { BackArrowIcon, TrophyIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
 
 import { db } from "./firebase";
-import { collection, onSnapshot, addDoc, deleteDoc, doc } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  deleteDoc,
+  doc,
+  updateDoc,
+  getDocs,
+} from "firebase/firestore";
 
 type View = 'dashboard' | 'event' | 'tournament';
 
@@ -24,7 +32,7 @@ type TournamentTab =
   | 'settings'
   | 'rules'
   | 'players'
-  | 'availability'; // <-- aggiunto
+  | 'availability';
 
 const App: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
@@ -49,12 +57,26 @@ const App: React.FC = () => {
   const loggedInPlayerId = currentUser?.playerId;
 
   useEffect(() => {
-    const unsubEvents = onSnapshot(collection(db, "events"), snapshot => {
-      setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event)));
-    });
-    const unsubUsers = onSnapshot(collection(db, "users"), snapshot => {
-      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
-    });
+    const unsubEvents = onSnapshot(
+      collection(db, "events"),
+      snapshot => {
+        setEvents(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Event)));
+      },
+      (err) => {
+        console.error("[Firestore] Errore listener events:", err);
+      }
+    );
+
+    const unsubUsers = onSnapshot(
+      collection(db, "users"),
+      snapshot => {
+        setUsers(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as User)));
+      },
+      (err) => {
+        console.error("[Firestore] Errore listener users:", err);
+      }
+    );
+
     return () => {
       unsubEvents();
       unsubUsers();
@@ -62,14 +84,12 @@ const App: React.FC = () => {
   }, []);
 
   const handleSelectEvent = (event: Event) => {
-    // clear any tournament initial params when navigating between events
     setTournamentInitialTab(undefined);
     setTournamentInitialGroupId(undefined);
     setSelectedEvent(event);
     setCurrentView('event');
   };
 
-  // Now accepts optional tab and groupId so we can open TournamentView directly on a tab
   const handleSelectTournament = (tournament: Tournament, initialTab?: TournamentTab, initialGroupId?: string) => {
     setSelectedTournament(tournament);
     setTournamentInitialTab(initialTab);
@@ -79,217 +99,282 @@ const App: React.FC = () => {
 
   const navigateBack = () => {
     if (currentView === 'tournament') {
-      setCurrentView('event');
       setSelectedTournament(null);
-      setTournamentInitialTab(undefined);
-      setTournamentInitialGroupId(undefined);
-    } else if (currentView === 'event') {
-      setCurrentView('dashboard');
+      setCurrentView('event');
+      return;
+    }
+    if (currentView === 'event') {
       setSelectedEvent(null);
+      setCurrentView('dashboard');
+      return;
     }
   };
 
-  // CREA EVENTO: NIENTE ID MANUALE!
-  const handleCreateEvent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEventName.trim()) return;
-    const newEvent = {
-      name: newEventName.trim(),
-      invitationCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
-      players: [],
-      tournaments: [],
-    };
-    await addDoc(collection(db, "events"), newEvent);
-    setNewEventName('');
-    setIsCreateModalOpen(false);
+  // ---------------------------
+  // NEW: Import automatico di TUTTI i player globali dentro l'evento appena creato
+  // ---------------------------
+  const importAllGlobalPlayersIntoEvent = async (eventId: string) => {
+    // 1) Leggi tutti i player globali
+    const snap = await getDocs(collection(db, "players"));
+    const globalPlayers: Player[] = snap.docs.map(d => {
+      const data = d.data() as any;
+      return {
+        id: d.id,
+        name: data.name ?? "",
+        phone: data.phone ?? "",
+        avatar: data.avatar ?? "",
+        status: data.status ?? "confirmed",
+        // mantengo eventuali campi extra se ci sono
+        ...data,
+      } as Player;
+    });
+
+    // 2) Salva nell'evento (event.players)
+    await updateDoc(doc(db, "events", eventId), {
+      players: globalPlayers
+    });
   };
 
-  const handleDeleteEvent = async () => {
-    if (!eventToDelete) return;
-    await deleteDoc(doc(db, "events", eventToDelete.id));
-    setEventToDelete(null);
+  // ---------------------------
+  // CREATE EVENT (con import automatico player globali)
+  // ---------------------------
+  const handleCreateEvent = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newEventName.trim()) return;
+
+    try {
+      // Crea evento base
+      const eventPayload: Omit<Event, "id"> = {
+        name: newEventName.trim(),
+        tournaments: [],
+        players: [],
+        invitationCode: Math.random().toString(36).slice(2, 8).toUpperCase(),
+      };
+
+      // 1) addDoc -> ottieni ID reale Firestore
+      const ref = await addDoc(collection(db, "events"), eventPayload);
+
+      // 2) Import automatico di tutti i players globali
+      await importAllGlobalPlayersIntoEvent(ref.id);
+
+      // 3) UI cleanup
+      setIsCreateModalOpen(false);
+      setNewEventName("");
+    } catch (err: any) {
+      console.error("Errore creazione evento / import players", err);
+      alert(err?.message || "Errore durante la creazione dell'evento");
+    }
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setCurrentView('dashboard');
     setSelectedEvent(null);
     setSelectedTournament(null);
-    setTournamentInitialTab(undefined);
-    setTournamentInitialGroupId(undefined);
+    setCurrentView('dashboard');
   };
 
-  const currentEventState = useMemo(() => events.find(e => e.id === selectedEvent?.id), [events, selectedEvent]);
-  const currentTournamentState = useMemo(() => currentEventState?.tournaments.find(t => t.id === selectedTournament?.id), [currentEventState, selectedTournament]);
+  const handleDeleteEvent = async () => {
+    if (!eventToDelete) return;
+    try {
+      await deleteDoc(doc(db, "events", eventToDelete.id));
+      setEventToDelete(null);
+    } catch (err) {
+      console.error("Errore eliminazione evento", err);
+      alert("Errore durante l'eliminazione dell'evento");
+    }
+  };
 
-  const filteredEventsForOrganizer = useMemo(() => {
-    if (isOrganizer) return events;
-    return [];
-  }, [events, isOrganizer]);
+  const currentEvent = useMemo(() => {
+    if (!selectedEvent) return null;
+    return events.find(e => e.id === selectedEvent.id) ?? selectedEvent;
+  }, [events, selectedEvent]);
 
+  // ---------------------------
+  // RENDER
+  // ---------------------------
   if (!currentUser) {
     return <Login users={users} onLoginSuccess={setCurrentUser} />;
   }
 
-  const renderContent = () => {
-    if (currentView === 'dashboard') {
-      if (!isOrganizer && loggedInPlayerId) {
-        return (
-          <ParticipantDashboard
-            events={events}
-            playerId={loggedInPlayerId}
-            onSelectEvent={handleSelectEvent}
-          />
-        );
-      }
-      return (
-        <div className="space-y-6 animate-fadeIn">
-          <div className="flex justify-between items-center">
-            <h2 className="text-3xl font-bold">I Miei Eventi</h2>
+  return (
+    <div className="min-h-screen bg-primary text-text-primary">
+      {/* HEADER */}
+      <header className="flex items-center justify-between p-4 border-b border-tertiary/50 bg-secondary">
+        <div className="flex items-center gap-3">
+          <TrophyIcon className="w-7 h-7 text-accent" />
+          <h1 className="text-lg font-bold tracking-tight">Tournament Manager Pro</h1>
+        </div>
+
+        <div className="flex items-center gap-3 text-sm text-text-secondary">
+          <span>Accesso come: <strong className="text-text-primary">{currentUser.username}</strong></span>
+          <button
+            className="p-2 rounded-lg hover:bg-tertiary/40 transition-colors"
+            title="Profilo"
+            onClick={() => setIsProfileModalOpen(true)}
+          >
+            <UserCircleIcon className="w-6 h-6" />
+          </button>
+          <button
+            className="p-2 rounded-lg hover:bg-tertiary/40 transition-colors"
+            title="Logout"
+            onClick={handleLogout}
+          >
+            <LogoutIcon className="w-6 h-6" />
+          </button>
+        </div>
+      </header>
+
+      {/* BACK NAV */}
+      {currentView !== 'dashboard' && (
+        <div className="p-4">
+          <button
+            onClick={navigateBack}
+            className="text-accent hover:underline flex items-center gap-2"
+          >
+            <BackArrowIcon className="w-4 h-4" />
+            Indietro
+          </button>
+        </div>
+      )}
+
+      {/* DASHBOARD */}
+      {currentView === 'dashboard' && (
+        <main className="p-4 max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-white">Eventi</h2>
+
             {isOrganizer && (
               <button
                 onClick={() => setIsCreateModalOpen(true)}
-                className="flex items-center gap-2 bg-highlight/80 hover:bg-highlight text-white font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
+                className="bg-highlight text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"
               >
-                <PlusIcon className="w-5 h-5" />
-                Crea Evento
+                <PlusIcon className="w-5 h-5" /> Nuovo evento
               </button>
             )}
           </div>
 
-          {filteredEventsForOrganizer.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredEventsForOrganizer.map(event => {
-                const { totalMatches, completedMatches, completionPercentage } = (() => {
-                  let totalMatches = 0;
-                  let completedMatches = 0;
-                  event.tournaments.forEach(tournament => {
-                    tournament.groups.forEach(group => {
-                      totalMatches += group.matches.length;
-                      completedMatches += group.matches.filter(m => m.status === 'completed').length;
-                    });
-                  });
-                  const completionPercentage = totalMatches > 0 ? Math.round((completedMatches / totalMatches) * 100) : 0;
-                  return { totalMatches, completedMatches, completionPercentage };
-                })();
+          {/* LISTA EVENTI */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {events.map(ev => (
+              <div
+                key={ev.id}
+                className="bg-secondary border border-tertiary/50 rounded-xl p-4 shadow-lg"
+              >
+                <h3 className="text-lg font-bold text-white">{ev.name}</h3>
+                <p className="text-xs text-text-secondary mt-1">Invito: <strong>{ev.invitationCode}</strong></p>
 
-                return (
-                  <div key={event.id} className="bg-secondary rounded-xl shadow-lg transition-all duration-300 group relative overflow-hidden flex flex-col">
-                    <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-accent/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div onClick={() => handleSelectEvent(event)} className="p-6 cursor-pointer flex-grow z-10">
-                      <h3 className="text-xl font-bold text-accent truncate">{event.name}</h3>
-                      <p className="text-text-secondary mt-2 text-sm">{event.tournaments.length} tornei • {event.players.length} giocatori</p>
-                      <div className="mt-4 pt-4 border-t border-tertiary/50">
-                        <div className="flex justify-between items-center text-sm mb-1">
-                          <span className="text-text-secondary">Progresso</span>
-                          <span className="font-semibold text-text-primary">{completedMatches} / {totalMatches} partite</span>
-                        </div>
-                        <div className="w-full bg-tertiary/50 rounded-full h-2.5">
-                          <div
-                            className="bg-gradient-to-r from-accent to-highlight h-2.5 rounded-full transition-all duration-500"
-                            style={{ width: `${completionPercentage}%` }}
-                          />
-                        </div>
-                        <div className="text-right text-xs text-text-secondary mt-1">{completionPercentage}% Completato</div>
-                      </div>
-                    </div>
+                <div className="flex gap-2 mt-4">
+                  <button
+                    className="flex-1 bg-accent text-white px-3 py-2 rounded-lg font-bold"
+                    onClick={() => handleSelectEvent(ev)}
+                  >
+                    Apri
+                  </button>
 
-                    {isOrganizer && (
-                      <div className="p-2 flex justify-end z-10">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEventToDelete(event); }}
-                          className="text-text-secondary/50 hover:text-red-500 transition-colors"
-                        >
-                          <TrashIcon className="w-5 h-5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-text-secondary text-center py-8">Nessun evento creato.</p>
-          )}
-        </div>
-      );
-    }
-
-    if (currentView === 'event' && currentEventState) {
-      return (
-        <div className="animate-fadeIn">
-          <EventView
-            event={currentEventState}
-            onSelectTournament={handleSelectTournament}
-            setEvents={setEvents}
-            isOrganizer={isOrganizer}
-            loggedInPlayerId={loggedInPlayerId}
-          />
-        </div>
-      );
-    }
-
-    if (currentView === 'tournament' && currentEventState && currentTournamentState) {
-      return (
-        <div className="animate-fadeIn">
-          <TournamentView
-            event={currentEventState}
-            tournament={currentTournamentState}
-            setEvents={setEvents}
-            isOrganizer={isOrganizer}
-            loggedInPlayerId={loggedInPlayerId}
-            initialActiveTab={tournamentInitialTab}
-            initialSelectedGroupId={tournamentInitialGroupId}
-            onPlayerContact={setContactPlayer}
-          />
-        </div>
-      );
-    }
-
-    return null;
-  };
-
-  return (
-    <div className="min-h-screen bg-primary text-text-primary p-4 sm:p-6 lg:p-8">
-      <header className="mb-8">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <TrophyIcon className="w-8 h-8 text-accent" />
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Tournament Manager Pro</h1>
+                  {isOrganizer && (
+                    <button
+                      className="bg-red-600/80 hover:bg-red-600 text-white px-3 py-2 rounded-lg"
+                      onClick={() => setEventToDelete(ev)}
+                      title="Elimina"
+                    >
+                      <TrashIcon className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
-
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-text-secondary hidden sm:block">
-              Accesso come: <strong className="text-text-primary">{currentUser.username}</strong>
-            </span>
-
-            <button onClick={() => setIsProfileModalOpen(true)} className="text-text-secondary hover:text-text-primary transition-colors">
-              <UserCircleIcon className="w-7 h-7" />
-            </button>
-
-            <button onClick={handleLogout} className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors">
-              <LogoutIcon className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto">
-        {currentView !== 'dashboard' && (
-          <button onClick={navigateBack} className="flex items-center gap-2 text-accent-hover hover:text-accent font-semibold mb-6 transition-colors">
-            <BackArrowIcon className="w-5 h-5" />
-            <span>Indietro</span>
-          </button>
-        )}
-
-        {renderContent()}
-      </main>
-
-      {contactPlayer && (
-        <ContactModal player={contactPlayer} onClose={() => setContactPlayer(null)} />
+        </main>
       )}
 
-      {isProfileModalOpen && (
+      {/* EVENT VIEW */}
+      {currentView === 'event' && currentEvent && (
+        <EventView
+          event={currentEvent}
+          events={events}
+          setEvents={setEvents}
+          onSelectTournament={handleSelectTournament}
+          isOrganizer={isOrganizer}
+          onContactPlayer={setContactPlayer}
+        />
+      )}
+
+      {/* TOURNAMENT VIEW */}
+      {currentView === 'tournament' && currentEvent && selectedTournament && (
+        <TournamentView
+          event={currentEvent}
+          tournament={selectedTournament}
+          events={events}
+          setEvents={setEvents}
+          onBack={() => navigateBack()}
+          isOrganizer={isOrganizer}
+          loggedInPlayerId={loggedInPlayerId}
+          initialTab={tournamentInitialTab}
+          initialGroupId={tournamentInitialGroupId}
+          onContactPlayer={setContactPlayer}
+        />
+      )}
+
+      {/* MODAL: CREA EVENTO */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-secondary border border-tertiary/50 rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-3">Crea nuovo evento</h3>
+            <form onSubmit={handleCreateEvent} className="space-y-3">
+              <input
+                value={newEventName}
+                onChange={(e) => setNewEventName(e.target.value)}
+                className="w-full bg-primary border border-tertiary rounded-lg p-3"
+                placeholder="Nome evento"
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-tertiary text-white"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-highlight text-white font-bold"
+                >
+                  Crea
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ELIMINA EVENTO */}
+      {eventToDelete && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-secondary border border-tertiary/50 rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-3">Elimina evento</h3>
+            <p className="text-text-secondary mb-4">
+              Sei sicuro di voler eliminare <strong className="text-white">{eventToDelete.name}</strong>?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setEventToDelete(null)}
+                className="px-4 py-2 rounded-lg bg-tertiary text-white"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleDeleteEvent}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white font-bold"
+              >
+                Elimina
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PROFILO */}
+      {isProfileModalOpen && currentUser && (
         <EditProfileModal
           user={currentUser}
           users={users}
@@ -300,53 +385,12 @@ const App: React.FC = () => {
         />
       )}
 
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
-          <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-sm border border-tertiary">
-            <h4 className="text-lg font-bold mb-4">Crea Nuovo Evento</h4>
-            <form onSubmit={handleCreateEvent}>
-              <input
-                type="text"
-                placeholder="Nome dell'evento"
-                value={newEventName}
-                onChange={e => setNewEventName(e.target.value)}
-                className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
-                autoFocus
-              />
-              <div className="flex justify-end gap-4 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors"
-                >
-                  Annulla
-                </button>
-                <button type="submit" className="bg-highlight hover:bg-highlight/80 text-white font-bold py-2 px-4 rounded-lg transition-colors">
-                  Crea Evento
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {eventToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
-          <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
-            <h4 className="text-lg font-bold mb-4">Conferma Eliminazione</h4>
-            <p className="text-text-secondary">
-              Sei sicuro di voler eliminare l'evento "{eventToDelete.name}"? Tutti i tornei, gironi e risultati associati verranno persi definitivamente.
-            </p>
-            <div className="flex justify-end gap-4 mt-6">
-              <button onClick={() => setEventToDelete(null)} className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors">
-                Annulla
-              </button>
-              <button onClick={handleDeleteEvent} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">
-                Elimina Evento
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* MODAL CONTATTO */}
+      {contactPlayer && (
+        <ContactModal
+          player={contactPlayer}
+          onClose={() => setContactPlayer(null)}
+        />
       )}
     </div>
   );
