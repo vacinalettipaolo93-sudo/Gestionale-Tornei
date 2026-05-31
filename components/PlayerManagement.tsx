@@ -19,7 +19,7 @@ interface PlayerManagementProps {
 }
 
 // Funzione anti-doppioni per aggiungere giocatore e utente
-async function addPlayerAndUserNoDuplicates(event: Event, playerData: { name: string; phone: string; avatar: string; }) {
+async function addPlayerAndUserNoDuplicates(event: Event, playerData: { name: string; phone: string; avatar: string; summerRankingStartPoints: number; }) {
   const playersRef = collection(db, "players");
   const q = query(playersRef, where("name", "==", playerData.name), where("phone", "==", playerData.phone));
   const existingPlayersSnap = await getDocs(q);
@@ -27,12 +27,18 @@ async function addPlayerAndUserNoDuplicates(event: Event, playerData: { name: st
   if (!existingPlayersSnap.empty) {
     const playerDoc = existingPlayersSnap.docs[0];
     playerId = playerDoc.id;
+    await updateDoc(playerDoc.ref, {
+      summerRankingStartPoints: playerDoc.data().summerRankingStartPoints ?? playerData.summerRankingStartPoints,
+      summerRankingJoinedAt: playerDoc.data().summerRankingJoinedAt ?? new Date().toISOString(),
+    });
   } else {
     const playerDocRef = await addDoc(playersRef, {
       name: playerData.name,
       phone: playerData.phone,
       avatar: playerData.avatar,
-      status: "confirmed"
+      status: "confirmed",
+      summerRankingStartPoints: playerData.summerRankingStartPoints,
+      summerRankingJoinedAt: new Date().toISOString(),
     });
     playerId = playerDocRef.id;
   }
@@ -84,6 +90,7 @@ const PlayerManagement: React.FC<PlayerManagementProps> = ({ event, setEvents, i
     const [replacementTarget, setReplacementTarget] = useState<string>('');
     const [newPlayerName, setNewPlayerName] = useState('');
     const [newPlayerPhone, setNewPlayerPhone] = useState('');
+    const [newPlayerSummerRankingPoints, setNewPlayerSummerRankingPoints] = useState('0');
     const [loading, setLoading] = useState(false);
 
     // EDIT states (minimal, simple modal)
@@ -108,7 +115,8 @@ const PlayerManagement: React.FC<PlayerManagementProps> = ({ event, setEvents, i
           await addPlayerAndUserNoDuplicates(event, {
             name: newPlayerName.trim(),
             phone: newPlayerPhone.trim(),
-            avatar: createInitialsAvatar(newPlayerName.trim())
+            avatar: createInitialsAvatar(newPlayerName.trim()),
+            summerRankingStartPoints: Number(newPlayerSummerRankingPoints || 0),
           });
           setEvents(prevEvents => prevEvents.map(ev =>
             ev.id === event.id
@@ -124,6 +132,7 @@ const PlayerManagement: React.FC<PlayerManagementProps> = ({ event, setEvents, i
           ));
           setNewPlayerName('');
           setNewPlayerPhone('');
+          setNewPlayerSummerRankingPoints('0');
         } catch (err) {
           alert("Errore durante la creazione: " + (err as Error).message);
         }
@@ -256,6 +265,14 @@ const PlayerManagement: React.FC<PlayerManagementProps> = ({ event, setEvents, i
                             onChange={e => setNewPlayerPhone(e.target.value)}
                             className="flex-grow bg-secondary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent"
                             required
+                        />
+                        <input
+                            type="number"
+                            min="0"
+                            placeholder="Punti Summer Ranking"
+                            value={newPlayerSummerRankingPoints}
+                            onChange={e => setNewPlayerSummerRankingPoints(e.target.value)}
+                            className="sm:w-48 bg-secondary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent"
                         />
                         <button type="submit" disabled={loading} className="bg-highlight hover:bg-highlight/90 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">
                             {loading ? "Aggiungo..." : "Aggiungi"}
