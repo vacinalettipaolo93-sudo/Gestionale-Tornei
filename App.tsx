@@ -37,6 +37,7 @@ const App: React.FC = () => {
     slots: [],
     matches: [],
     rules: DEFAULT_SUMMER_RANKING_RULES,
+    availabilities: {},
   });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -73,6 +74,7 @@ const App: React.FC = () => {
         slots: Array.isArray(data?.slots) ? data!.slots : [],
         matches: Array.isArray(data?.matches) ? data!.matches : [],
         rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+        availabilities: data?.availabilities ?? {},
       });
     });
     return () => {

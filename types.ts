@@ -112,10 +112,29 @@ export interface Event {
   rules?: string;
 }
 
+export type SummerAvailabilityStatus = 'available' | 'unavailable';
+export type SummerAvailabilityDay =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
+export type SummerAvailabilityPeriod = 'morning' | 'afternoon' | 'evening';
+
+export interface SummerPlayerAvailability {
+  status: SummerAvailabilityStatus;
+  days: SummerAvailabilityDay[];
+  periods: SummerAvailabilityPeriod[];
+  updatedAt?: string;
+}
+
 export interface SummerRankingData {
   slots: TimeSlot[];
   matches: Match[];
   rules?: string;
+  availabilities?: Record<string, SummerPlayerAvailability>;
 }
 
 export interface StandingsEntry {
