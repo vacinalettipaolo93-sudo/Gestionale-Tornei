@@ -121,22 +121,41 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     setRulesDraft(rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES);
   }, [rankingData.rules]);
 
+  const rankingParticipantIds = useMemo(
+    () => {
+      if (Array.isArray(rankingData.participantIds)) {
+        return rankingData.participantIds;
+      }
+      return Array.from(
+        new Set(
+          rankingData.matches.flatMap(match => [match.player1Id, match.player2Id]).filter(Boolean),
+        ),
+      );
+    },
+    [rankingData.participantIds, rankingData.matches],
+  );
+  const rankingParticipantIdSet = useMemo(
+    () => new Set(rankingParticipantIds),
+    [rankingParticipantIds],
+  );
+  const confirmedPlayers = useMemo(
+    () =>
+      players
+        .filter(player => player.status === 'confirmed' && rankingParticipantIdSet.has(player.id))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [players, rankingParticipantIdSet],
+  );
   useEffect(() => {
     setStartPointsDrafts(
-      players.reduce<Record<string, string>>((acc, player) => {
+      confirmedPlayers.reduce<Record<string, string>>((acc, player) => {
         acc[player.id] = String(player.summerRankingStartPoints ?? 0);
         return acc;
       }, {})
     );
-  }, [players]);
-
-  const confirmedPlayers = useMemo(
-    () => players.filter(player => player.status === 'confirmed').sort((a, b) => a.name.localeCompare(b.name)),
-    [players],
-  );
+  }, [confirmedPlayers]);
   const ranking = useMemo(
-    () => calculateSummerRanking(players, rankingData.matches),
-    [players, rankingData.matches],
+    () => calculateSummerRanking(confirmedPlayers, rankingData.matches),
+    [confirmedPlayers, rankingData.matches],
   );
   const playerMap = useMemo(
     () => new Map(players.map(player => [player.id, player])),
@@ -333,7 +352,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </p>
           </div>
           <div className="text-sm text-text-secondary">
-            {confirmedPlayers.length} giocatori confermati • {rankingData.matches.length} partite registrate
+            {confirmedPlayers.length} giocatori nel ranking • {rankingData.matches.length} partite registrate
           </div>
         </div>
 

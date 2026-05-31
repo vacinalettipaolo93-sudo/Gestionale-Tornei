@@ -9,13 +9,14 @@ import ParticipantDashboard from './components/ParticipantDashboard';
 import ContactModal from './components/ContactModal';
 import SummerRankingPreview from './components/SummerRankingPreview';
 import SummerRankingView from './components/SummerRankingView';
+import AdminPlayersView from './components/AdminPlayersView';
 import { BackArrowIcon, TrophyIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
 
 import { db } from "./firebase";
-import { collection, onSnapshot, addDoc, deleteDoc, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
 import { DEFAULT_SUMMER_RANKING_RULES } from './utils/summerRanking';
 
-type View = 'dashboard' | 'event' | 'tournament' | 'summerRanking';
+type View = 'dashboard' | 'event' | 'tournament' | 'summerRanking' | 'playersAdmin';
 
 type TournamentTab =
   | 'standings'
@@ -36,6 +37,7 @@ const App: React.FC = () => {
   const [summerRanking, setSummerRanking] = useState<SummerRankingData>({
     slots: [],
     matches: [],
+    participantIds: [],
     rules: DEFAULT_SUMMER_RANKING_RULES,
     availabilities: {},
   });
@@ -73,6 +75,7 @@ const App: React.FC = () => {
       setSummerRanking({
         slots: Array.isArray(data?.slots) ? data!.slots : [],
         matches: Array.isArray(data?.matches) ? data!.matches : [],
+        participantIds: Array.isArray(data?.participantIds) ? data!.participantIds : undefined,
         rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
         availabilities: data?.availabilities ?? {},
       });
@@ -109,6 +112,8 @@ const App: React.FC = () => {
       setTournamentInitialGroupId(undefined);
     } else if (currentView === 'summerRanking') {
       setCurrentView('dashboard');
+    } else if (currentView === 'playersAdmin') {
+      setCurrentView('dashboard');
     } else if (currentView === 'event') {
       setCurrentView('dashboard');
       setSelectedEvent(null);
@@ -137,25 +142,6 @@ const App: React.FC = () => {
     await updateDoc(doc(db, "players", playerId), payload);
   };
 
-  // NEW: importa TUTTI i players globali in event.players
-  const importAllGlobalPlayersIntoEvent = async (eventId: string) => {
-    const snap = await getDocs(collection(db, "players"));
-
-    const globalPlayers: Player[] = snap.docs.map(d => {
-      const data = d.data() as any;
-      return {
-        id: d.id,
-        name: data.name ?? "",
-        phone: data.phone ?? "",
-        avatar: data.avatar ?? "",
-        status: data.status ?? "confirmed",
-      } as Player;
-    });
-
-    await updateDoc(doc(db, "events", eventId), { players: globalPlayers });
-  };
-
-  // CREA EVENTO: NIENTE ID MANUALE!
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventName.trim()) return;
@@ -166,11 +152,7 @@ const App: React.FC = () => {
       tournaments: [],
     };
 
-    // 1) Crea evento e recupera l'ID Firestore
-    const ref = await addDoc(collection(db, "events"), newEvent);
-
-    // 2) Import automatico di tutti i giocatori globali
-    await importAllGlobalPlayersIntoEvent(ref.id);
+    await addDoc(collection(db, "events"), newEvent);
 
     setNewEventName('');
     setIsCreateModalOpen(false);
@@ -231,6 +213,13 @@ const App: React.FC = () => {
           <div className="flex justify-between items-center">
             <h2 className="text-3xl font-bold">I Miei Eventi</h2>
             {isOrganizer && (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setCurrentView('playersAdmin')}
+                  className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
+                >
+                  Giocatori
+                </button>
               <button
                 onClick={() => setIsCreateModalOpen(true)}
                 className="flex items-center gap-2 bg-highlight/80 hover:bg-highlight text-white font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
@@ -238,6 +227,7 @@ const App: React.FC = () => {
                 <PlusIcon className="w-5 h-5" />
                 Crea Evento
               </button>
+              </div>
             )}
           </div>
 
@@ -343,6 +333,18 @@ const App: React.FC = () => {
             onUpdatePlayerStartPoints={updatePlayerSummerRankingStartPoints}
           />
         </div>
+      );
+    }
+
+    if (currentView === 'playersAdmin' && isOrganizer) {
+      return (
+        <AdminPlayersView
+          players={players}
+          events={events}
+          summerRanking={summerRanking}
+          setEvents={setEvents}
+          onSaveRankingData={saveSummerRankingData}
+        />
       );
     }
 
