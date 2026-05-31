@@ -201,7 +201,6 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       ...rankingData,
       slots: [...rankingData.slots, nextSlot],
     });
-    setSlotForm({ start: '', location: '', field: '' });
   };
 
   const handleDeleteSlot = async (slotId: string) => {
