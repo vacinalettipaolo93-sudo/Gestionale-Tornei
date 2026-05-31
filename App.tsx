@@ -10,7 +10,7 @@ import ContactModal from './components/ContactModal';
 import SummerRankingPreview from './components/SummerRankingPreview';
 import SummerRankingView from './components/SummerRankingView';
 import AdminPlayersView from './components/AdminPlayersView';
-import { BackArrowIcon, TrophyIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
+import { BackArrowIcon, PaitoneBrandIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
 
 import { db } from "./firebase";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
@@ -363,10 +363,12 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-primary text-text-primary p-4 sm:p-6 lg:p-8">
       <header className="mb-8">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <TrophyIcon className="w-8 h-8 text-accent" />
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Tournament Manager Pro</h1>
+        <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <PaitoneBrandIcon className="w-40 sm:w-52 lg:w-64 h-auto flex-shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">Tournament Manager Pro</h1>
+            </div>
           </div>
 
           <div className="flex items-center gap-4">
