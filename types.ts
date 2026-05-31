@@ -4,6 +4,8 @@ export interface Player {
   phone: string;
   avatar: string;
   status: 'pending' | 'confirmed';
+  summerRankingStartPoints?: number;
+  summerRankingJoinedAt?: string;
 }
 
 export interface Match {
@@ -17,6 +19,7 @@ export interface Match {
   location?: string;
   field?: string;
   slotId?: string;
+  completedAt?: string;
 }
 
 export interface Group {
@@ -106,6 +109,12 @@ export interface Event {
   players: Player[];
   invitationCode: string;
   globalTimeSlots?: TimeSlot[];
+  rules?: string;
+}
+
+export interface SummerRankingData {
+  slots: TimeSlot[];
+  matches: Match[];
   rules?: string;
 }
 

@@ -4,11 +4,12 @@ import { calculateStandings } from '../utils/standings';
 
 interface ParticipantDashboardProps {
   events: Event[];
+  headerContent?: React.ReactNode;
   playerId: string;
   onSelectEvent: (event: Event) => void;
 }
 
-const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, playerId, onSelectEvent }) => {
+const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, headerContent, playerId, onSelectEvent }) => {
   const myEvents = events.filter(event => 
     Array.isArray(event.players) && event.players.some(p => p.id === playerId && p.status === 'confirmed')
   );
@@ -51,6 +52,7 @@ const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, pla
 
   return (
     <div className="space-y-6 animate-fadeIn">
+        {headerContent}
         <h2 className="text-3xl font-bold">I Miei Eventi</h2>
         {myEvents.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

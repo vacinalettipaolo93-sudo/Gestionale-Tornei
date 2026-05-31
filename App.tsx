@@ -1,18 +1,21 @@
 // App.tsx
 import React, { useState, useMemo, useEffect } from 'react';
-import { type Event, type Tournament, type User, type Player } from './types';
+import { type Event, type Tournament, type User, type Player, type SummerRankingData } from './types';
 import EventView from './components/EventView';
 import TournamentView from './components/TournamentView';
 import Login from './components/Login';
 import EditProfileModal from './components/EditProfileModal';
 import ParticipantDashboard from './components/ParticipantDashboard';
 import ContactModal from './components/ContactModal';
+import SummerRankingPreview from './components/SummerRankingPreview';
+import SummerRankingView from './components/SummerRankingView';
 import { BackArrowIcon, TrophyIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
 
 import { db } from "./firebase";
-import { collection, onSnapshot, addDoc, deleteDoc, doc, getDocs, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, deleteDoc, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
+import { DEFAULT_SUMMER_RANKING_RULES } from './utils/summerRanking';
 
-type View = 'dashboard' | 'event' | 'tournament';
+type View = 'dashboard' | 'event' | 'tournament' | 'summerRanking';
 
 type TournamentTab =
   | 'standings'
@@ -28,7 +31,13 @@ type TournamentTab =
 
 const App: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
+  const [players, setPlayers] = useState<Player[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [summerRanking, setSummerRanking] = useState<SummerRankingData>({
+    slots: [],
+    matches: [],
+    rules: DEFAULT_SUMMER_RANKING_RULES,
+  });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -52,12 +61,25 @@ const App: React.FC = () => {
     const unsubEvents = onSnapshot(collection(db, "events"), snapshot => {
       setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event)));
     });
+    const unsubPlayers = onSnapshot(collection(db, "players"), snapshot => {
+      setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player)));
+    });
     const unsubUsers = onSnapshot(collection(db, "users"), snapshot => {
       setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
     });
+    const unsubSummerRanking = onSnapshot(doc(db, "summerRankingNext", "main"), snapshot => {
+      const data = snapshot.data() as SummerRankingData | undefined;
+      setSummerRanking({
+        slots: Array.isArray(data?.slots) ? data!.slots : [],
+        matches: Array.isArray(data?.matches) ? data!.matches : [],
+        rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+      });
+    });
     return () => {
       unsubEvents();
+      unsubPlayers();
       unsubUsers();
+      unsubSummerRanking();
     };
   }, []);
 
@@ -83,10 +105,34 @@ const App: React.FC = () => {
       setSelectedTournament(null);
       setTournamentInitialTab(undefined);
       setTournamentInitialGroupId(undefined);
+    } else if (currentView === 'summerRanking') {
+      setCurrentView('dashboard');
     } else if (currentView === 'event') {
       setCurrentView('dashboard');
       setSelectedEvent(null);
     }
+  };
+
+  const openSummerRanking = () => {
+    setCurrentView('summerRanking');
+  };
+
+  const saveSummerRankingData = async (nextData: SummerRankingData) => {
+    setSummerRanking(nextData);
+    await setDoc(doc(db, "summerRankingNext", "main"), nextData, { merge: true });
+  };
+
+  const updatePlayerSummerRankingStartPoints = async (playerId: string, points: number) => {
+    const currentPlayer = players.find(player => player.id === playerId);
+    const payload: Partial<Player> = {
+      summerRankingStartPoints: points,
+      summerRankingJoinedAt: currentPlayer?.summerRankingJoinedAt ?? new Date().toISOString(),
+    };
+
+    setPlayers(prevPlayers => prevPlayers.map(player =>
+      player.id === playerId ? { ...player, ...payload } : player
+    ));
+    await updateDoc(doc(db, "players", playerId), payload);
   };
 
   // NEW: importa TUTTI i players globali in event.players
@@ -161,6 +207,13 @@ const App: React.FC = () => {
         return (
           <ParticipantDashboard
             events={events}
+            headerContent={(
+              <SummerRankingPreview
+                players={players}
+                matches={summerRanking.matches}
+                onOpen={openSummerRanking}
+              />
+            )}
             playerId={loggedInPlayerId}
             onSelectEvent={handleSelectEvent}
           />
@@ -168,6 +221,11 @@ const App: React.FC = () => {
       }
       return (
         <div className="space-y-6 animate-fadeIn">
+          <SummerRankingPreview
+            players={players}
+            matches={summerRanking.matches}
+            onOpen={openSummerRanking}
+          />
           <div className="flex justify-between items-center">
             <h2 className="text-3xl font-bold">I Miei Eventi</h2>
             {isOrganizer && (
@@ -265,6 +323,22 @@ const App: React.FC = () => {
             initialActiveTab={tournamentInitialTab}
             initialSelectedGroupId={tournamentInitialGroupId}
             onPlayerContact={setContactPlayer}
+          />
+        </div>
+      );
+    }
+
+    if (currentView === 'summerRanking') {
+      return (
+        <div className="animate-fadeIn">
+          <SummerRankingView
+            players={players}
+            rankingData={summerRanking}
+            isOrganizer={isOrganizer}
+            loggedInPlayerId={loggedInPlayerId}
+            onPlayerContact={setContactPlayer}
+            onSaveRankingData={saveSummerRankingData}
+            onUpdatePlayerStartPoints={updatePlayerSummerRankingStartPoints}
           />
         </div>
       );
