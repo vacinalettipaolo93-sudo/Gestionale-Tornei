@@ -8,19 +8,19 @@ export const BackArrowIcon = ({ className = 'w-6 h-6' }: { className?: string })
 
 export const WhatsAppIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <path d="M16.6 14.2c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.6.7-.8.9-.1.1-.3.1-.5 0-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5.1-.1.2-.2.4-.4.1-.1.2-.2.2-.4.1-.1.1-.2 0-.4-.1-.1-1.2-2.8-1.6-3.8-.4-1-.8-.8-.6-.8h.5c.2 0 .4.1.6.5.2.4.7 1.8.8 1.9.1.1.2.3.1.4-.1.1-.2.2-.4.4-.1.1-.3.3-.4.3-.1.1-.1.2.0.4 0.1,0.2 0.7,1.2 1.5,2 1,1 1.8,1.3 2,1.4 0.2,0.1 0.3,0 0.4-0.1 0.2-0.2 0.4-0.8 0.5-1 0.1-0.2 0.2-0.2 0.4-0.1s1.2 0.6 1.4 0.7c0.2 0.1 0.4 0.2 0.4 0.3 0.1 0.1 0.1 0.6-0.1 1.2s-1.1 1.2-1.3 1.2c-0.3 0-0.5-0.1-0.7-0.2zM12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8z"/>
+    <path d="M16.6 14.2c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.6.7-.8.9-.1.1-.3.1-.5 0-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5.1-.1.2-.2.4-.4.1-.1.2-.2.2-.4.1-.1.1-.2 0-.4-.1-.1-.6-1.4-.8-1.9-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.5.3-.2.2-.7.7-.7 1.7s.7 1.9.8 2.1c.1.1 1.4 2.2 3.3 3 .5.2.9.4 1.2.5.5.1 1 .1 1.4.1.4-.1 1.5-.6 1.7-1.1.2-.5.2-1 .1-1.1-.1 0-.3-.1-.5-.2z" />
   </svg>
 );
 
 export const PhoneIcon = ({ className = 'w-5 h-5' }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293a1.125 1.125 0 01-1.21.38 12.035 12.035 0 01-7.143-7.143 1.125 1.125 0 01.38-1.21l1.293-.97c.362-.271.527-.734.417-1.173L6.713 3.102A1.125 1.125 0 005.622 2.25H4.25A2.25 2.25 0 002 4.5v2.25z" />
     </svg>
 );
 
 export const ChatBubbleIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193l-3.72 3.72a2.25 2.25 0 01-3.182 0l-3.72-3.72c-1.133-.093-1.98-1.057-1.98-2.192V10.608c0-.97.616-1.813 1.5-2.097m6.75 0a2.25 2.25 0 00-2.25-2.25H9.75a2.25 2.25 0 00-2.25 2.25m6.75 0v.01" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12c0-4.97 4.03-9 9-9h1.5c4.97 0 9 4.03 9 9s-4.03 9-9 9h-1.5a9.96 9.96 0 01-4.495-1.064L2.25 21l1.064-4.505A9.96 9.96 0 012.25 12z" />
   </svg>
 );
 
@@ -30,6 +30,35 @@ export const TrophyIcon = ({ className = 'w-6 h-6' }: { className?: string }) =>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 12.75V15m0 0V12.75m0 0H9.75m2.25 0h2.25" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6.75h.008v.008h-.008V6.75zm-7.5 0h.008v.008H8.25V6.75z" />
     </svg>
+);
+
+export const PaitoneBrandIcon = ({ className = 'w-10 h-10' }: { className?: string }) => (
+  <svg viewBox="0 0 900 260" className={className} aria-label="Paitone Arena by NEXT TS" role="img">
+    <circle cx="110" cy="120" r="78" fill="none" stroke="#9FD98A" strokeWidth="12" />
+    <path d="M42 120a78 78 0 0 1 156 0" fill="none" stroke="#9FD98A" strokeWidth="12" strokeLinecap="round" opacity="0.9" />
+    <path d="M112 198c0-56 45-101 101-101" fill="none" stroke="#5A669B" strokeWidth="12" strokeLinecap="round" />
+
+    <text x="250" y="102" fill="#E2E8F0" fontSize="54" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
+      PAITONE ARENA
+    </text>
+    <text x="250" y="156" fill="#9FD98A" fontSize="34" fontWeight="400" fontFamily="Arial, Helvetica, sans-serif">
+      Tennis & Padel Club
+    </text>
+
+    <text x="635" y="210" fill="#94A3B8" fontSize="28" fontFamily="Brush Script MT, cursive">
+      by
+    </text>
+    <g transform="translate(675 166) scale(0.52)">
+      <text x="0" y="78" fill="#E2E8F0" fontSize="76" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
+        NEXT
+      </text>
+      <polygon points="208,34 246,54 208,74" fill="#E2E8F0" />
+      <circle cx="286" cy="64" r="32" fill="none" stroke="#E2E8F0" strokeWidth="7" />
+      <text x="263" y="75" fill="#E2E8F0" fontSize="28" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
+        TS
+      </text>
+    </g>
+  </svg>
 );
 
 export const UsersIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
@@ -48,19 +77,19 @@ export const PlusIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
 
 export const CogIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12a7.5 7.5 0 0015 0m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5M12 9.75v1.5m0 3v1.5m0-4.5a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12a7.5 7.5 0 0015 0m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5m-15 0a7.5 7.5 0 1115 0m-15 0H3m18 0h-1.5" />
     </svg>
 );
 
 export const TrashIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0A48.11 48.11 0 017.5 5.25m0 0h9m-9 0c0-1.242 1.008-2.25 2.25-2.25h4.5c1.242 0 2.25 1.008 2.25 2.25" />
     </svg>
 );
 
 export const CalendarIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0h18M-4.5 12h18" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
     </svg>
 );
 
@@ -108,6 +137,6 @@ export const LinkIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
 
 export const PhotoIcon = ({ className = 'w-6 h-6' }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H4.5A1.5 1.5 0 003 6v12.75a1.5 1.5 0 001.5 1.5zm11.25-11.25h.008v.008h-.008V9z" />
     </svg>
 );
