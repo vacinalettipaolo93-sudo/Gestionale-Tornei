@@ -133,6 +133,7 @@ export interface SummerPlayerAvailability {
 export interface SummerRankingData {
   slots: TimeSlot[];
   matches: Match[];
+  participantIds?: string[];
   rules?: string;
   availabilities?: Record<string, SummerPlayerAvailability>;
 }
