@@ -75,7 +75,7 @@ const App: React.FC = () => {
       setSummerRanking({
         slots: Array.isArray(data?.slots) ? data!.slots : [],
         matches: Array.isArray(data?.matches) ? data!.matches : [],
-        participantIds: Array.isArray(data?.participantIds) ? data!.participantIds : undefined,
+        participantIds: Array.isArray(data?.participantIds) ? data!.participantIds : [],
         rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
         availabilities: data?.availabilities ?? {},
       });
@@ -175,6 +175,14 @@ const App: React.FC = () => {
 
   const currentEventState = useMemo(() => events.find(e => e.id === selectedEvent?.id), [events, selectedEvent]);
   const currentTournamentState = useMemo(() => currentEventState?.tournaments.find(t => t.id === selectedTournament?.id), [currentEventState, selectedTournament]);
+  const summerRankingParticipantIdSet = useMemo(
+    () => new Set(Array.isArray(summerRanking.participantIds) ? summerRanking.participantIds : []),
+    [summerRanking.participantIds],
+  );
+  const summerRankingPlayers = useMemo(
+    () => players.filter(player => player.status === 'confirmed' && summerRankingParticipantIdSet.has(player.id)),
+    [players, summerRankingParticipantIdSet],
+  );
 
   const filteredEventsForOrganizer = useMemo(() => {
     if (isOrganizer) return events;
@@ -193,7 +201,7 @@ const App: React.FC = () => {
             events={events}
             headerContent={(
               <SummerRankingPreview
-                players={players}
+                players={summerRankingPlayers}
                 matches={summerRanking.matches}
                 onOpen={openSummerRanking}
               />
@@ -206,7 +214,7 @@ const App: React.FC = () => {
       return (
         <div className="space-y-6 animate-fadeIn">
           <SummerRankingPreview
-            players={players}
+            players={summerRankingPlayers}
             matches={summerRanking.matches}
             onOpen={openSummerRanking}
           />
@@ -331,6 +339,7 @@ const App: React.FC = () => {
             onPlayerContact={setContactPlayer}
             onSaveRankingData={saveSummerRankingData}
             onUpdatePlayerStartPoints={updatePlayerSummerRankingStartPoints}
+            onOpenPlayersAdmin={isOrganizer ? () => setCurrentView('playersAdmin') : undefined}
           />
         </div>
       );
