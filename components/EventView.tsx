@@ -23,6 +23,7 @@ interface EventViewProps {
 const makeId = () => `${Date.now()}${Math.floor(Math.random() * 10000)}`;
 
 const generateSlotId = () => 'slot_' + Math.random().toString(36).slice(2, 10);
+type AdminEventSection = 'tournaments' | 'slots' | 'rules' | 'groupRules' | 'matchControl';
 
 const EventView: React.FC<EventViewProps> = ({
   event,
@@ -46,10 +47,29 @@ const EventView: React.FC<EventViewProps> = ({
   const [editingTournament, setEditingTournament] = useState<Tournament | null>(null);
   const [editTournamentName, setEditTournamentName] = useState<string>('');
   const [editTournamentLoading, setEditTournamentLoading] = useState<boolean>(false);
+  const [activeAdminSection, setActiveAdminSection] = useState<AdminEventSection>('tournaments');
+  const [pendingSlotInputFocus, setPendingSlotInputFocus] = useState(false);
+  const slotsPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setRulesDraft(event.rules ?? "");
   }, [event]);
+
+  useEffect(() => {
+    if (!isOrganizer) return;
+    setActiveAdminSection('tournaments');
+    setPendingSlotInputFocus(false);
+  }, [event.id, isOrganizer]);
+
+  useEffect(() => {
+    if (!isOrganizer || activeAdminSection !== 'slots' || !pendingSlotInputFocus) return;
+    const timer = setTimeout(() => {
+      const input = slotsPanelRef.current?.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select');
+      if (input) input.focus();
+    }, 150);
+    setPendingSlotInputFocus(false);
+    return () => clearTimeout(timer);
+  }, [activeAdminSection, pendingSlotInputFocus, isOrganizer]);
 
   const handleSaveRules = async () => {
     setLoading(true);
@@ -220,31 +240,6 @@ const EventView: React.FC<EventViewProps> = ({
     return ta - tb;
   });
 
-  // ===== Refs for page sections to enable menu navigation =====
-  const tournamentsRef = useRef<HTMLDivElement | null>(null);
-  const timeSlotsTopRef = useRef<HTMLDivElement | null>(null);
-  const timeSlotsBottomRef = useRef<HTMLDivElement | null>(null);
-  const rulesRef = useRef<HTMLDivElement | null>(null);
-  const matchControlRef = useRef<HTMLDivElement | null>(null);
-
-  // Scroll helper
-  const scrollToRef = (r: React.RefObject<HTMLDivElement>) => {
-    const el = r.current;
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
-  // Helper to focus first input inside a section (used for "Aggiungi nuovo slot")
-  const focusFirstInputInRef = (r: React.RefObject<HTMLDivElement>) => {
-    const el = r.current;
-    if (!el) return;
-    // small delay to allow scroll animation
-    setTimeout(() => {
-      const input = el.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select');
-      if (input) input.focus();
-    }, 350);
-  };
-
   return (
     <div>
       <div className="bg-primary p-6 rounded-xl shadow-lg mb-6">
@@ -274,43 +269,46 @@ const EventView: React.FC<EventViewProps> = ({
         {isOrganizer && (
           <nav className="mt-6 bg-secondary/20 rounded p-3 flex flex-wrap gap-2" aria-label="Menu amministratore evento">
             <button
-              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
-              onClick={() => scrollToRef(tournamentsRef)}
+              className={`px-3 py-1 rounded text-text-primary text-sm transition-colors ${activeAdminSection === 'tournaments' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90'}`}
+              onClick={() => setActiveAdminSection('tournaments')}
             >
               Tornei
             </button>
 
             <button
-              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
-              onClick={() => { scrollToRef(timeSlotsTopRef); focusFirstInputInRef(timeSlotsTopRef); }}
+              className={`px-3 py-1 rounded text-text-primary text-sm transition-colors ${activeAdminSection === 'slots' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90'}`}
+              onClick={() => setActiveAdminSection('slots')}
+            >
+              Slot orari
+            </button>
+
+            <button
+              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90 transition-colors"
+              onClick={() => {
+                setActiveAdminSection('slots');
+                setPendingSlotInputFocus(true);
+              }}
             >
               Aggiungi nuovo slot
             </button>
 
             <button
-              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
-              onClick={() => scrollToRef(timeSlotsTopRef)}
-            >
-              Slot disponibili
-            </button>
-
-            <button
-              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
-              onClick={() => scrollToRef(timeSlotsBottomRef)}
-            >
-              Slot prenotati
-            </button>
-
-            <button
-              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
-              onClick={() => scrollToRef(rulesRef)}
+              className={`px-3 py-1 rounded text-text-primary text-sm transition-colors ${activeAdminSection === 'rules' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90'}`}
+              onClick={() => setActiveAdminSection('rules')}
             >
               Regolamento torneo
             </button>
 
             <button
-              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90"
-              onClick={() => scrollToRef(matchControlRef)}
+              className={`px-3 py-1 rounded text-text-primary text-sm transition-colors ${activeAdminSection === 'groupRules' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90'}`}
+              onClick={() => setActiveAdminSection('groupRules')}
+            >
+              Regolamento gironi
+            </button>
+
+            <button
+              className={`px-3 py-1 rounded text-text-primary text-sm transition-colors ${activeAdminSection === 'matchControl' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90'}`}
+              onClick={() => setActiveAdminSection('matchControl')}
             >
               Controllo partite
             </button>
@@ -319,7 +317,8 @@ const EventView: React.FC<EventViewProps> = ({
       </div>
 
       {/* CARD TORNEI */}
-      <div ref={tournamentsRef}>
+      {(!isOrganizer || activeAdminSection === 'tournaments') && (
+      <div>
         <h2 className="text-2xl font-bold text-white mb-4">Tornei</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {(event.tournaments ?? []).map(tournament => {
@@ -449,9 +448,11 @@ const EventView: React.FC<EventViewProps> = ({
           })}
         </div>
       </div>
+      )}
 
       {/* SLOT ORARI GLOBALI (solo organizzatore) - top anchor */}
-      <div ref={timeSlotsTopRef} className="mb-10 mt-8" id="slots-top">
+      {(!isOrganizer || activeAdminSection === 'slots') && (
+      <div ref={slotsPanelRef} className="mb-10 mt-8" id="slots-top">
         <h2 className="text-2xl font-bold mb-4 text-white">Slot Orari Globali</h2>
         <TimeSlots
           event={event}
@@ -464,12 +465,11 @@ const EventView: React.FC<EventViewProps> = ({
           onSelectTournament={onSelectTournament}
         />
       </div>
-
-      {/* Anchor positioned after TimeSlots to approximate "slot prenotati" */}
-      <div ref={timeSlotsBottomRef} id="slots-booked-anchor" />
+      )}
 
       {/* REGOLAMENTO (solo organizzatore) */}
-      <div ref={rulesRef} className="bg-tertiary p-6 rounded-xl shadow-lg mb-6" id="regolamento">
+      {(!isOrganizer || activeAdminSection === 'rules') && (
+      <div className="bg-tertiary p-6 rounded-xl shadow-lg mb-6" id="regolamento">
         <div className="flex justify-between items-center mb-2">
           <h3 className="text-xl font-bold text-accent">Regolamento Torneo</h3>
           {!rulesEdit && isOrganizer && (
@@ -506,9 +506,10 @@ const EventView: React.FC<EventViewProps> = ({
           </div>
         )}
       </div>
+      )}
 
       {/* REGOLAMENTO PER OGNI GIRONE - SOLO ORGANIZZATORE */}
-      {isOrganizer && (event.tournaments ?? []).length > 0 &&
+      {isOrganizer && activeAdminSection === 'groupRules' && (event.tournaments ?? []).length > 0 &&
         (event.tournaments ?? []).map(tournament => (
           <RegolamentoGironiPanel
             key={tournament.id}
@@ -551,8 +552,8 @@ const EventView: React.FC<EventViewProps> = ({
       {/* ----------------- /MODAL: AGGIUNGI TORNEO ----------------- */}
 
       {/* == AdminMatchCounts inserito in fondo alla pagina (solo organizer) == */}
-      <div ref={matchControlRef} id="match-control">
-        {isOrganizer && <AdminMatchCounts event={event} onSelectTournament={onSelectTournament} />}
+      <div id="match-control">
+        {isOrganizer && activeAdminSection === 'matchControl' && <AdminMatchCounts event={event} onSelectTournament={onSelectTournament} />}
       </div>
     </div>
   );
