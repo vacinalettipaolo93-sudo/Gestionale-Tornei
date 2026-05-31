@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tournament Manager Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'primary': '#0f172a', // slate-900
+              'secondary': '#1e293b', // slate-800
+              'tertiary': '#334155', // slate-700
+              'accent': '#22d3ee', // cyan-400
+              'accent-hover': '#67e8f9', // cyan-300
+              'highlight': '#8b5cf6', // violet-500
+              'text-primary': '#e2e8f0', // slate-200
+              'text-secondary': '#94a3b8', // slate-400
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: 0, transform: 'translateY(10px)' },
+                '100%': { opacity: 1, transform: 'translateY(0)' },
+              },
+              subtlePulse: {
+                '0%, 100%': { opacity: 0.7 },
+                '50%': { opacity: 1 },
+              }
+            },
+            animation: {
+              fadeIn: 'fadeIn 0.5s ease-out forwards',
+              subtlePulse: 'subtlePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      .bracket-line {
+        content: '';
+        position: absolute;
+        background-color: #475569; /* slate-600 */
+        z-index: 1;
+      }
+    </style>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://aistudiocdn.com/react@^19.1.1",
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+        "react/": "https://aistudiocdn.com/react@^19.1.1/"
+      }
+    }
+    </script>
+    <script type="module" crossorigin src="/assets/index-BjM0mxu2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-e5clYmqd.css">
+  </head>
+  <body class="h-full bg-primary text-text-primary">
+    <div id="root" class="h-full"></div>
+  </body>
+</html>
