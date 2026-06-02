@@ -34,10 +34,10 @@ export const TrophyIcon = ({ className = 'w-6 h-6' }: { className?: string }) =>
 
 export const NextTsBrandIcon = ({ className = 'w-10 h-10' }: { className?: string }) => (
   <svg viewBox="0 0 360 120" className={className} aria-label="NEXT TS logo" role="img">
-    <text x="0" y="78" fill="#E2E8F0" fontSize="76" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
+    <text x="0" y="78" fill="#9B1C12" fontSize="76" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
       NEXT
     </text>
-    <polygon points="208,34 246,54 208,74" fill="#E2E8F0" />
+    <polygon points="208,34 246,54 208,74" fill="#9B1C12" />
     <circle cx="286" cy="64" r="32" fill="none" stroke="#E2E8F0" strokeWidth="7" />
     <text x="263" y="75" fill="#E2E8F0" fontSize="28" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
       TS
