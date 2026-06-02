@@ -10,7 +10,7 @@ import ContactModal from './components/ContactModal';
 import SummerRankingPreview from './components/SummerRankingPreview';
 import SummerRankingView from './components/SummerRankingView';
 import AdminPlayersView from './components/AdminPlayersView';
-import { BackArrowIcon, PaitoneBrandIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
+import { BackArrowIcon, NextTsBrandIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
 
 import { db } from "./firebase";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
@@ -47,7 +47,6 @@ const App: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
 
-  // NEW: states to carry initial tab and group when opening a tournament
   const [tournamentInitialTab, setTournamentInitialTab] = useState<TournamentTab | undefined>(undefined);
   const [tournamentInitialGroupId, setTournamentInitialGroupId] = useState<string | undefined>(undefined);
 
@@ -89,14 +88,12 @@ const App: React.FC = () => {
   }, []);
 
   const handleSelectEvent = (event: Event) => {
-    // clear any tournament initial params when navigating between events
     setTournamentInitialTab(undefined);
     setTournamentInitialGroupId(undefined);
     setSelectedEvent(event);
     setCurrentView('event');
   };
 
-  // Now accepts optional tab and groupId so we can open TournamentView directly on a tab
   const handleSelectTournament = (tournament: Tournament, initialTab?: TournamentTab, initialGroupId?: string) => {
     setSelectedTournament(tournament);
     setTournamentInitialTab(initialTab);
@@ -228,13 +225,13 @@ const App: React.FC = () => {
                 >
                   Giocatori
                 </button>
-              <button
-                onClick={() => setIsCreateModalOpen(true)}
-                className="flex items-center gap-2 bg-highlight/80 hover:bg-highlight text-white font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
-              >
-                <PlusIcon className="w-5 h-5" />
-                Crea Evento
-              </button>
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="flex items-center gap-2 bg-highlight/80 hover:bg-highlight text-white font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
+                >
+                  <PlusIcon className="w-5 h-5" />
+                  Crea Evento
+                </button>
               </div>
             )}
           </div>
@@ -365,7 +362,7 @@ const App: React.FC = () => {
       <header className="mb-8">
         <div className="max-w-7xl mx-auto flex justify-between items-center gap-4">
           <div className="flex items-center gap-4 min-w-0">
-            <PaitoneBrandIcon className="w-40 sm:w-52 lg:w-64 h-auto flex-shrink-0" />
+            <NextTsBrandIcon className="w-28 sm:w-36 lg:w-44 h-auto flex-shrink-0" />
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">Tournament Manager Pro</h1>
             </div>
