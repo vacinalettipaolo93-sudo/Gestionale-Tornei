@@ -32,32 +32,16 @@ export const TrophyIcon = ({ className = 'w-6 h-6' }: { className?: string }) =>
     </svg>
 );
 
-export const PaitoneBrandIcon = ({ className = 'w-10 h-10' }: { className?: string }) => (
-  <svg viewBox="0 0 900 260" className={className} aria-label="Paitone Arena by NEXT TS" role="img">
-    <circle cx="110" cy="120" r="78" fill="none" stroke="#9FD98A" strokeWidth="12" />
-    <path d="M42 120a78 78 0 0 1 156 0" fill="none" stroke="#9FD98A" strokeWidth="12" strokeLinecap="round" opacity="0.9" />
-    <path d="M112 198c0-56 45-101 101-101" fill="none" stroke="#5A669B" strokeWidth="12" strokeLinecap="round" />
-
-    <text x="250" y="102" fill="#E2E8F0" fontSize="54" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
-      PAITONE ARENA
+export const NextTsBrandIcon = ({ className = 'w-10 h-10' }: { className?: string }) => (
+  <svg viewBox="0 0 360 120" className={className} aria-label="NEXT TS logo" role="img">
+    <text x="0" y="78" fill="#E2E8F0" fontSize="76" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
+      NEXT
     </text>
-    <text x="250" y="156" fill="#9FD98A" fontSize="34" fontWeight="400" fontFamily="Arial, Helvetica, sans-serif">
-      Tennis & Padel Club
+    <polygon points="208,34 246,54 208,74" fill="#E2E8F0" />
+    <circle cx="286" cy="64" r="32" fill="none" stroke="#E2E8F0" strokeWidth="7" />
+    <text x="263" y="75" fill="#E2E8F0" fontSize="28" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
+      TS
     </text>
-
-    <text x="635" y="210" fill="#94A3B8" fontSize="28" fontFamily="Brush Script MT, cursive">
-      by
-    </text>
-    <g transform="translate(675 166) scale(0.52)">
-      <text x="0" y="78" fill="#E2E8F0" fontSize="76" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
-        NEXT
-      </text>
-      <polygon points="208,34 246,54 208,74" fill="#E2E8F0" />
-      <circle cx="286" cy="64" r="32" fill="none" stroke="#E2E8F0" strokeWidth="7" />
-      <text x="263" y="75" fill="#E2E8F0" fontSize="28" fontWeight="700" fontFamily="Arial, Helvetica, sans-serif">
-        TS
-      </text>
-    </g>
   </svg>
 );
 
