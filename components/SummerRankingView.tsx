@@ -15,6 +15,7 @@ import {
   calculateSummerRanking,
   getEligibleOpponents,
   getHeadToHeadCount,
+  getSummerRankingWinPoints,
 } from '../utils/summerRanking';
 
 type RankingTab = 'ranking' | 'matches' | 'rules' | 'slots' | 'availability' | 'players';
@@ -94,6 +95,12 @@ const formatDateTime = (value?: string) => {
     hour: '2-digit',
     minute: '2-digit',
   });
+};
+
+const getChallengeBadgeTone = (pointsToWin: number) => {
+  if (pointsToWin >= 40) return 'bg-red-500/20 text-red-300 border-red-400/40';
+  if (pointsToWin >= 30) return 'bg-orange-500/20 text-orange-300 border-orange-400/40';
+  return 'bg-green-500/20 text-green-300 border-green-400/40';
 };
 
 const SummerRankingView: React.FC<SummerRankingViewProps> = ({
@@ -387,6 +394,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => loggedInPlayerId ? ranking.find(entry => entry.player.id === loggedInPlayerId) : undefined,
     [ranking, loggedInPlayerId],
   );
+  const showChallengePointsColumn = !!currentPlayerRankingEntry;
   const currentPlayerVisibleInFilteredRanking = useMemo(
     () => !!(loggedInPlayerId && filteredRanking.some(entry => entry.player.id === loggedInPlayerId)),
     [filteredRanking, loggedInPlayerId],
@@ -536,6 +544,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   <th className="py-3 pr-3">Rank</th>
                   <th className="py-3 pr-3">Giocatore</th>
                   <th className="py-3 pr-3">Punti</th>
+                  {showChallengePointsColumn && <th className="py-3 pr-3">Punti sfida</th>}
                   <th className="py-3 pr-3">Serie</th>
                   <th className="py-3 pr-3">Partite</th>
                   <th className="py-3 pr-3">Bonus/Malus</th>
@@ -548,6 +557,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 {filteredRanking.map(entry => {
                   const availabilitySummary = getAvailabilitySummary(rankingData.availabilities?.[entry.player.id]);
                   const isCurrentPlayerRow = entry.player.id === loggedInPlayerId;
+                  const pointsToWin = currentPlayerRankingEntry
+                    ? getSummerRankingWinPoints(currentPlayerRankingEntry.points, entry.points)
+                    : 0;
 
                   return (
                   <tr key={entry.player.id} className={`border-b border-tertiary/40 last:border-b-0 align-top ${isCurrentPlayerRow ? 'bg-accent/10 ring-1 ring-inset ring-accent/60' : ''}`}>
@@ -597,6 +609,19 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                         <span className="text-text-secondary">trend recente</span>
                       </div>
                     </td>
+                    {showChallengePointsColumn && (
+                      <td className="py-4 pr-3">
+                        {isCurrentPlayerRow ? (
+                          <span className="inline-flex items-center rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">
+                            Tu
+                          </span>
+                        ) : (
+                          <span className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-bold ${getChallengeBadgeTone(pointsToWin)}`}>
+                            +{pointsToWin} pt
+                          </span>
+                        )}
+                      </td>
+                    )}
                     <td className="py-4 pr-3 font-mono text-xs tracking-wide">
                       {entry.recentForm.length > 0 ? entry.recentForm.join(' ') : '—'}
                     </td>
@@ -639,7 +664,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 })}
                 {filteredRanking.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-text-secondary">
+                    <td colSpan={showChallengePointsColumn ? 10 : 9} className="py-8 text-center text-text-secondary">
                       {hasActiveRankingFilters
                         ? 'Nessun giocatore corrisponde ai filtri selezionati.'
                         : 'Nessun giocatore confermato nel Summer Ranking Next.'}

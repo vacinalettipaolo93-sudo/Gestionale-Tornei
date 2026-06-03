@@ -54,10 +54,17 @@ const UNDERDOG_WIN_RULES = {
 
 const getStartingPoints = (player: Player) => Number(player.summerRankingStartPoints ?? 0);
 
-const getDiffBand = (diff: number) => {
+export const getSummerRankingDiffBand = (diff: number) => {
   if (diff <= 100) return 'low' as const;
   if (diff <= 200) return 'medium' as const;
   return 'high' as const;
+};
+
+export const getSummerRankingWinPoints = (winnerPoints: number, loserPoints: number) => {
+  const diff = Math.abs(winnerPoints - loserPoints);
+  const band = getSummerRankingDiffBand(diff);
+  const winnerIsFavorite = winnerPoints >= loserPoints;
+  return (winnerIsFavorite ? FAVORITE_WIN_RULES : UNDERDOG_WIN_RULES)[band].winner;
 };
 
 const toTimestamp = (value?: string) => {
@@ -166,7 +173,7 @@ export const calculateSummerRanking = (
     const player1PointsBefore = player1Stats.points;
     const player2PointsBefore = player2Stats.points;
     const diff = Math.abs(player1PointsBefore - player2PointsBefore);
-    const band = getDiffBand(diff);
+    const band = getSummerRankingDiffBand(diff);
     const isPlayer1Favorite = player1PointsBefore >= player2PointsBefore;
     const playedAt = getMatchPlayedAt(match);
     const playedDate = toTimestamp(playedAt);
