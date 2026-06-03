@@ -130,12 +130,40 @@ export interface SummerPlayerAvailability {
   updatedAt?: string;
 }
 
+export type SummerRankingMasterStage = 'quarterfinal' | 'semifinal' | 'final' | 'thirdPlace';
+
+export interface SummerRankingMasterMatch {
+  id: string;
+  round: number;
+  label: string;
+  stage: SummerRankingMasterStage;
+  player1Id: string | null;
+  player2Id: string | null;
+  score1: number | null;
+  score2: number | null;
+  status: 'pending' | 'scheduled' | 'completed';
+  scheduledTime?: string;
+  location?: string;
+  field?: string;
+  slotId?: string;
+  completedAt?: string;
+}
+
+export interface SummerRankingMasterData {
+  manualQualifiedPlayerIds?: string[];
+  generatedQualifiedPlayerIds?: string[];
+  bracket?: PlayoffBracket | null;
+  matches?: SummerRankingMasterMatch[];
+  generatedAt?: string;
+}
+
 export interface SummerRankingData {
   slots: TimeSlot[];
   matches: Match[];
   participantIds?: string[];
   rules?: string;
   availabilities?: Record<string, SummerPlayerAvailability>;
+  master?: SummerRankingMasterData;
 }
 
 export interface StandingsEntry {

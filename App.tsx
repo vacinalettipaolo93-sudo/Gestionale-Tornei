@@ -40,6 +40,7 @@ const App: React.FC = () => {
     participantIds: [],
     rules: DEFAULT_SUMMER_RANKING_RULES,
     availabilities: {},
+    master: undefined,
   });
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
@@ -77,6 +78,15 @@ const App: React.FC = () => {
         participantIds: Array.isArray(data?.participantIds) ? data!.participantIds : [],
         rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
         availabilities: data?.availabilities ?? {},
+        master: data?.master
+          ? {
+              manualQualifiedPlayerIds: Array.isArray(data.master.manualQualifiedPlayerIds) ? data.master.manualQualifiedPlayerIds : undefined,
+              generatedQualifiedPlayerIds: Array.isArray(data.master.generatedQualifiedPlayerIds) ? data.master.generatedQualifiedPlayerIds : undefined,
+              bracket: data.master.bracket ?? undefined,
+              matches: Array.isArray(data.master.matches) ? data.master.matches : [],
+              generatedAt: data.master.generatedAt,
+            }
+          : undefined,
       });
     });
     return () => {
