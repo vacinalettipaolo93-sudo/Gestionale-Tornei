@@ -115,6 +115,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [isEditingRules, setIsEditingRules] = useState(false);
   const [startPointsDrafts, setStartPointsDrafts] = useState<Record<string, string>>({});
   const [busyPlayerId, setBusyPlayerId] = useState<string | null>(null);
+  const [rankingSearch, setRankingSearch] = useState('');
+  const [minRankingPoints, setMinRankingPoints] = useState('');
+  const [maxRankingPoints, setMaxRankingPoints] = useState('');
   const [availabilityForm, setAvailabilityForm] = useState<AvailabilityFormState>(() =>
     normalizeAvailability(loggedInPlayerId ? rankingData.availabilities?.[loggedInPlayerId] : undefined)
   );
@@ -359,6 +362,41 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const topEightQualified = ranking.filter(entry => entry.qualifiedForMaster);
+  const normalizedRankingSearch = rankingSearch.trim().toLowerCase();
+  const hasMinRankingPoints = minRankingPoints.trim() !== '';
+  const hasMaxRankingPoints = maxRankingPoints.trim() !== '';
+  const parsedMinRankingPoints = hasMinRankingPoints ? Number(minRankingPoints) : null;
+  const parsedMaxRankingPoints = hasMaxRankingPoints ? Number(maxRankingPoints) : null;
+  const hasActiveRankingFilters = normalizedRankingSearch.length > 0 || hasMinRankingPoints || hasMaxRankingPoints;
+  const filteredRanking = useMemo(
+    () =>
+      ranking.filter(entry => {
+        const matchesSearch = normalizedRankingSearch.length === 0
+          || entry.player.name.toLowerCase().includes(normalizedRankingSearch)
+          || entry.player.id.toLowerCase().includes(normalizedRankingSearch);
+        if (!matchesSearch) return false;
+        if (hasMinRankingPoints && (parsedMinRankingPoints === null || Number.isNaN(parsedMinRankingPoints))) return false;
+        if (hasMaxRankingPoints && (parsedMaxRankingPoints === null || Number.isNaN(parsedMaxRankingPoints))) return false;
+        if (parsedMinRankingPoints !== null && !Number.isNaN(parsedMinRankingPoints) && entry.points < parsedMinRankingPoints) return false;
+        if (parsedMaxRankingPoints !== null && !Number.isNaN(parsedMaxRankingPoints) && entry.points > parsedMaxRankingPoints) return false;
+        return true;
+      }),
+    [ranking, normalizedRankingSearch, hasMinRankingPoints, hasMaxRankingPoints, parsedMinRankingPoints, parsedMaxRankingPoints],
+  );
+  const currentPlayerRankingEntry = useMemo(
+    () => loggedInPlayerId ? ranking.find(entry => entry.player.id === loggedInPlayerId) : undefined,
+    [ranking, loggedInPlayerId],
+  );
+  const currentPlayerVisibleInFilteredRanking = useMemo(
+    () => !!(loggedInPlayerId && filteredRanking.some(entry => entry.player.id === loggedInPlayerId)),
+    [filteredRanking, loggedInPlayerId],
+  );
+
+  const resetRankingFilters = () => {
+    setRankingSearch('');
+    setMinRankingPoints('');
+    setMaxRankingPoints('');
+  };
 
   return (
     <div className="space-y-6">
@@ -415,6 +453,82 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </div>
           </div>
 
+          <div className="bg-secondary rounded-xl shadow-lg p-5 space-y-4">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-lg font-bold text-accent">Ricerca e filtri ranking</h3>
+              <p className="text-sm text-text-secondary">
+                Cerca rapidamente il giocatore da sfidare e filtra per punteggio.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="md:col-span-2">
+                <label htmlFor="ranking-search" className="block text-xs font-semibold text-text-secondary mb-1">
+                  Cerca giocatore
+                </label>
+                <input
+                  id="ranking-search"
+                  type="search"
+                  value={rankingSearch}
+                  onChange={event => setRankingSearch(event.target.value)}
+                  placeholder="Nome o ID giocatore"
+                  className="w-full bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                />
+              </div>
+              <div>
+                <label htmlFor="ranking-points-min" className="block text-xs font-semibold text-text-secondary mb-1">
+                  Punti min
+                </label>
+                <input
+                  id="ranking-points-min"
+                  type="number"
+                  value={minRankingPoints}
+                  onChange={event => setMinRankingPoints(event.target.value)}
+                  placeholder="Es. 100"
+                  className="w-full bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                />
+              </div>
+              <div>
+                <label htmlFor="ranking-points-max" className="block text-xs font-semibold text-text-secondary mb-1">
+                  Punti max
+                </label>
+                <input
+                  id="ranking-points-max"
+                  type="number"
+                  value={maxRankingPoints}
+                  onChange={event => setMaxRankingPoints(event.target.value)}
+                  placeholder="Es. 200"
+                  className="w-full bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-text-secondary">
+                {filteredRanking.length} risultati su {ranking.length}
+              </div>
+              <button
+                onClick={resetRankingFilters}
+                disabled={!hasActiveRankingFilters}
+                className="px-3 py-2 rounded bg-tertiary hover:bg-tertiary/90 disabled:opacity-50 disabled:cursor-not-allowed text-text-primary text-xs font-semibold"
+              >
+                Reset filtri
+              </button>
+            </div>
+          </div>
+
+          {currentPlayerRankingEntry && !currentPlayerVisibleInFilteredRanking && (
+            <div className="bg-accent/15 border border-accent/50 rounded-xl p-4">
+              <div className="text-xs font-semibold text-accent uppercase tracking-wide">La tua posizione reale</div>
+              <div className="mt-2 flex flex-wrap items-center gap-4 text-sm">
+                <span className="font-bold text-lg text-accent">#{currentPlayerRankingEntry.rank}</span>
+                <span className="font-semibold">{currentPlayerRankingEntry.player.name}</span>
+                <span className="text-text-secondary">{currentPlayerRankingEntry.points} pt</span>
+              </div>
+              <p className="text-xs text-text-secondary mt-1">
+                Non è visibile con i filtri attivi, ma questa è la tua posizione in classifica completa.
+              </p>
+            </div>
+          )}
+
           <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
             <table className="w-full min-w-[1120px] text-sm">
               <thead>
@@ -431,15 +545,21 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {ranking.map(entry => {
+                {filteredRanking.map(entry => {
                   const availabilitySummary = getAvailabilitySummary(rankingData.availabilities?.[entry.player.id]);
+                  const isCurrentPlayerRow = entry.player.id === loggedInPlayerId;
 
                   return (
-                  <tr key={entry.player.id} className="border-b border-tertiary/40 last:border-b-0 align-top">
+                  <tr key={entry.player.id} className={`border-b border-tertiary/40 last:border-b-0 align-top ${isCurrentPlayerRow ? 'bg-accent/10 ring-1 ring-inset ring-accent/60' : ''}`}>
                     <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
                     <td className="py-4 pr-3">
                       <div className="font-semibold flex items-center gap-2">
                         {entry.player.name}
+                        {isCurrentPlayerRow && (
+                          <span className="px-2 py-0.5 rounded bg-accent text-white text-xs font-semibold">
+                            Tu
+                          </span>
+                        )}
                         {entry.qualifiedForMaster && (
                           <span className="px-2 py-0.5 rounded bg-green-600 text-white text-xs font-semibold">
                             Master
@@ -517,10 +637,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   </tr>
                   );
                 })}
-                {ranking.length === 0 && (
+                {filteredRanking.length === 0 && (
                   <tr>
                     <td colSpan={9} className="py-8 text-center text-text-secondary">
-                      Nessun giocatore confermato nel Summer Ranking Next.
+                      {hasActiveRankingFilters
+                        ? 'Nessun giocatore corrisponde ai filtri selezionati.'
+                        : 'Nessun giocatore confermato nel Summer Ranking Next.'}
                     </td>
                   </tr>
                 )}
