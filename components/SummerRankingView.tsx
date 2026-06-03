@@ -452,7 +452,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Master finale</div>
               <div className="text-xl font-bold mt-2">{topEightQualified.length}/8 qualificati</div>
-              <div className="text-text-secondary mt-1">Servono almeno 10 partite giocate.</div>
+              <div className="text-text-secondary mt-1">Servono almeno 5 partite giocate.</div>
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Slot disponibili</div>

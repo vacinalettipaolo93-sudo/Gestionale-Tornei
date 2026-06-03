@@ -14,7 +14,7 @@ export const DEFAULT_SUMMER_RANKING_RULES = [
   '• Bonus partecipazione: +5 a partita, oppure +10 a partita se il giocatore disputa almeno 2 match nella stessa settimana.',
   '• Bonus differenza game al vincitore: +1 con 2 game di scarto, +2 con 3, +3 con 4 o più.',
   '• Malus inattività: -5 punti ogni 10 giorni consecutivi senza partite.',
-  '• Master finale: top 8 con almeno 10 partite giocate.',
+  '• Master finale: top 8 con almeno 5 partite giocate.',
   '• Limite massimo: 5 scontri contro lo stesso avversario.',
 ].join('\n');
 
@@ -292,7 +292,7 @@ export const calculateSummerRanking = (
     .map((entry, index) => ({ ...entry, rank: index + 1 }));
 
   ranking
-    .filter(entry => entry.matchesPlayed >= 10)
+    .filter(entry => entry.matchesPlayed >= 5)
     .slice(0, 8)
     .forEach(entry => {
       entry.qualifiedForMaster = true;
