@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   type Match,
   type Player,
+  type PlayoffBracket,
   type SummerAvailabilityDay,
   type SummerAvailabilityPeriod,
   type SummerPlayerAvailability,
   type SummerRankingData,
+  type SummerRankingMasterMatch,
   type TimeSlot,
 } from '../types';
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon } from './Icons';
@@ -13,13 +15,22 @@ import {
   DEFAULT_SUMMER_RANKING_RULES,
   SUMMER_RANKING_NAME,
   calculateSummerRanking,
+  createSummerRankingMasterBracket,
+  getSummerRankingAutoQualifiedPlayerIds,
   getEligibleOpponents,
   getHeadToHeadCount,
+  getSummerRankingMasterQualifiedPlayerIds,
   getSummerRankingWinPoints,
+  recomputeSummerRankingMasterBracket,
+  removePlayerFromSummerRankingMaster,
+  SUMMER_RANKING_MASTER_MIN_MATCHES,
+  SUMMER_RANKING_MASTER_SIZE,
+  syncSummerRankingMasterMatches,
 } from '../utils/summerRanking';
 
-type RankingTab = 'ranking' | 'matches' | 'rules' | 'slots' | 'availability' | 'players';
+type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'slots' | 'availability' | 'players';
 type AvailabilityFormState = Omit<SummerPlayerAvailability, 'updatedAt'>;
+type MasterScoreFormState = { matchId: string | null; score1: string; score2: string };
 
 const AVAILABILITY_DAYS: Array<{ value: SummerAvailabilityDay; label: string; shortLabel: string }> = [
   { value: 'monday', label: 'Lunedì', shortLabel: 'Lun' },
@@ -103,6 +114,47 @@ const getChallengeBadgeTone = (pointsToWin: number) => {
   return 'bg-green-500/20 text-green-300 border-green-400/40';
 };
 
+const arraysEqual = (left: string[], right: string[]) =>
+  left.length === right.length && left.every((item, index) => item === right[index]);
+
+const getMasterMatchStatusLabel = (match: SummerRankingMasterMatch) => {
+  if (match.status === 'completed') return 'Completata';
+  if (match.status === 'scheduled') return 'Prenotata';
+  return match.player1Id && match.player2Id ? 'Da organizzare' : 'In attesa qualificati';
+};
+
+const getMasterMatchStatusTone = (match: SummerRankingMasterMatch) => {
+  if (match.status === 'completed') return 'bg-green-600 text-white';
+  if (match.status === 'scheduled') return 'bg-accent text-white';
+  return match.player1Id && match.player2Id ? 'bg-yellow-500/20 text-yellow-200' : 'bg-tertiary text-text-primary';
+};
+
+const getOperationalMatchStatus = (match: SummerRankingMasterMatch, slot: TimeSlot) => ({
+  ...match,
+  status: 'scheduled' as const,
+  scheduledTime: slot.start,
+  location: slot.location,
+  field: slot.field,
+  slotId: slot.id,
+});
+
+const rebuildMasterState = (
+  bracket: PlayoffBracket,
+  previousMatches: SummerRankingMasterMatch[],
+  generatedQualifiedPlayerIds: string[],
+  manualQualifiedPlayerIds?: string[],
+  generatedAt?: string,
+) => {
+  const nextBracket = recomputeSummerRankingMasterBracket(bracket);
+  return {
+    manualQualifiedPlayerIds,
+    generatedQualifiedPlayerIds,
+    bracket: nextBracket,
+    matches: syncSummerRankingMasterMatches(nextBracket, previousMatches),
+    generatedAt: generatedAt ?? new Date().toISOString(),
+  };
+};
+
 const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   players,
   rankingData,
@@ -128,6 +180,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [availabilityForm, setAvailabilityForm] = useState<AvailabilityFormState>(() =>
     normalizeAvailability(loggedInPlayerId ? rankingData.availabilities?.[loggedInPlayerId] : undefined)
   );
+  const [masterQualifiedDraft, setMasterQualifiedDraft] = useState<string[]>([]);
+  const [masterBookingSlotIdByMatch, setMasterBookingSlotIdByMatch] = useState<Record<string, string>>({});
+  const [editingMasterMatchId, setEditingMasterMatchId] = useState<string | null>(null);
+  const [masterScoreForm, setMasterScoreForm] = useState<MasterScoreFormState>({ matchId: null, score1: '', score2: '' });
 
   useEffect(() => {
     setRulesDraft(rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES);
@@ -160,17 +216,35 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => calculateSummerRanking(confirmedPlayers, rankingData.matches),
     [confirmedPlayers, rankingData.matches],
   );
+  const autoQualifiedPlayerIds = useMemo(
+    () => getSummerRankingAutoQualifiedPlayerIds(ranking),
+    [ranking],
+  );
+  const currentMasterQualifiedPlayerIds = useMemo(
+    () => getSummerRankingMasterQualifiedPlayerIds(ranking, rankingData.master),
+    [ranking, rankingData.master],
+  );
   const playerMap = useMemo(
     () => new Map(players.map(player => [player.id, player])),
     [players],
   );
+  const masterBracket = rankingData.master?.bracket;
+  const masterMatches = useMemo(
+    () => {
+      if (Array.isArray(rankingData.master?.matches) && rankingData.master.matches.length > 0) {
+        return rankingData.master.matches;
+      }
+      return masterBracket ? syncSummerRankingMasterMatches(masterBracket) : [];
+    },
+    [rankingData.master?.matches, masterBracket],
+  );
   const bookedSlotIds = useMemo(
     () => new Set(
-      rankingData.matches
+      [...rankingData.matches, ...masterMatches]
         .filter(match => match.slotId && match.status !== 'pending')
         .map(match => String(match.slotId))
     ),
-    [rankingData.matches],
+    [rankingData.matches, masterMatches],
   );
   const availableSlots = useMemo(
     () => rankingData.slots
@@ -187,6 +261,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   );
 
   const canBookAsParticipant = !!currentPlayer;
+  const rankingById = useMemo(
+    () => new Map(ranking.map(entry => [entry.player.id, entry])),
+    [ranking],
+  );
   const addablePlayers = useMemo(
     () =>
       players
@@ -198,6 +276,23 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   useEffect(() => {
     setAvailabilityForm(normalizeAvailability(currentPlayerAvailability));
   }, [currentPlayerAvailability, loggedInPlayerId]);
+
+  useEffect(() => {
+    setMasterQualifiedDraft(currentMasterQualifiedPlayerIds);
+  }, [currentMasterQualifiedPlayerIds]);
+
+  useEffect(() => {
+    setMasterBookingSlotIdByMatch(previous => {
+      const validMatchIds = new Set(masterMatches.map(match => match.id));
+      const nextState: Record<string, string> = {};
+      for (const matchId of Object.keys(previous)) {
+        if (validMatchIds.has(matchId)) {
+          nextState[matchId] = previous[matchId];
+        }
+      }
+      return nextState;
+    });
+  }, [masterMatches]);
 
   const handleAddSlot = async () => {
     if (!slotForm.start || !slotForm.location.trim()) return;
@@ -306,6 +401,162 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     });
   };
 
+  const persistMasterQualifiedPlayers = async (qualifiedPlayerIds: string[]) => {
+    const normalizedQualifiedPlayerIds = qualifiedPlayerIds.filter(Boolean);
+    if (normalizedQualifiedPlayerIds.length !== SUMMER_RANKING_MASTER_SIZE) return;
+
+    const manualQualifiedPlayerIds = arraysEqual(normalizedQualifiedPlayerIds, autoQualifiedPlayerIds)
+      ? undefined
+      : normalizedQualifiedPlayerIds;
+
+    await onSaveRankingData({
+      ...rankingData,
+      master: {
+        ...rankingData.master,
+        manualQualifiedPlayerIds,
+      },
+    });
+  };
+
+  const handleGenerateMaster = async () => {
+    if (!isOrganizer || masterQualifiedDraft.length !== SUMMER_RANKING_MASTER_SIZE) return;
+
+    const manualQualifiedPlayerIds = arraysEqual(masterQualifiedDraft, autoQualifiedPlayerIds)
+      ? undefined
+      : masterQualifiedDraft;
+    const nextBracket = createSummerRankingMasterBracket(masterQualifiedDraft);
+
+    await onSaveRankingData({
+      ...rankingData,
+      master: {
+        manualQualifiedPlayerIds,
+        generatedQualifiedPlayerIds: masterQualifiedDraft,
+        bracket: nextBracket,
+        matches: syncSummerRankingMasterMatches(nextBracket, rankingData.master?.matches ?? []),
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  };
+
+  const canManageMasterMatch = (match: SummerRankingMasterMatch) =>
+    isOrganizer || loggedInPlayerId === match.player1Id || loggedInPlayerId === match.player2Id;
+
+  const handleScheduleMasterMatch = async (match: SummerRankingMasterMatch) => {
+    const slotId = masterBookingSlotIdByMatch[match.id];
+    const slot = availableSlots.find(item => item.id === slotId);
+    if (!slot || !canManageMasterMatch(match) || !rankingData.master?.matches) return;
+
+    await onSaveRankingData({
+      ...rankingData,
+      master: {
+        ...rankingData.master,
+        matches: rankingData.master.matches.map(item =>
+          item.id === match.id ? getOperationalMatchStatus(item, slot) : item
+        ),
+      },
+    });
+
+    setMasterBookingSlotIdByMatch(previous => ({ ...previous, [match.id]: '' }));
+  };
+
+  const openEditMasterResult = (match: SummerRankingMasterMatch) => {
+    setEditingMasterMatchId(match.id);
+    setMasterScoreForm({
+      matchId: match.id,
+      score1: match.score1 !== null ? String(match.score1) : '',
+      score2: match.score2 !== null ? String(match.score2) : '',
+    });
+  };
+
+  const handleSaveMasterResult = async (match: SummerRankingMasterMatch) => {
+    if (!rankingData.master?.bracket || !rankingData.master.matches || !canManageMasterMatch(match)) return;
+
+    const score1 = Number(masterScoreForm.score1);
+    const score2 = Number(masterScoreForm.score2);
+    if (
+      Number.isNaN(score1) ||
+      Number.isNaN(score2) ||
+      score1 < 0 ||
+      score2 < 0 ||
+      score1 === score2
+    ) {
+      return;
+    }
+
+    const nextBracket: PlayoffBracket = JSON.parse(JSON.stringify(rankingData.master.bracket));
+    const bracketMatch = nextBracket.matches.find(item => item.id === match.id);
+    if (!bracketMatch) return;
+
+    bracketMatch.score1 = score1;
+    bracketMatch.score2 = score2;
+
+    const nextMaster = rebuildMasterState(
+      nextBracket,
+      rankingData.master.matches.map(item =>
+        item.id === match.id
+          ? {
+              ...item,
+              score1,
+              score2,
+              status: 'completed',
+              completedAt: item.completedAt ?? new Date().toISOString(),
+            }
+          : item
+      ),
+      rankingData.master.generatedQualifiedPlayerIds ?? [],
+      rankingData.master.manualQualifiedPlayerIds,
+      rankingData.master.generatedAt,
+    );
+
+    await onSaveRankingData({
+      ...rankingData,
+      master: nextMaster,
+    });
+
+    setEditingMasterMatchId(null);
+    setMasterScoreForm({ matchId: null, score1: '', score2: '' });
+  };
+
+  const handleResetMasterResult = async (match: SummerRankingMasterMatch) => {
+    if (!rankingData.master?.bracket || !rankingData.master.matches || !canManageMasterMatch(match)) return;
+
+    const nextBracket: PlayoffBracket = JSON.parse(JSON.stringify(rankingData.master.bracket));
+    const bracketMatch = nextBracket.matches.find(item => item.id === match.id);
+    if (!bracketMatch) return;
+
+    bracketMatch.score1 = null;
+    bracketMatch.score2 = null;
+    bracketMatch.winnerId = null;
+
+    const nextMaster = rebuildMasterState(
+      nextBracket,
+      rankingData.master.matches.map(item =>
+        item.id === match.id
+          ? {
+              ...item,
+              score1: null,
+              score2: null,
+              status: item.slotId ? 'scheduled' : 'pending',
+              completedAt: undefined,
+            }
+          : item
+      ),
+      rankingData.master.generatedQualifiedPlayerIds ?? [],
+      rankingData.master.manualQualifiedPlayerIds,
+      rankingData.master.generatedAt,
+    );
+
+    await onSaveRankingData({
+      ...rankingData,
+      master: nextMaster,
+    });
+
+    if (editingMasterMatchId === match.id) {
+      setEditingMasterMatchId(null);
+      setMasterScoreForm({ matchId: null, score1: '', score2: '' });
+    }
+  };
+
   const handleSaveRules = async () => {
     await onSaveRankingData({
       ...rankingData,
@@ -365,10 +616,15 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       participantIds: rankingParticipantIds.filter(id => id !== playerId),
       matches: rankingData.matches.filter(match => match.player1Id !== playerId && match.player2Id !== playerId),
       availabilities: nextAvailabilities,
+      master: removePlayerFromSummerRankingMaster(rankingData.master, playerId),
     });
   };
 
-  const topEightQualified = ranking.filter(entry => entry.qualifiedForMaster);
+  const masterQualifiedIdSet = useMemo(
+    () => new Set(currentMasterQualifiedPlayerIds),
+    [currentMasterQualifiedPlayerIds],
+  );
+  const topEightQualified = ranking.filter(entry => masterQualifiedIdSet.has(entry.player.id));
   const normalizedRankingSearch = rankingSearch.trim().toLowerCase();
   const hasMinRankingPoints = minRankingPoints.trim() !== '';
   const hasMaxRankingPoints = maxRankingPoints.trim() !== '';
@@ -399,6 +655,34 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => !!(loggedInPlayerId && filteredRanking.some(entry => entry.player.id === loggedInPlayerId)),
     [filteredRanking, loggedInPlayerId],
   );
+  const masterCandidatePlayers = useMemo(
+    () => ranking.map(entry => entry.player),
+    [ranking],
+  );
+  const normalizedMasterQualifiedDraft = useMemo(
+    () => masterQualifiedDraft.filter(Boolean),
+    [masterQualifiedDraft],
+  );
+  const hasValidMasterDraft = useMemo(
+    () =>
+      normalizedMasterQualifiedDraft.length === SUMMER_RANKING_MASTER_SIZE &&
+      new Set(normalizedMasterQualifiedDraft).size === SUMMER_RANKING_MASTER_SIZE,
+    [normalizedMasterQualifiedDraft],
+  );
+  const generatedMasterQualifiedPlayerIds = rankingData.master?.generatedQualifiedPlayerIds ?? [];
+  const masterNeedsRegeneration = !!masterBracket?.isGenerated && !arraysEqual(currentMasterQualifiedPlayerIds, generatedMasterQualifiedPlayerIds);
+  const visibleMasterMatches = useMemo(
+    () =>
+      masterMatches
+        .slice()
+        .sort((a, b) => a.round - b.round || a.label.localeCompare(b.label)),
+    [masterMatches],
+  );
+  const currentPlayerMasterMatches = useMemo(
+    () =>
+      masterMatches.filter(match => loggedInPlayerId === match.player1Id || loggedInPlayerId === match.player2Id),
+    [masterMatches, loggedInPlayerId],
+  );
 
   const resetRankingFilters = () => {
     setRankingSearch('');
@@ -425,6 +709,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           {([
             ['ranking', 'Ranking'],
             ['matches', 'Partite'],
+            ['master', 'Master finale'],
             ['availability', 'Disponibilità'],
             ['rules', 'Regolamento'],
             ['slots', 'Slot / Prenotazioni'],
@@ -451,8 +736,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Master finale</div>
-              <div className="text-xl font-bold mt-2">{topEightQualified.length}/8 qualificati</div>
-              <div className="text-text-secondary mt-1">Servono almeno 5 partite giocate.</div>
+              <div className="text-xl font-bold mt-2">{topEightQualified.length}/{SUMMER_RANKING_MASTER_SIZE} qualificati</div>
+              <div className="text-text-secondary mt-1">Servono almeno {SUMMER_RANKING_MASTER_MIN_MATCHES} partite giocate.</div>
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Slot disponibili</div>
@@ -572,7 +857,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             Tu
                           </span>
                         )}
-                        {entry.qualifiedForMaster && (
+                        {masterQualifiedIdSet.has(entry.player.id) && (
                           <span className="px-2 py-0.5 rounded bg-green-600 text-white text-xs font-semibold">
                             Master
                           </span>
@@ -882,6 +1167,333 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {activeTab === 'master' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-secondary rounded-xl p-5 shadow-lg">
+              <div className="text-sm text-text-secondary">Qualificati automatici</div>
+              <div className="text-xl font-bold mt-2">{autoQualifiedPlayerIds.length}/{SUMMER_RANKING_MASTER_SIZE}</div>
+              <div className="text-text-secondary mt-1">Top {SUMMER_RANKING_MASTER_SIZE} con almeno {SUMMER_RANKING_MASTER_MIN_MATCHES} partite.</div>
+            </div>
+            <div className="bg-secondary rounded-xl p-5 shadow-lg">
+              <div className="text-sm text-text-secondary">Selezione attuale</div>
+              <div className="text-xl font-bold mt-2">{currentMasterQualifiedPlayerIds.length}/{SUMMER_RANKING_MASTER_SIZE}</div>
+              <div className="text-text-secondary mt-1">
+                {rankingData.master?.manualQualifiedPlayerIds?.length === SUMMER_RANKING_MASTER_SIZE
+                  ? 'Override manuale salvato.'
+                  : 'Basata sui qualificati automatici.'}
+              </div>
+            </div>
+            <div className="bg-secondary rounded-xl p-5 shadow-lg">
+              <div className="text-sm text-text-secondary">Le tue partite Master</div>
+              <div className="text-xl font-bold mt-2">{currentPlayerMasterMatches.length}</div>
+              <div className="text-text-secondary mt-1">
+                {currentPlayer ? 'Puoi prenotare e pubblicare risultati solo delle tue partite.' : 'Accedi come giocatore per gestire le tue partite.'}
+              </div>
+            </div>
+          </div>
+
+          {isOrganizer && (
+            <div className="bg-secondary rounded-xl shadow-lg p-6 space-y-5">
+              <div>
+                <h3 className="text-xl font-bold text-accent">Configurazione Master finale</h3>
+                <p className="text-sm text-text-secondary mt-1">
+                  I primi {SUMMER_RANKING_MASTER_SIZE} vengono proposti automaticamente, ma puoi sostituirli manualmente in caso di assenza o infortunio.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Array.from({ length: SUMMER_RANKING_MASTER_SIZE }).map((_, index) => {
+                  const selectedId = masterQualifiedDraft[index] ?? '';
+                  return (
+                    <div key={index} className="bg-primary rounded-lg border border-tertiary p-4">
+                      <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide">Testa di serie {index + 1}</div>
+                      <select
+                        value={selectedId}
+                        onChange={event => {
+                          const nextPlayerId = event.target.value;
+                          setMasterQualifiedDraft(previous => {
+                            const nextDraft = [...previous];
+                            const duplicateIndex = nextDraft.findIndex((playerId, playerIndex) => playerId === nextPlayerId && playerIndex !== index);
+                            if (duplicateIndex !== -1) {
+                              nextDraft[duplicateIndex] = '';
+                            }
+                            nextDraft[index] = nextPlayerId;
+                            return nextDraft;
+                          });
+                        }}
+                        className="mt-2 w-full bg-secondary border border-tertiary rounded-lg p-2"
+                      >
+                        <option value="">Seleziona giocatore</option>
+                        {masterCandidatePlayers.map(player => {
+                          const entry = rankingById.get(player.id);
+                          return (
+                            <option key={player.id} value={player.id}>
+                              #{entry?.rank ?? '-'} • {player.name} {entry ? `• ${entry.points} pt` : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <div className="text-xs text-text-secondary mt-2">
+                        Automatico: {playerMap.get(autoQualifiedPlayerIds[index] ?? '')?.name ?? '—'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {!hasValidMasterDraft && (
+                <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+                  Per salvare o generare il Master servono {SUMMER_RANKING_MASTER_SIZE} giocatori univoci.
+                </div>
+              )}
+
+              {masterNeedsRegeneration && (
+                <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 p-4 text-sm text-orange-200">
+                  I qualificati salvati non coincidono più con il tabellone generato: rigenera il Master per evitare dati incoerenti.
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={() => persistMasterQualifiedPlayers(masterQualifiedDraft)}
+                  disabled={!hasValidMasterDraft}
+                  className="px-4 py-2 rounded bg-highlight text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Salva qualificati
+                </button>
+                <button
+                  onClick={() => setMasterQualifiedDraft(autoQualifiedPlayerIds)}
+                  className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold"
+                >
+                  Ripristina top {SUMMER_RANKING_MASTER_SIZE}
+                </button>
+                <button
+                  onClick={handleGenerateMaster}
+                  disabled={!hasValidMasterDraft}
+                  className="px-4 py-2 rounded bg-accent text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {masterBracket?.isGenerated ? 'Rigenera Master' : 'Genera Master'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!masterBracket?.isGenerated && (
+            <div className="bg-secondary rounded-xl shadow-lg p-6">
+              <h3 className="text-xl font-bold text-accent">Master non ancora generato</h3>
+              <p className="text-text-secondary mt-2">
+                Una volta confermati i qualificati, genera il tabellone per ottenere quarti, semifinali, finale e finale 3°/4° posto.
+              </p>
+            </div>
+          )}
+
+          {masterBracket?.isGenerated && (
+            <>
+              <div className="bg-secondary rounded-xl shadow-lg p-6">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-xl font-bold text-accent">Tabellone Master finale</h3>
+                    <p className="text-sm text-text-secondary mt-1">
+                      Accoppiamenti iniziali 1vs8, 2vs7, 3vs6, 4vs5 con avanzamento automatico del vincitore e finalina 3°/4° posto.
+                    </p>
+                  </div>
+                  {rankingData.master?.generatedAt && (
+                    <div className="text-xs text-text-secondary">
+                      Generato il {formatDateTime(rankingData.master.generatedAt)}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 xl:grid-cols-4 gap-4">
+                  {[
+                    ['quarterfinal', 'Quarti di finale'],
+                    ['semifinal', 'Semifinali'],
+                    ['final', 'Finale'],
+                    ['thirdPlace', 'Finale 3°/4°'],
+                  ].map(([stage, label]) => (
+                    <div key={stage} className="bg-primary rounded-xl border border-tertiary p-4 space-y-3">
+                      <h4 className="font-bold text-accent">{label}</h4>
+                      {visibleMasterMatches
+                        .filter(match => match.stage === stage)
+                        .map(match => (
+                          <div key={match.id} className="rounded-lg border border-tertiary bg-secondary/60 p-3">
+                            <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide">{match.label}</div>
+                            <div className="mt-2 space-y-2 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <span>{playerMap.get(match.player1Id ?? '')?.name ?? 'Da definire'}</span>
+                                <span className="font-bold">{match.score1 ?? '—'}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3">
+                                <span>{playerMap.get(match.player2Id ?? '')?.name ?? 'Da definire'}</span>
+                                <span className="font-bold">{match.score2 ?? '—'}</span>
+                              </div>
+                            </div>
+                            <div className="mt-3">
+                              <span className={`inline-flex rounded px-2 py-1 text-[11px] font-semibold ${getMasterMatchStatusTone(match)}`}>
+                                {getMasterMatchStatusLabel(match)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-accent">Partite del Master</h3>
+                    <p className="text-sm text-text-secondary mt-1">
+                      L&apos;organizzatore può sempre intervenire; i giocatori possono prenotare e pubblicare risultati solo nelle partite in cui sono coinvolti.
+                    </p>
+                  </div>
+                  <div className="text-xs text-text-secondary">
+                    Slot condivisi con il ranking principale
+                  </div>
+                </div>
+
+                <table className="w-full min-w-[1180px] text-sm">
+                  <thead>
+                    <tr className="text-left border-b border-tertiary text-text-secondary">
+                      <th className="py-3 pr-3">Match</th>
+                      <th className="py-3 pr-3">Stato</th>
+                      <th className="py-3 pr-3">Slot / Campo</th>
+                      <th className="py-3 pr-3">Prenotazione</th>
+                      <th className="py-3 pr-3">Risultato</th>
+                      <th className="py-3 pr-3">Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleMasterMatches.map(match => {
+                      const player1 = playerMap.get(match.player1Id ?? '');
+                      const player2 = playerMap.get(match.player2Id ?? '');
+                      const canManage = canManageMasterMatch(match);
+                      const opponent = loggedInPlayerId === match.player1Id ? player2 : loggedInPlayerId === match.player2Id ? player1 : null;
+
+                      return (
+                        <tr key={match.id} className="border-b border-tertiary/40 last:border-b-0 align-top">
+                          <td className="py-4 pr-3">
+                            <div className="font-semibold">{match.label}</div>
+                            <div className="text-xs text-text-secondary mt-1">
+                              {player1?.name ?? 'Da definire'} vs {player2?.name ?? 'Da definire'}
+                            </div>
+                          </td>
+                          <td className="py-4 pr-3">
+                            <span className={`px-2 py-1 rounded text-xs font-semibold ${getMasterMatchStatusTone(match)}`}>
+                              {getMasterMatchStatusLabel(match)}
+                            </span>
+                          </td>
+                          <td className="py-4 pr-3 text-xs text-text-secondary">
+                            {match.slotId ? (
+                              <>
+                                <div>{formatDateTime(match.scheduledTime)}</div>
+                                <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>
+                              </>
+                            ) : (
+                              'Nessuno slot assegnato'
+                            )}
+                          </td>
+                          <td className="py-4 pr-3">
+                            {canManage && match.player1Id && match.player2Id && match.status !== 'completed' ? (
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={masterBookingSlotIdByMatch[match.id] ?? ''}
+                                  onChange={event => setMasterBookingSlotIdByMatch(previous => ({ ...previous, [match.id]: event.target.value }))}
+                                  className="min-w-[280px] bg-primary border border-tertiary rounded-lg p-2"
+                                >
+                                  <option value="">Seleziona slot</option>
+                                  {availableSlots.map(slot => (
+                                    <option key={slot.id} value={slot.id}>
+                                      {formatDateTime(slot.start)} • {slot.location} {slot.field ? `• ${slot.field}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  onClick={() => handleScheduleMasterMatch(match)}
+                                  disabled={!masterBookingSlotIdByMatch[match.id]}
+                                  className="px-3 py-2 rounded bg-highlight text-white text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                  {match.slotId ? 'Aggiorna' : 'Prenota'}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-text-secondary">
+                                {match.player1Id && match.player2Id ? 'Disponibile solo ai giocatori coinvolti o all’organizzatore.' : 'Attendi il completamento del turno precedente.'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-4 pr-3">
+                            {editingMasterMatchId === match.id ? (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={masterScoreForm.score1}
+                                  onChange={event => setMasterScoreForm(previous => ({ ...previous, score1: event.target.value }))}
+                                  className="w-16 bg-primary border border-tertiary rounded px-2 py-1"
+                                />
+                                <span>-</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={masterScoreForm.score2}
+                                  onChange={event => setMasterScoreForm(previous => ({ ...previous, score2: event.target.value }))}
+                                  className="w-16 bg-primary border border-tertiary rounded px-2 py-1"
+                                />
+                                <button
+                                  onClick={() => handleSaveMasterResult(match)}
+                                  className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
+                                >
+                                  Salva
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="font-semibold">
+                                {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-4 pr-3">
+                            <div className="flex flex-wrap gap-2">
+                              {canManage && match.player1Id && match.player2Id && editingMasterMatchId !== match.id && (
+                                <button
+                                  onClick={() => openEditMasterResult(match)}
+                                  className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
+                                >
+                                  {match.status === 'completed' ? 'Modifica risultato' : 'Pubblica risultato'}
+                                </button>
+                              )}
+                              {canManage && match.status === 'completed' && (
+                                <button
+                                  onClick={() => handleResetMasterResult(match)}
+                                  className="px-3 py-1 rounded bg-primary border border-tertiary text-xs font-semibold"
+                                >
+                                  Ripristina
+                                </button>
+                              )}
+                              {opponent && (
+                                <button
+                                  onClick={() => onPlayerContact(opponent)}
+                                  className="px-3 py-1 rounded bg-primary border border-tertiary text-xs font-semibold"
+                                >
+                                  Contatta avversario
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
 
