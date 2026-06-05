@@ -14,6 +14,7 @@ import { BackArrowIcon, NextTsBrandIcon, PlusIcon, TrashIcon, UserCircleIcon, Lo
 import { db } from "./firebase";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
 import { DEFAULT_SUMMER_RANKING_RULES } from './utils/summerRanking';
+import { calculateSummerRanking } from './utils/summerRanking';
 
 type View = 'dashboard' | 'event' | 'tournament' | 'playersAdmin';
 type EventType = NonNullable<Event['eventType']>;
@@ -312,6 +313,14 @@ const App: React.FC = () => {
               {filteredEventsForOrganizer.map(event => {
                 const eventType = getEventType(event);
                 const rankingData = getEventRankingData(event);
+                const rankingTop8 = eventType === 'ranking_singolare'
+                  ? calculateSummerRanking(
+                    (event.players ?? []).filter(
+                      player => player.status === 'confirmed' && (rankingData.participantIds ?? []).includes(player.id),
+                    ),
+                    rankingData.matches ?? [],
+                  ).slice(0, 8)
+                  : [];
                 const { totalMatches, completedMatches, completionPercentage } = (() => {
                   if (eventType === 'ranking_singolare') {
                     const total = rankingData.matches.length;
@@ -347,19 +356,41 @@ const App: React.FC = () => {
                           ? `Ranking tennis singolare • ${(rankingData.participantIds ?? []).length} partecipanti`
                           : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
                       </p>
-                      <div className="mt-4 pt-4 border-t border-tertiary/50">
-                        <div className="flex justify-between items-center text-sm mb-1">
-                          <span className="text-text-secondary">Progresso</span>
-                          <span className="font-semibold text-text-primary">{completedMatches} / {totalMatches} partite</span>
+                      {eventType === 'ranking_singolare' ? (
+                        <div className="mt-4 pt-4 border-t border-tertiary/50">
+                          <div className="flex justify-between items-center text-sm mb-2">
+                            <span className="text-text-secondary">Top 8 classifica</span>
+                            <span className="font-semibold text-text-primary">{rankingTop8.length} / 8</span>
+                          </div>
+                          {rankingTop8.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {rankingTop8.map(entry => (
+                                <div key={entry.player.id} className="text-sm flex items-center gap-2">
+                                  <span className="text-text-secondary w-6">{entry.rank}.</span>
+                                  <span className="text-text-primary flex-1 truncate">{entry.player.name}</span>
+                                  <span className="text-text-primary font-semibold">{entry.points} pt</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-text-secondary">Classifica non ancora disponibile.</p>
+                          )}
                         </div>
-                        <div className="w-full bg-tertiary/50 rounded-full h-2.5">
-                          <div
-                            className="bg-gradient-to-r from-accent to-highlight h-2.5 rounded-full transition-all duration-500"
-                            style={{ width: `${completionPercentage}%` }}
-                          />
+                      ) : (
+                        <div className="mt-4 pt-4 border-t border-tertiary/50">
+                          <div className="flex justify-between items-center text-sm mb-1">
+                            <span className="text-text-secondary">Progresso</span>
+                            <span className="font-semibold text-text-primary">{completedMatches} / {totalMatches} partite</span>
+                          </div>
+                          <div className="w-full bg-tertiary/50 rounded-full h-2.5">
+                            <div
+                              className="bg-gradient-to-r from-accent to-highlight h-2.5 rounded-full transition-all duration-500"
+                              style={{ width: `${completionPercentage}%` }}
+                            />
+                          </div>
+                          <div className="text-right text-xs text-text-secondary mt-1">{completionPercentage}% Completato</div>
                         </div>
-                        <div className="text-right text-xs text-text-secondary mt-1">{completionPercentage}% Completato</div>
-                      </div>
+                      )}
                     </div>
 
                     {isOrganizer && (
