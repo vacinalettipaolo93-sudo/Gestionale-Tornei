@@ -30,6 +30,13 @@ export interface Group {
   rules?: string; // <-- aggiunto campo regolamento
 }
 
+export interface PadelTeam {
+  id: string;
+  name: string;
+  player1Id: string;
+  player2Id: string;
+}
+
 export interface PointRule {
   id: string;
   minDiff: number;
@@ -92,6 +99,7 @@ export interface Tournament {
   id: string;
   name: string;
   groups: Group[];
+  padelTeams?: PadelTeam[];
   settings: TournamentSettings;
   timeSlots: TimeSlot[];
   playoffs: PlayoffBracket | null;
@@ -108,7 +116,7 @@ export interface Event {
   tournaments: Tournament[];
   players: Player[];
   invitationCode: string;
-  eventType?: 'ranking_singolare' | 'tournament_singolare';
+  eventType?: 'ranking_singolare' | 'tournament_singolare' | 'tournament_padel';
   rankingData?: SummerRankingData;
   globalTimeSlots?: TimeSlot[];
   rules?: string;

@@ -23,6 +23,7 @@ import AvailableSlotsList from './AvailableSlotsList';
 import AvailabilityTab from './AvailabilityTab';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
+import { getCompetitorName, getTeamForPlayer, getTournamentCompetitors, getTournamentPadelTeams, isPadelEvent } from '../utils/padel';
 
 interface TournamentViewProps {
   event: Event;
@@ -179,8 +180,13 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   initialActiveTab, initialSelectedGroupId, onPlayerContact
 }) => {
   const t = tournament as TournamentWithExtraMatches;
+  const isPadel = isPadelEvent(event);
+  const competitorPlayers = getTournamentCompetitors(event, tournament);
+  const loggedInCompetitorId = isPadel
+    ? getTeamForPlayer(getTournamentPadelTeams(tournament), loggedInPlayerId)?.id
+    : loggedInPlayerId;
 
-  const userGroup = tournament.groups.find(g => g.playerIds.includes(loggedInPlayerId ?? ""));
+  const userGroup = tournament.groups.find(g => g.playerIds.includes(loggedInCompetitorId ?? ""));
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(
     initialSelectedGroupId ?? (userGroup ? userGroup.id : tournament.groups[0]?.id)
   );
@@ -220,7 +226,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   const myPendingMatches = selectedGroup
     ? selectedGroup.matches.filter(m =>
       m.status === "pending" &&
-      (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId))
+      (m.player1Id === loggedInCompetitorId || m.player2Id === loggedInCompetitorId))
     : [];
 
   // --- TRIGGER RECTS for anchored modals ---
@@ -307,6 +313,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
 
   const handlePlayerContact = (player: { phone?: string } | Player) => {
     const p = player as Player;
+    if (!p?.phone) return;
     if (onPlayerContact) {
       onPlayerContact(p);
       return;
@@ -998,14 +1005,16 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Slot Disponibili
         </button>
-        <button onClick={() => setActiveTab('availability')}
-          className={`px-4 py-2 rounded-full ${activeTab === 'availability'
-            ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
-            : 'bg-transparent text-accent'
-          }`}
-        >
-          Disponibilità di gioco
-        </button>
+        {!isPadel && (
+          <button onClick={() => setActiveTab('availability')}
+            className={`px-4 py-2 rounded-full ${activeTab === 'availability'
+              ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
+              : 'bg-transparent text-accent'
+            }`}
+          >
+            Disponibilità di gioco
+          </button>
+        )}
         {!isOrganizer && (
           <button onClick={() => setActiveTab('participants')}
             className={`px-4 py-2 rounded-full ${activeTab === 'participants'
@@ -1094,10 +1103,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
             <h3 className="text-xl font-bold mb-3 text-accent">{selectedGroup.name}</h3>
             <StandingsTable
               group={selectedGroup}
-              players={event.players}
+              players={competitorPlayers}
               settings={tournament.settings}
-              loggedInPlayerId={loggedInPlayerId}
+              loggedInPlayerId={loggedInCompetitorId}
               onPlayerContact={handlePlayerContact}
+              entryLabel={isPadel ? 'Squadra' : 'Giocatore'}
             />
           </div>
         )}
@@ -1109,11 +1119,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 <h3 className="text-xl font-bold mb-3 text-accent">Playoff</h3>
                 <MatchList
                   group={playoffVirtualGroup}
-                  players={event.players}
+                  players={competitorPlayers}
                   onEditResult={handleEditResult}
                   onBookMatch={handleBookMatch}
                   isOrganizer={isOrganizer}
-                  loggedInPlayerId={loggedInPlayerId}
+                  loggedInPlayerId={loggedInCompetitorId}
                   onPlayerContact={handlePlayerContact as any}
                   onRescheduleMatch={handleRescheduleMatch}
                   onCancelBooking={handleCancelBooking}
@@ -1128,11 +1138,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 <h3 className="text-xl font-bold mb-3 text-accent">Consolazione</h3>
                 <MatchList
                   group={consolationVirtualGroup}
-                  players={event.players}
+                  players={competitorPlayers}
                   onEditResult={handleEditResult}
                   onBookMatch={handleBookMatch}
                   isOrganizer={isOrganizer}
-                  loggedInPlayerId={loggedInPlayerId}
+                  loggedInPlayerId={loggedInCompetitorId}
                   onPlayerContact={handlePlayerContact as any}
                   onRescheduleMatch={handleRescheduleMatch}
                   onCancelBooking={handleCancelBooking}
@@ -1147,16 +1157,16 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                 <h3 className="text-xl font-bold mb-3 text-accent">{selectedGroup.name}</h3>
                 <MatchList
                   group={selectedGroup}
-                  players={event.players}
+                  players={competitorPlayers}
                   onEditResult={handleEditResult}
                   onBookMatch={handleBookMatch}
                   isOrganizer={isOrganizer}
-                  loggedInPlayerId={loggedInPlayerId}
+                  loggedInPlayerId={loggedInCompetitorId}
                   onPlayerContact={handlePlayerContact as any}
                   onRescheduleMatch={handleRescheduleMatch}
                   onCancelBooking={handleCancelBooking}
                   onDeleteResult={handleOpenDeleteResult}
-                  viewingOwnGroup={selectedGroup.playerIds.includes(loggedInPlayerId ?? "")}
+                  viewingOwnGroup={selectedGroup.playerIds.includes(loggedInCompetitorId ?? "")}
                 />
               </div>
             )}
@@ -1169,11 +1179,11 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                     <h4 className="mb-4 font-bold text-lg text-accent">Modifica Risultato</h4>
                     <div className="flex flex-col gap-4">
                       <div className="flex flex-col">
-                        <label className="font-bold mb-1 text-white">Risultato per {event.players.find(p => p.id === editingMatch.player1Id)?.name}</label>
+                        <label className="font-bold mb-1 text-white">Risultato per {getCompetitorName(event, tournament, editingMatch.player1Id)}</label>
                         <input type="number" min="0" value={score1} onChange={e => setScore1(e.target.value)} className="border px-3 py-2 rounded font-bold text-white bg-primary"/>
                       </div>
                       <div className="flex flex-col">
-                        <label className="font-bold mb-1 text-white">Risultato per {event.players.find(p => p.id === editingMatch.player2Id)?.name}</label>
+                        <label className="font-bold mb-1 text-white">Risultato per {getCompetitorName(event, tournament, editingMatch.player2Id)}</label>
                         <input type="number" min="0" value={score2} onChange={e => setScore2(e.target.value)} className="border px-3 py-2 rounded font-bold text-white bg-primary"/>
                       </div>
                       <div className="flex gap-2 justify-end pt-3">
@@ -1244,8 +1254,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                   <div ref={deletingModalRef} style={deletingModalStyle} className={modalBox}>
                     <h4 className="mb-4 font-bold text-lg text-red-600">Elimina risultato partita</h4>
                     <p className="mb-6 font-bold text-white">Sei sicuro di voler eliminare il risultato della partita tra&nbsp;
-                      <strong>{event.players.find(p => p.id === deletingMatch.player1Id)?.name}</strong> e&nbsp;
-                      <strong>{event.players.find(p => p.id === deletingMatch.player2Id)?.name}</strong>?
+                      <strong>{getCompetitorName(event, tournament, deletingMatch.player1Id)}</strong> e&nbsp;
+                      <strong>{getCompetitorName(event, tournament, deletingMatch.player2Id)}</strong>?
                     </p>
                     <div className="flex gap-2 justify-end pt-3">
                       <button onClick={() => { setDeletingMatch(null); setDeletingTriggerRect(null); }} className="bg-tertiary px-4 py-2 rounded">Annulla</button>
@@ -1292,7 +1302,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
                             handleConfirmBookSlot(m.id);
                           }}
                         >
-                          {event.players.find(p => p.id === m.player1Id)?.name} vs {event.players.find(p => p.id === m.player2Id)?.name}
+                          {getCompetitorName(event, tournament, m.player1Id)} vs {getCompetitorName(event, tournament, m.player2Id)}
                         </button>
                       ))}
                     </div>
@@ -1308,18 +1318,18 @@ const TournamentView: React.FC<TournamentViewProps> = ({
           <ParticipantsTab event={event} tournament={tournament} loggedInPlayerId={loggedInPlayerId} />
         )}
 
-        {activeTab === 'availability' && selectedGroup && (
+        {activeTab === 'availability' && !isPadel && selectedGroup && (
           <AvailabilityTab event={event} tournament={tournament} selectedGroup={selectedGroup} loggedInPlayerId={loggedInPlayerId} />
         )}
 
         {activeTab === 'playoffs' && (
           <div className="bg-secondary p-6 rounded-xl shadow-lg max-w-3xl mx-auto">
-            <Playoffs event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInPlayerId} />
+            <Playoffs event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInCompetitorId} />
           </div>
         )}
 
         {activeTab === 'consolation' && (
-          <ConsolationBracket event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInPlayerId} />
+          <ConsolationBracket event={event} tournament={tournament} setEvents={setEvents} isOrganizer={isOrganizer} loggedInPlayerId={loggedInCompetitorId} />
         )}
 
         {activeTab === 'groups' && isOrganizer && (

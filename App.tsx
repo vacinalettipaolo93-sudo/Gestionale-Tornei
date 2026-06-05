@@ -41,7 +41,11 @@ const EMPTY_RANKING_DATA: SummerRankingData = {
 };
 
 const getEventType = (event?: Partial<Event> | null): EventType =>
-  event?.eventType === 'ranking_singolare' ? 'ranking_singolare' : 'tournament_singolare';
+  event?.eventType === 'ranking_singolare'
+    ? 'ranking_singolare'
+    : event?.eventType === 'tournament_padel'
+      ? 'tournament_padel'
+      : 'tournament_singolare';
 
 const normalizeRankingData = (data?: SummerRankingData | null): SummerRankingData => ({
   slots: Array.isArray(data?.slots) ? data.slots : [],
@@ -216,7 +220,11 @@ const App: React.FC = () => {
       return;
     }
 
-    if (newEventType !== 'ranking_singolare' && newEventType !== 'tournament_singolare') {
+    if (
+      newEventType !== 'ranking_singolare'
+      && newEventType !== 'tournament_singolare'
+      && newEventType !== 'tournament_padel'
+    ) {
       setCreateEventError('Seleziona una tipologia valida.');
       return;
     }
@@ -370,7 +378,9 @@ const App: React.FC = () => {
                             <p className="text-text-secondary mt-2 text-sm">
                               {eventType === 'ranking_singolare'
                                 ? `Ranking tennis singolare • ${(rankingData.participantIds ?? []).length} partecipanti`
-                                : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
+                                : eventType === 'tournament_padel'
+                                  ? `${event.tournaments.length} tornei • ${event.tournaments.reduce((total, tournament) => total + (tournament.padelTeams?.length ?? 0), 0)} squadre`
+                                  : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
                             </p>
                             {eventType === 'ranking_singolare' ? (
                               <div className="mt-4 pt-4 border-t border-tertiary/50">
@@ -476,7 +486,9 @@ const App: React.FC = () => {
                             <p className="text-text-secondary mt-1 text-sm">
                               {eventType === 'ranking_singolare'
                                 ? `Ranking tennis singolare • ${(rankingData.participantIds ?? []).length} partecipanti`
-                                : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
+                                : eventType === 'tournament_padel'
+                                  ? `${event.tournaments.length} tornei • ${event.tournaments.reduce((total, tournament) => total + (tournament.padelTeams?.length ?? 0), 0)} squadre`
+                                  : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
                             </p>
                             {eventType === 'ranking_singolare' ? (
                               <div className="mt-4 pt-4 border-t border-tertiary/50">
@@ -678,6 +690,7 @@ const App: React.FC = () => {
                 >
                   <option value="ranking_singolare">Ranking tennis singolare</option>
                   <option value="tournament_singolare">Torneo tennis singolare</option>
+                  <option value="tournament_padel">Torneo di padel</option>
                 </select>
               </div>
               {createEventError && (

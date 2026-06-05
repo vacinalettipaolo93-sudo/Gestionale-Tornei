@@ -1,5 +1,6 @@
 import React from "react";
-import { type Event, type Tournament, type Player } from "../types";
+import { type Event, type Tournament } from "../types";
+import { getTournamentPadelTeams, getTeamForPlayer, isPadelEvent } from "../utils/padel";
 
 interface ParticipantsTabProps {
   event: Event;
@@ -8,9 +9,14 @@ interface ParticipantsTabProps {
 }
 
 const ParticipantsTab: React.FC<ParticipantsTabProps> = ({ event, tournament, loggedInPlayerId }) => {
+  const isPadel = isPadelEvent(event);
+  const padelTeams = getTournamentPadelTeams(tournament);
+  const loggedTeam = isPadel ? getTeamForPlayer(padelTeams, loggedInPlayerId) : undefined;
+  const competitorId = isPadel ? loggedTeam?.id : loggedInPlayerId;
+
   // Trova il girone dell'utente
   const userGroup = tournament.groups.find(group =>
-    group.playerIds.includes(loggedInPlayerId || "")
+    group.playerIds.includes(competitorId || "")
   );
 
   if (!userGroup) {
@@ -24,10 +30,23 @@ const ParticipantsTab: React.FC<ParticipantsTabProps> = ({ event, tournament, lo
   return (
     <div className="max-w-2xl mx-auto p-6 bg-secondary rounded-xl shadow space-y-6">
       <h2 className="text-2xl font-bold mb-4 text-accent">
-        Partecipanti del Girone <span className="text-white">{userGroup.name}</span>
+        {isPadel ? 'Squadre del Girone' : 'Partecipanti del Girone'} <span className="text-white">{userGroup.name}</span>
       </h2>
       <ul className="flex flex-col gap-3">
-        {userGroup.playerIds.map(pid => {
+        {isPadel ? userGroup.playerIds.map(teamId => {
+          const team = padelTeams.find(currentTeam => currentTeam.id === teamId);
+          if (!team) return null;
+          const player1 = event.players.find(player => player.id === team.player1Id);
+          const player2 = event.players.find(player => player.id === team.player2Id);
+          return (
+            <li key={teamId} className="bg-primary rounded-lg p-3 hover:bg-primary/80 transition">
+              <div className="font-medium text-white">{team.name}</div>
+              <div className="text-sm text-text-secondary mt-1">
+                {player1?.name ?? 'Giocatore 1'} / {player2?.name ?? 'Giocatore 2'}
+              </div>
+            </li>
+          );
+        }) : userGroup.playerIds.map(pid => {
           const player = event.players.find(p => p.id === pid);
           if (!player) return null;
           const phone = player.phone?.replace(/[^0-9]/g, "");

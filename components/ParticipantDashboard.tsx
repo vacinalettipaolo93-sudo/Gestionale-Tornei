@@ -3,6 +3,7 @@ import { type Event } from '../types';
 import { calculateStandings } from '../utils/standings';
 import { calculateSummerRanking } from '../utils/summerRanking';
 import { isEventConcluded } from '../utils/eventStatus';
+import { getTeamForPlayer, getTournamentCompetitors, getTournamentPadelTeams, isPadelEvent } from '../utils/padel';
 
 interface ParticipantDashboardProps {
   events: Event[];
@@ -44,28 +45,39 @@ const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, hea
     }
 
     const tournament = Array.isArray(event.tournaments)
-      ? event.tournaments.find(t => Array.isArray(t.groups) && t.groups.some(g => Array.isArray(g.playerIds) && g.playerIds.includes(playerId)))
+      ? event.tournaments.find(t => {
+        if (!Array.isArray(t.groups)) return false;
+        if (!isPadelEvent(event)) return t.groups.some(g => Array.isArray(g.playerIds) && g.playerIds.includes(playerId));
+        const team = getTeamForPlayer(getTournamentPadelTeams(t), playerId);
+        return !!team && t.groups.some(g => Array.isArray(g.playerIds) && g.playerIds.includes(team.id));
+      })
       : undefined;
 
     if (tournament) {
       tournamentName = tournament.name;
+      const myCompetitorId = isPadelEvent(event)
+        ? getTeamForPlayer(getTournamentPadelTeams(tournament), playerId)?.id
+        : playerId;
       const group = Array.isArray(tournament.groups)
-        ? tournament.groups.find(g => Array.isArray(g.playerIds) && g.playerIds.includes(playerId))
+        ? tournament.groups.find(g => Array.isArray(g.playerIds) && myCompetitorId ? g.playerIds.includes(myCompetitorId) : false)
         : undefined;
       if (group) {
-        const standings = calculateStandings(group, event.players, tournament.settings);
-        const myStanding = standings.findIndex(s => s.playerId === playerId);
+        const standings = calculateStandings(group, getTournamentCompetitors(event, tournament), tournament.settings);
+        const myStanding = standings.findIndex(s => s.playerId === myCompetitorId);
         if (myStanding !== -1) {
           position = `${myStanding + 1}°`;
         }
 
         const myMatches = Array.isArray(group.matches)
-          ? group.matches.filter(m => m.player1Id === playerId || m.player2Id === playerId)
+          ? group.matches.filter(m => m.player1Id === myCompetitorId || m.player2Id === myCompetitorId)
           : [];
         totalMatches = myMatches.length;
         played = myMatches.filter(m => m.status === 'completed').length;
         toPlay = totalMatches - played;
         completionPercentage = totalMatches > 0 ? Math.round((played / totalMatches) * 100) : 0;
+      }
+      if (isPadelEvent(event)) {
+        tournamentName = `${tournament.name} • Torneo di padel`;
       }
     }
     return { position, played, toPlay, totalMatches, completionPercentage, tournamentName };
