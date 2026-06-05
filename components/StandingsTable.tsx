@@ -8,9 +8,10 @@ interface StandingsTableProps {
   settings: TournamentSettings;
   loggedInPlayerId?: string;
   onPlayerContact: (player: Player) => void;
+  entryLabel?: string;
 }
 
-const StandingsTable: React.FC<StandingsTableProps> = ({ group, players, settings, loggedInPlayerId, onPlayerContact }) => {
+const StandingsTable: React.FC<StandingsTableProps> = ({ group, players, settings, loggedInPlayerId, onPlayerContact, entryLabel = 'Giocatore' }) => {
   const standings = useMemo(() => calculateStandings(group, players, settings), [group, players, settings]);
 
   const getPlayer = (playerId: string) => players.find(p => p.id === playerId);
@@ -21,7 +22,7 @@ const StandingsTable: React.FC<StandingsTableProps> = ({ group, players, setting
         <thead className="bg-tertiary/50 text-xs uppercase text-text-secondary">
           <tr>
             <th scope="col" className="px-4 py-3">#</th>
-            <th scope="col" className="px-4 py-3">Giocatore</th>
+            <th scope="col" className="px-4 py-3">{entryLabel}</th>
             <th scope="col" className="px-2 py-3 text-center" title="Punti">PT</th>
             <th scope="col" className="px-2 py-3 text-center" title="Giocate">G</th>
             <th scope="col" className="px-2 py-3 text-center" title="Vinte">V</th>

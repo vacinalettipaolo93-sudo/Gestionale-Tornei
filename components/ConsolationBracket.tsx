@@ -3,6 +3,7 @@ import { type Event, type Tournament, type Player, type PlayoffBracket, type Pla
 import { calculateStandings } from '../utils/standings';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
+import { getTournamentCompetitors } from '../utils/padel';
 
 interface ConsolationBracketProps {
     event: Event;
@@ -30,13 +31,14 @@ function buildLeagueMatchFromConsolationPlayoffMatch(pm: PlayoffMatch): Match | 
 
 const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tournament, setEvents, isOrganizer, loggedInPlayerId }) => {
     const [view, setView] = useState<'setup' | 'bracket'>(tournament.consolationBracket?.isGenerated ? 'bracket' : 'setup');
+    const competitors = getTournamentCompetitors(event, tournament);
     
     const qualifiers = useMemo(() => {
         const allQualifiers: { playerId: string, rank: number, fromGroup: string, groupName: string }[] = [];
         tournament.groups.forEach(group => {
             const setting = tournament.settings.consolationSettings.find(s => s.groupId === group.id);
             if (setting && setting.startRank > 0 && setting.endRank >= setting.startRank) {
-                const standings = calculateStandings(group, event.players, tournament.settings);
+                const standings = calculateStandings(group, competitors, tournament.settings);
                 const groupQualifiers = standings.slice(setting.startRank - 1, setting.endRank).map((entry, index) => ({
                     playerId: entry.playerId,
                     rank: setting.startRank + index,
@@ -47,7 +49,7 @@ const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tourname
             }
         });
         return allQualifiers;
-    }, [tournament, event.players]);
+    }, [tournament, competitors]);
 
     const bracketSize = useMemo(() => {
         const numPlayers = qualifiers.length;
@@ -67,7 +69,7 @@ const ConsolationBracket: React.FC<ConsolationBracketProps> = ({ event, tourname
         }
     }, [qualifiers, view, bracketSize]);
 
-    const getPlayer = (id: string | null): Player | null => id ? event.players.find(p => p.id === id) ?? null : null;
+    const getPlayer = (id: string | null): Player | null => id ? competitors.find(p => p.id === id) ?? null : null;
     
     const handleAssignmentChange = (slotIndex: number, value: string) => {
         setFirstRoundAssignments(prev => {

@@ -3,6 +3,7 @@ import { type Event, type Tournament, type Player, type PlayoffBracket, type Pla
 import { calculateStandings } from '../utils/standings';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
+import { getTournamentCompetitors } from '../utils/padel';
 
 interface PlayoffsProps {
   event: Event;
@@ -36,6 +37,7 @@ function buildLeagueMatchFromPlayoffMatch(pm: PlayoffMatch): Match | null {
 
 const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrganizer, loggedInPlayerId }) => {
   const tt = tournament as TournamentWithWithdrawals;
+  const competitors = getTournamentCompetitors(event, tournament);
 
   const [view, setView] = useState<'setup' | 'bracket'>(tournament.playoffs?.isGenerated ? 'bracket' : 'setup');
 
@@ -62,7 +64,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       const setting = tournament.settings.playoffSettings.find(s => s.groupId === group.id);
       if (!setting || !(setting.numQualifiers > 0)) return;
 
-      const standings = calculateStandings(group, event.players, tournament.settings);
+      const standings = calculateStandings(group, competitors, tournament.settings);
 
       // exclude withdrawals ONLY for playoff qualification
       const eligible = standings.filter(entry => !isWithdrawn(group.id, entry.playerId));
@@ -78,7 +80,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
     });
 
     return allQualifiers;
-  }, [tournament, event.players, playoffWithdrawals]);
+  }, [tournament, competitors, playoffWithdrawals]);
 
   const bracketSize = useMemo(() => {
     const numPlayers = qualifiers.length;
@@ -98,7 +100,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
     }
   }, [qualifiers, view, bracketSize]);
 
-  const getPlayer = (id: string | null): Player | null => id ? event.players.find(p => p.id === id) ?? null : null;
+  const getPlayer = (id: string | null): Player | null => id ? competitors.find(p => p.id === id) ?? null : null;
 
   const handleAssignmentChange = (slotIndex: number, value: string) => {
     setFirstRoundAssignments(prev => {
@@ -433,7 +435,7 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
       : null;
 
     const withdrawGroupStandings = selectedWithdrawGroup
-      ? calculateStandings(selectedWithdrawGroup, event.players, tournament.settings)
+      ? calculateStandings(selectedWithdrawGroup, competitors, tournament.settings)
       : [];
 
     return (

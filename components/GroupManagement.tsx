@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { type Event, type Tournament, type Group, type Player, type Match } from '../types';
+import { type Event, type Tournament, type Group, type Player, type Match, type PadelTeam } from '../types';
 import { TrashIcon } from './Icons';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
@@ -14,9 +14,26 @@ interface GroupManagementProps {
 const makeId = () => `${Date.now()}${Math.floor(Math.random() * 10000)}`;
 
 const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, setEvents, isOrganizer }) => {
+    const isPadel = event.eventType === 'tournament_padel';
+    const teams = Array.isArray(tournament.padelTeams) ? tournament.padelTeams : [];
+    const getTeamById = (teamId: string) => teams.find(team => team.id === teamId);
+    const getPlayer = (id: string) => event.players.find(p => p.id === id);
+    const getCompetitorNameById = (id: string) => {
+        if (!isPadel) return getPlayer(id)?.name ?? 'Giocatore sconosciuto';
+        const team = getTeamById(id);
+        if (!team) return 'Squadra sconosciuta';
+        const player1 = getPlayer(team.player1Id);
+        const player2 = getPlayer(team.player2Id);
+        return `${team.name} (${player1?.name ?? 'Giocatore 1'} / ${player2?.name ?? 'Giocatore 2'})`;
+    };
+
     const [assigningGroup, setAssigningGroup] = useState<Group | null>(null);
     const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
-    const [playerToRemove, setPlayerToRemove] = useState<{player: Player, group: Group} | null>(null);
+    const [playerToRemove, setPlayerToRemove] = useState<{competitorId: string, group: Group} | null>(null);
+    const [newTeamName, setNewTeamName] = useState('');
+    const [newTeamPlayer1Id, setNewTeamPlayer1Id] = useState('');
+    const [newTeamPlayer2Id, setNewTeamPlayer2Id] = useState('');
+    const [teamError, setTeamError] = useState<string | null>(null);
 
     // --- States per aggiungi/modifica/elimina gironi ---
     const [isAddOpen, setIsAddOpen] = useState(false);
@@ -87,14 +104,14 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
     // RIMUOVI GIOCATORE E AGGIORNA FIRESTORE
     const handleRemovePlayer = async () => {
         if(!playerToRemove) return;
-        const { player, group } = playerToRemove;
+        const { competitorId, group } = playerToRemove;
 
         const updatedGroups = tournament.groups.map(g => {
             if (g.id !== group.id) return g;
             return {
                 ...g,
-                playerIds: g.playerIds.filter(id => id !== player.id),
-                matches: g.matches.filter(m => m.player1Id !== player.id && m.player2Id !== player.id)
+                playerIds: g.playerIds.filter(id => id !== competitorId),
+                matches: g.matches.filter(m => m.player1Id !== competitorId && m.player2Id !== competitorId)
             }
         });
 
@@ -124,7 +141,7 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
     // GENERA PARTITE E AGGIORNA FIRESTORE
     const handleGenerateMatches = async (group: Group) => {
         if (group.playerIds.length < 2) {
-            alert("Sono necessari almeno 2 giocatori per generare le partite.");
+            alert(isPadel ? "Sono necessarie almeno 2 squadre per generare le partite." : "Sono necessari almeno 2 giocatori per generare le partite.");
             return;
         }
 
@@ -172,6 +189,44 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
         await updateDoc(doc(db, "events", event.id), {
             tournaments: event.tournaments.map(t => t.id === tournament.id ? { ...t, groups: updatedGroups } : t)
         });
+    };
+
+    const handleCreatePadelTeam = async () => {
+        if (!isPadel) return;
+        const trimmedTeamName = newTeamName.trim();
+        setTeamError(null);
+
+        if (!trimmedTeamName) {
+            setTeamError('Inserisci il nome squadra.');
+            return;
+        }
+        if (!newTeamPlayer1Id || !newTeamPlayer2Id) {
+            setTeamError('Seleziona Giocatore 1 e Giocatore 2.');
+            return;
+        }
+        if (newTeamPlayer1Id === newTeamPlayer2Id) {
+            setTeamError('Giocatore 1 e Giocatore 2 devono essere diversi.');
+            return;
+        }
+
+        const newTeam: PadelTeam = {
+            id: makeId(),
+            name: trimmedTeamName,
+            player1Id: newTeamPlayer1Id,
+            player2Id: newTeamPlayer2Id,
+        };
+
+        const updatedTeams = [...teams, newTeam];
+        const updatedTournaments = event.tournaments.map(t =>
+            t.id === tournament.id ? { ...t, padelTeams: updatedTeams } : t
+        );
+
+        setEvents(prevEvents => prevEvents.map(e => e.id === event.id ? { ...e, tournaments: updatedTournaments } : e));
+        await updateDoc(doc(db, "events", event.id), { tournaments: updatedTournaments });
+
+        setNewTeamName('');
+        setNewTeamPlayer1Id('');
+        setNewTeamPlayer2Id('');
     };
 
     // ---------- Nuove funzioni: Aggiungi / Modifica / Elimina Gironi ----------
@@ -313,22 +368,91 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
         }
     };
 
-    const getPlayer = (id: string) => event.players.find(p => p.id === id);
-
     // Filtered + sorted players for assign modal: alphabetical and searchable (ADDED)
     const filteredAssignPlayers = useMemo(() => {
         const q = assignSearchQuery.trim().toLowerCase();
+        if (isPadel) {
+            return teams
+                .slice()
+                .filter(team => {
+                    if (!q) return true;
+                    const player1Name = getPlayer(team.player1Id)?.name ?? '';
+                    const player2Name = getPlayer(team.player2Id)?.name ?? '';
+                    return team.name.toLowerCase().includes(q)
+                        || player1Name.toLowerCase().includes(q)
+                        || player2Name.toLowerCase().includes(q);
+                })
+                .sort((a, b) => a.name.localeCompare(b.name));
+        }
         return (event.players ?? [])
             .slice()
             .filter(p => {
                 if (!q) return true;
-                return (p.name ?? '').toLowerCase().includes(q) || (p.email ?? '').toLowerCase().includes(q);
+                return (p.name ?? '').toLowerCase().includes(q);
             })
             .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
-    }, [event.players, assignSearchQuery]);
+    }, [event.players, assignSearchQuery, isPadel, teams]);
 
     return (
         <div className="space-y-6">
+            {isPadel && (
+                <div className="bg-secondary p-4 rounded-xl shadow-md">
+                    <h4 className="text-lg font-bold text-accent mb-3">Crea squadra</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                            value={newTeamName}
+                            onChange={e => setNewTeamName(e.target.value)}
+                            placeholder="Nome squadra"
+                            className="w-full p-2 rounded bg-primary border border-tertiary"
+                        />
+                        <select
+                            value={newTeamPlayer1Id}
+                            onChange={e => setNewTeamPlayer1Id(e.target.value)}
+                            className="w-full p-2 rounded bg-primary border border-tertiary"
+                        >
+                            <option value="">Giocatore 1</option>
+                            {event.players.map(player => (
+                                <option key={player.id} value={player.id}>{player.name}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={newTeamPlayer2Id}
+                            onChange={e => setNewTeamPlayer2Id(e.target.value)}
+                            className="w-full p-2 rounded bg-primary border border-tertiary"
+                        >
+                            <option value="">Giocatore 2</option>
+                            {event.players.map(player => (
+                                <option key={player.id} value={player.id}>{player.name}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={handleCreatePadelTeam}
+                            className="bg-highlight hover:bg-highlight/90 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors"
+                        >
+                            Crea squadra
+                        </button>
+                    </div>
+                    {teamError && <p className="text-red-400 text-sm mt-2">{teamError}</p>}
+                    <div className="mt-4">
+                        <h5 className="text-sm font-semibold mb-2 text-text-secondary">Squadre create ({teams.length})</h5>
+                        {teams.length > 0 ? (
+                            <ul className="space-y-2">
+                                {teams.map(team => (
+                                    <li key={team.id} className="bg-tertiary/50 p-2 rounded">
+                                        <div className="font-semibold">{team.name}</div>
+                                        <div className="text-xs text-text-secondary">
+                                            {getPlayer(team.player1Id)?.name ?? 'Giocatore 1'} / {getPlayer(team.player2Id)?.name ?? 'Giocatore 2'}
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className="text-text-secondary/80 italic text-sm">Nessuna squadra creata.</p>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Header amministrazione gironi */}
             <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold text-accent">Gestione Gironi</h3>
@@ -344,11 +468,11 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
                     <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
                         <div className="flex items-center gap-3">
                             <h4 className="text-lg font-bold text-accent">{group.name}</h4>
-                            <span className="text-sm text-text-secondary">{group.playerIds.length} giocatori</span>
+                            <span className="text-sm text-text-secondary">{group.playerIds.length} {isPadel ? 'squadre' : 'giocatori'}</span>
                         </div>
                         <div className="flex gap-2">
                              <button onClick={() => openAssignModal(group)} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-lg text-sm transition-colors">
-                                Assegna Giocatori
+                               {isPadel ? 'Assegna Squadre' : 'Assegna Giocatori'}
                             </button>
                             <button 
                                 onClick={() => handleGenerateMatches(group)} 
@@ -373,25 +497,19 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
                         </div>
                     </div>
                     <div>
-                        <h5 className="text-sm font-semibold mb-2 text-text-secondary">Giocatori Assegnati ({group.playerIds.length})</h5>
+                        <h5 className="text-sm font-semibold mb-2 text-text-secondary">{isPadel ? 'Squadre Assegnate' : 'Giocatori Assegnati'} ({group.playerIds.length})</h5>
                         {group.playerIds.length > 0 ? (
                             <ul className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                {group.playerIds.map(playerId => {
-                                    const player = getPlayer(playerId);
-                                    return player ? (
-                                        <li key={playerId} className="bg-tertiary/50 p-2 rounded-lg flex items-center justify-between gap-2 group/player">
-                                            <div className="flex items-center gap-2 overflow-hidden">
-                                                <img src={player.avatar} alt={player.name} className="w-8 h-8 rounded-full flex-shrink-0 object-cover" />
-                                                <span className="text-sm font-medium truncate">{player.name}</span>
-                                            </div>
-                                            <button onClick={() => setPlayerToRemove({player, group})} className="opacity-0 group-hover/player:opacity-100 text-text-secondary/50 hover:text-red-500 transition-colors p-1">
-                                                <TrashIcon className="w-4 h-4" />
-                                            </button>
-                                        </li>
-                                    ) : null;
-                                })}
+                                {group.playerIds.map(competitorId => (
+                                    <li key={competitorId} className="bg-tertiary/50 p-2 rounded-lg flex items-center justify-between gap-2 group/player">
+                                        <div className="text-sm font-medium truncate">{getCompetitorNameById(competitorId)}</div>
+                                        <button onClick={() => setPlayerToRemove({competitorId, group})} className="opacity-0 group-hover/player:opacity-100 text-text-secondary/50 hover:text-red-500 transition-colors p-1">
+                                            <TrashIcon className="w-4 h-4" />
+                                        </button>
+                                    </li>
+                                ))}
                             </ul>
-                        ) : <p className="text-text-secondary/80 italic text-sm">Nessun giocatore assegnato a questo girone.</p>}
+                        ) : <p className="text-text-secondary/80 italic text-sm">Nessun{isPadel ? 'a squadra' : ' giocatore'} assegnat{isPadel ? 'a' : 'o'} a questo girone.</p>}
                     </div>
                     {/* Mostra regolamento del gruppo (SOLO ADMIN può modificare) */}
                     <div className="mt-4 pt-3 border-t border-tertiary/40">
@@ -416,7 +534,7 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
                     <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-sm border border-tertiary">
                         <h4 className="text-lg font-bold mb-4">
-                            Assegna Giocatori a {assigningGroup.name}
+                            {isPadel ? 'Assegna Squadre' : 'Assegna Giocatori'} a {assigningGroup.name}
                         </h4>
 
                         {/* SEARCH INPUT: ADDED */}
@@ -426,14 +544,26 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
                             type="text"
                             value={assignSearchQuery}
                             onChange={e => setAssignSearchQuery(e.target.value)}
-                            placeholder="Cerca giocatore..."
+                            placeholder={isPadel ? 'Cerca squadra...' : 'Cerca giocatore...'}
                             className="w-full bg-primary border border-tertiary rounded px-3 py-2"
                             autoFocus
                           />
                         </div>
 
                         <ul className="mb-4 space-y-2 max-h-80 overflow-auto">
-                            {filteredAssignPlayers.map(player => (
+                            {isPadel ? (filteredAssignPlayers as PadelTeam[]).map(team => (
+                                <li key={team.id} className="flex items-center gap-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedPlayers.has(team.id)}
+                                        onChange={() => handlePlayerSelection(team.id)}
+                                    />
+                                    <span className="font-medium">{team.name}</span>
+                                    <span className="text-xs text-text-secondary">
+                                        ({getPlayer(team.player1Id)?.name ?? 'Giocatore 1'} / {getPlayer(team.player2Id)?.name ?? 'Giocatore 2'})
+                                    </span>
+                                </li>
+                            )) : (filteredAssignPlayers as Player[]).map(player => (
                                 <li key={player.id} className="flex items-center gap-3">
                                     <input
                                         type="checkbox"
@@ -457,13 +587,13 @@ const GroupManagement: React.FC<GroupManagementProps> = ({ event, tournament, se
             {playerToRemove && (
                 <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
                     <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
-                        <h4 className="text-lg font-bold mb-4">Rimuovi Giocatore dal Girone</h4>
+                        <h4 className="text-lg font-bold mb-4">{isPadel ? 'Rimuovi Squadra dal Girone' : 'Rimuovi Giocatore dal Girone'}</h4>
                         <p className="text-text-secondary mb-4">
-                            Sei sicuro di voler rimuovere <strong>{playerToRemove.player.name}</strong> dal girone <strong>{playerToRemove.group.name}</strong>? Questa operazione rimuoverà anche le sue partite nel girone.
+                            Sei sicuro di voler rimuovere <strong>{getCompetitorNameById(playerToRemove.competitorId)}</strong> dal girone <strong>{playerToRemove.group.name}</strong>? Questa operazione rimuoverà anche le relative partite nel girone.
                         </p>
                         <div className="flex justify-end gap-4">
                             <button onClick={() => setPlayerToRemove(null)} className="bg-tertiary px-4 py-2 rounded">Annulla</button>
-                            <button onClick={handleRemovePlayer} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">Rimuovi Giocatore</button>
+                            <button onClick={handleRemovePlayer} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">{isPadel ? 'Rimuovi Squadra' : 'Rimuovi Giocatore'}</button>
                         </div>
                     </div>
                 </div>
