@@ -15,6 +15,7 @@ import { db } from "./firebase";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
 import { DEFAULT_SUMMER_RANKING_RULES } from './utils/summerRanking';
 import { calculateSummerRanking } from './utils/summerRanking';
+import { isEventConcluded } from './utils/eventStatus';
 
 type View = 'dashboard' | 'event' | 'tournament' | 'playersAdmin';
 type EventType = NonNullable<Event['eventType']>;
@@ -273,6 +274,9 @@ const App: React.FC = () => {
     return [];
   }, [events, isOrganizer]);
 
+  const ongoingEvents = useMemo(() => filteredEventsForOrganizer.filter(e => !isEventConcluded(e)), [filteredEventsForOrganizer]);
+  const concludedEvents = useMemo(() => filteredEventsForOrganizer.filter(e => isEventConcluded(e)), [filteredEventsForOrganizer]);
+
   if (!currentUser) {
     return <Login users={users} onLoginSuccess={setCurrentUser} />;
   }
@@ -308,111 +312,224 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {filteredEventsForOrganizer.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredEventsForOrganizer.map(event => {
-                const eventType = getEventType(event);
-                const rankingData = getEventRankingData(event);
-                const rankingTop8 = eventType === 'ranking_singolare'
-                  ? calculateSummerRanking(
-                    (event.players ?? []).filter(
-                      player => player.status === 'confirmed' && (rankingData.participantIds ?? []).includes(player.id),
-                    ),
-                    rankingData.matches ?? [],
-                  ).slice(0, 8)
-                  : [];
-                const { totalMatches, completedMatches, completionPercentage } = (() => {
-                  if (eventType === 'ranking_singolare') {
-                    const total = rankingData.matches.length;
-                    const completed = rankingData.matches.filter(match => match.status === 'completed').length;
-                    return {
-                      totalMatches: total,
-                      completedMatches: completed,
-                      completionPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
-                    };
-                  }
-                  let total = 0;
-                  let completed = 0;
-                  event.tournaments.forEach(tournament => {
-                    tournament.groups.forEach(group => {
-                      total += group.matches.length;
-                      completed += group.matches.filter(m => m.status === 'completed').length;
-                    });
-                  });
-                  return {
-                    totalMatches: total,
-                    completedMatches: completed,
-                    completionPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
-                  };
-                })();
+          {filteredEventsForOrganizer.length === 0 && (
+            <p className="text-text-secondary text-center py-8">Nessun evento creato.</p>
+          )}
 
-                return (
-                  <div key={event.id} className="bg-secondary rounded-xl shadow-lg transition-all duration-300 group relative overflow-hidden flex flex-col">
-                    <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-accent/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div onClick={() => handleSelectEvent(event)} className="p-6 cursor-pointer flex-grow z-10">
-                      <h3 className="text-xl font-bold text-accent truncate">{event.name}</h3>
-                      <p className="text-text-secondary mt-2 text-sm">
-                        {eventType === 'ranking_singolare'
-                          ? `Ranking tennis singolare • ${(rankingData.participantIds ?? []).length} partecipanti`
-                          : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
-                      </p>
-                      {eventType === 'ranking_singolare' ? (
-                        <div className="mt-4 pt-4 border-t border-tertiary/50">
-                          <div className="flex justify-between items-center text-sm mb-2">
-                            <span className="text-text-secondary">Top 8 classifica</span>
-                            <span className="font-semibold text-text-primary">{rankingTop8.length} / 8</span>
-                          </div>
-                          {rankingTop8.length > 0 ? (
-                            <div className="space-y-1.5">
-                              {rankingTop8.map(entry => (
-                                <div key={entry.player.id} className="text-sm flex items-center gap-2">
-                                  <span className="text-text-secondary w-6">{entry.rank}.</span>
-                                  <span className="text-text-primary flex-1 truncate">{entry.player.name}</span>
-                                  <span className="text-text-primary font-semibold">{entry.points} pt</span>
+          {/* Sezione: In corso */}
+          {(ongoingEvents.length > 0 || concludedEvents.length > 0) && (
+            <div className="space-y-8">
+              <div>
+                <h3 className="text-lg font-semibold text-text-secondary mb-4 flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-green-400"></span>
+                  In corso
+                </h3>
+                {ongoingEvents.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {ongoingEvents.map(event => {
+                      const eventType = getEventType(event);
+                      const rankingData = getEventRankingData(event);
+                      const rankingTop8 = eventType === 'ranking_singolare'
+                        ? calculateSummerRanking(
+                          (event.players ?? []).filter(
+                            player => player.status === 'confirmed' && (rankingData.participantIds ?? []).includes(player.id),
+                          ),
+                          rankingData.matches ?? [],
+                        ).slice(0, 8)
+                        : [];
+                      const { totalMatches, completedMatches, completionPercentage } = (() => {
+                        if (eventType === 'ranking_singolare') {
+                          const total = rankingData.matches.length;
+                          const completed = rankingData.matches.filter(match => match.status === 'completed').length;
+                          return {
+                            totalMatches: total,
+                            completedMatches: completed,
+                            completionPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
+                          };
+                        }
+                        let total = 0;
+                        let completed = 0;
+                        event.tournaments.forEach(tournament => {
+                          tournament.groups.forEach(group => {
+                            total += group.matches.length;
+                            completed += group.matches.filter(m => m.status === 'completed').length;
+                          });
+                        });
+                        return {
+                          totalMatches: total,
+                          completedMatches: completed,
+                          completionPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
+                        };
+                      })();
+
+                      return (
+                        <div key={event.id} className="bg-secondary rounded-xl shadow-lg transition-all duration-300 group relative overflow-hidden flex flex-col">
+                          <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-accent/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          <div onClick={() => handleSelectEvent(event)} className="p-6 cursor-pointer flex-grow z-10">
+                            <h3 className="text-xl font-bold text-accent truncate">{event.name}</h3>
+                            <p className="text-text-secondary mt-2 text-sm">
+                              {eventType === 'ranking_singolare'
+                                ? `Ranking tennis singolare • ${(rankingData.participantIds ?? []).length} partecipanti`
+                                : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
+                            </p>
+                            {eventType === 'ranking_singolare' ? (
+                              <div className="mt-4 pt-4 border-t border-tertiary/50">
+                                <div className="flex justify-between items-center text-sm mb-2">
+                                  <span className="text-text-secondary">Top 8 classifica</span>
+                                  <span className="font-semibold text-text-primary">{rankingTop8.length} / 8</span>
                                 </div>
-                              ))}
+                                {rankingTop8.length > 0 ? (
+                                  <div className="space-y-1.5">
+                                    {rankingTop8.map(entry => (
+                                      <div key={entry.player.id} className="text-sm flex items-center gap-2">
+                                        <span className="text-text-secondary w-6">{entry.rank}.</span>
+                                        <span className="text-text-primary flex-1 truncate">{entry.player.name}</span>
+                                        <span className="text-text-primary font-semibold">{entry.points} pt</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-text-secondary">Classifica non ancora disponibile.</p>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="mt-4 pt-4 border-t border-tertiary/50">
+                                <div className="flex justify-between items-center text-sm mb-1">
+                                  <span className="text-text-secondary">Progresso</span>
+                                  <span className="font-semibold text-text-primary">{completedMatches} / {totalMatches} partite</span>
+                                </div>
+                                <div className="w-full bg-tertiary/50 rounded-full h-2.5">
+                                  <div
+                                    className="bg-gradient-to-r from-accent to-highlight h-2.5 rounded-full transition-all duration-500"
+                                    style={{ width: `${completionPercentage}%` }}
+                                  />
+                                </div>
+                                <div className="text-right text-xs text-text-secondary mt-1">{completionPercentage}% Completato</div>
+                              </div>
+                            )}
+                          </div>
+                          {isOrganizer && (
+                            <div className="p-2 flex justify-end z-10">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setEventToDelete(event); }}
+                                className="text-text-secondary/50 hover:text-red-500 transition-colors"
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
                             </div>
-                          ) : (
-                            <p className="text-xs text-text-secondary">Classifica non ancora disponibile.</p>
                           )}
                         </div>
-                      ) : (
-                        <div className="mt-4 pt-4 border-t border-tertiary/50">
-                          <div className="flex justify-between items-center text-sm mb-1">
-                            <span className="text-text-secondary">Progresso</span>
-                            <span className="font-semibold text-text-primary">{completedMatches} / {totalMatches} partite</span>
-                          </div>
-                          <div className="w-full bg-tertiary/50 rounded-full h-2.5">
-                            <div
-                              className="bg-gradient-to-r from-accent to-highlight h-2.5 rounded-full transition-all duration-500"
-                              style={{ width: `${completionPercentage}%` }}
-                            />
-                          </div>
-                          <div className="text-right text-xs text-text-secondary mt-1">{completionPercentage}% Completato</div>
-                        </div>
-                      )}
-                    </div>
-
-                    {isOrganizer && (
-                      <div className="p-2 flex justify-end z-10">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setEventToDelete(event); }}
-                          className="text-text-secondary/50 hover:text-red-500 transition-colors"
-                        >
-                          <TrashIcon className="w-5 h-5" />
-                        </button>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
+                ) : (
+                  <p className="text-text-secondary text-sm py-4">Nessun evento in corso.</p>
+                )}
+              </div>
+
+              {/* Sezione: Conclusi */}
+              <div>
+                <h3 className="text-lg font-semibold text-text-secondary mb-4 flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-tertiary"></span>
+                  Conclusi
+                </h3>
+                {concludedEvents.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {concludedEvents.map(event => {
+                      const eventType = getEventType(event);
+                      const rankingData = getEventRankingData(event);
+                      const rankingTop8 = eventType === 'ranking_singolare'
+                        ? calculateSummerRanking(
+                          (event.players ?? []).filter(
+                            player => player.status === 'confirmed' && (rankingData.participantIds ?? []).includes(player.id),
+                          ),
+                          rankingData.matches ?? [],
+                        ).slice(0, 8)
+                        : [];
+                      const { totalMatches, completedMatches } = (() => {
+                        if (eventType === 'ranking_singolare') {
+                          const total = rankingData.matches.length;
+                          const completed = rankingData.matches.filter(match => match.status === 'completed').length;
+                          return { totalMatches: total, completedMatches: completed };
+                        }
+                        let total = 0;
+                        let completed = 0;
+                        event.tournaments.forEach(tournament => {
+                          tournament.groups.forEach(group => {
+                            total += group.matches.length;
+                            completed += group.matches.filter(m => m.status === 'completed').length;
+                          });
+                        });
+                        return { totalMatches: total, completedMatches: completed };
+                      })();
+
+                      return (
+                        <div key={event.id} className="bg-secondary/60 rounded-xl shadow transition-all duration-300 group relative overflow-hidden flex flex-col opacity-80">
+                          <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-tertiary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                          <div onClick={() => handleSelectEvent(event)} className="p-6 cursor-pointer flex-grow z-10">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <h3 className="text-xl font-bold text-text-primary truncate">{event.name}</h3>
+                              <span className="flex-shrink-0 text-xs font-semibold bg-tertiary/60 text-text-secondary px-2 py-0.5 rounded-full">
+                                Terminato
+                              </span>
+                            </div>
+                            <p className="text-text-secondary mt-1 text-sm">
+                              {eventType === 'ranking_singolare'
+                                ? `Ranking tennis singolare • ${(rankingData.participantIds ?? []).length} partecipanti`
+                                : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
+                            </p>
+                            {eventType === 'ranking_singolare' ? (
+                              <div className="mt-4 pt-4 border-t border-tertiary/50">
+                                <div className="flex justify-between items-center text-sm mb-2">
+                                  <span className="text-text-secondary">Top 8 classifica</span>
+                                  <span className="font-semibold text-text-primary">{rankingTop8.length} / 8</span>
+                                </div>
+                                {rankingTop8.length > 0 ? (
+                                  <div className="space-y-1.5">
+                                    {rankingTop8.map(entry => (
+                                      <div key={entry.player.id} className="text-sm flex items-center gap-2">
+                                        <span className="text-text-secondary w-6">{entry.rank}.</span>
+                                        <span className="text-text-primary flex-1 truncate">{entry.player.name}</span>
+                                        <span className="text-text-primary font-semibold">{entry.points} pt</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-text-secondary">Classifica non ancora disponibile.</p>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="mt-4 pt-4 border-t border-tertiary/50">
+                                <p className="text-sm text-text-secondary">
+                                  {completedMatches} / {totalMatches} partite giocate
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          {isOrganizer && (
+                            <div className="p-2 flex justify-end z-10">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setEventToDelete(event); }}
+                                className="text-text-secondary/50 hover:text-red-500 transition-colors"
+                              >
+                                <TrashIcon className="w-5 h-5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-text-secondary text-sm py-4">Nessun evento concluso.</p>
+                )}
+              </div>
             </div>
-          ) : (
-            <p className="text-text-secondary text-center py-8">Nessun evento creato.</p>
           )}
         </div>
       );
     }
+
 
     if (currentView === 'event' && currentEventState) {
       if (getEventType(currentEventState) === 'ranking_singolare') {
