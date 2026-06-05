@@ -124,13 +124,19 @@ const EventView: React.FC<EventViewProps> = ({
 
     setAddLoading(true);
     try {
+      const isPadelEvent = event.eventType === 'tournament_padel';
       const newTournament: Tournament = {
         id: makeId(),
         name: newTournamentName.trim(),
         groups: [],
-        matches: [],
+        ...(isPadelEvent ? { padelTeams: [] } : {}),
+        timeSlots: [],
+        playoffs: null,
+        consolationBracket: null,
+        playoffMatches: [],
+        consolationMatches: [],
         settings: { ...defaultTournamentSettings } as any,
-      } as any;
+      };
 
       // update local state immediately
       setEvents(prevEvents =>
@@ -540,7 +546,7 @@ const EventView: React.FC<EventViewProps> = ({
               {addError && <div className="text-red-400">{addError}</div>}
 
               <div className="flex justify-end gap-3">
-                <button onClick={cancelAddTournament} className="bg-tertiary px-4 py-2 rounded">Annulla</button>
+                <button type="button" onClick={cancelAddTournament} className="bg-tertiary px-4 py-2 rounded">Annulla</button>
                 <button type="submit" disabled={addLoading} className="bg-highlight text-white px-4 py-2 rounded font-bold">
                   {addLoading ? 'Creazione...' : 'Crea Torneo'}
                 </button>
