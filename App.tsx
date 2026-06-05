@@ -36,7 +36,6 @@ const EMPTY_RANKING_DATA: SummerRankingData = {
   participantIds: [],
   rules: DEFAULT_SUMMER_RANKING_RULES,
   availabilities: {},
-  master: undefined,
 };
 
 const getEventType = (event?: Partial<Event> | null): EventType =>
@@ -77,6 +76,8 @@ const App: React.FC = () => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [newEventName, setNewEventName] = useState('');
   const [newEventType, setNewEventType] = useState<EventType>('tournament_singolare');
+  const [createEventError, setCreateEventError] = useState<string | null>(null);
+  const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
   const [contactPlayer, setContactPlayer] = useState<Player | null>(null);
 
@@ -191,23 +192,57 @@ const App: React.FC = () => {
     await updateDoc(doc(db, "players", playerId), payload);
   };
 
+  const resetCreateEventForm = () => {
+    setNewEventName('');
+    setNewEventType('tournament_singolare');
+    setCreateEventError(null);
+    setIsCreatingEvent(false);
+  };
+
+  const closeCreateModal = () => {
+    setIsCreateModalOpen(false);
+    resetCreateEventForm();
+  };
+
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEventName.trim()) return;
-    const newEvent: Omit<Event, 'id'> = {
-      name: newEventName.trim(),
+    const trimmedEventName = newEventName.trim();
+    setCreateEventError(null);
+
+    if (!trimmedEventName) {
+      setCreateEventError("Inserisci il nome dell'evento.");
+      return;
+    }
+
+    if (newEventType !== 'ranking_singolare' && newEventType !== 'tournament_singolare') {
+      setCreateEventError('Seleziona una tipologia valida.');
+      return;
+    }
+
+    setIsCreatingEvent(true);
+
+    const baseEvent: Omit<Event, 'id'> = {
+      name: trimmedEventName,
       invitationCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       players: [],
       tournaments: [],
       eventType: newEventType,
-      rankingData: newEventType === 'ranking_singolare' ? { ...EMPTY_RANKING_DATA } : undefined,
     };
 
-    await addDoc(collection(db, "events"), newEvent);
-
-    setNewEventName('');
-    setNewEventType('tournament_singolare');
-    setIsCreateModalOpen(false);
+    try {
+      await addDoc(collection(db, "events"), newEventType === 'ranking_singolare'
+        ? {
+          ...baseEvent,
+          rankingData: { ...EMPTY_RANKING_DATA },
+        }
+        : baseEvent);
+      closeCreateModal();
+    } catch (error) {
+      console.error('Errore creazione evento', error);
+      setCreateEventError('Impossibile creare l’evento. Riprova.');
+    } finally {
+      setIsCreatingEvent(false);
+    }
   };
 
   const handleDeleteEvent = async () => {
@@ -259,7 +294,10 @@ const App: React.FC = () => {
             {isOrganizer && (
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setIsCreateModalOpen(true)}
+                  onClick={() => {
+                    resetCreateEventForm();
+                    setIsCreateModalOpen(true);
+                  }}
                   className="flex items-center gap-2 bg-highlight/80 hover:bg-highlight text-white font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
                 >
                   <PlusIcon className="w-5 h-5" />
@@ -494,19 +532,26 @@ const App: React.FC = () => {
                   <option value="tournament_singolare">Torneo tennis singolare</option>
                 </select>
               </div>
+              {createEventError && (
+                <p className="text-sm text-red-400" role="alert">
+                  {createEventError}
+                </p>
+              )}
               <div className="flex justify-end gap-4 mt-6">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsCreateModalOpen(false);
-                    setNewEventType('tournament_singolare');
-                  }}
+                  onClick={closeCreateModal}
+                  disabled={isCreatingEvent}
                   className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   Annulla
                 </button>
-                <button type="submit" className="bg-highlight hover:bg-highlight/80 text-white font-bold py-2 px-4 rounded-lg transition-colors">
-                  Crea Evento
+                <button
+                  type="submit"
+                  disabled={isCreatingEvent}
+                  className="bg-highlight hover:bg-highlight/80 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  {isCreatingEvent ? 'Creazione...' : 'Crea Evento'}
                 </button>
               </div>
             </form>
