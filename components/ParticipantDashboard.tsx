@@ -1,6 +1,7 @@
 import React from 'react';
 import { type Event } from '../types';
 import { calculateStandings } from '../utils/standings';
+import { calculateSummerRanking } from '../utils/summerRanking';
 
 interface ParticipantDashboardProps {
   events: Event[];
@@ -21,6 +22,25 @@ const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, hea
     let totalMatches = 0;
     let completionPercentage = 0;
     let tournamentName = '';
+
+    if (event.eventType === 'ranking_singolare') {
+      const rankingData = event.rankingData;
+      const participantIds = Array.isArray(rankingData?.participantIds) ? rankingData.participantIds : [];
+      const isInRanking = participantIds.includes(playerId);
+      const confirmedPlayers = Array.isArray(event.players)
+        ? event.players.filter(player => player.status === 'confirmed' && participantIds.includes(player.id))
+        : [];
+      const ranking = calculateSummerRanking(confirmedPlayers, Array.isArray(rankingData?.matches) ? rankingData.matches : []);
+      const myRanking = ranking.find(entry => entry.player.id === playerId);
+      position = isInRanking && myRanking ? `${myRanking.rank}°` : '—';
+      const myMatches = (rankingData?.matches ?? []).filter(match => match.player1Id === playerId || match.player2Id === playerId);
+      totalMatches = myMatches.length;
+      played = myMatches.filter(match => match.status === 'completed').length;
+      toPlay = totalMatches - played;
+      completionPercentage = totalMatches > 0 ? Math.round((played / totalMatches) * 100) : 0;
+      tournamentName = 'Ranking tennis singolare';
+      return { position, played, toPlay, totalMatches, completionPercentage, tournamentName };
+    }
 
     const tournament = Array.isArray(event.tournaments)
       ? event.tournaments.find(t => Array.isArray(t.groups) && t.groups.some(g => Array.isArray(g.playerIds) && g.playerIds.includes(playerId)))

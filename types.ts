@@ -108,6 +108,8 @@ export interface Event {
   tournaments: Tournament[];
   players: Player[];
   invitationCode: string;
+  eventType?: 'ranking_singolare' | 'tournament_singolare';
+  rankingData?: SummerRankingData;
   globalTimeSlots?: TimeSlot[];
   rules?: string;
 }
