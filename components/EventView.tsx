@@ -48,7 +48,6 @@ const EventView: React.FC<EventViewProps> = ({
   const [editTournamentName, setEditTournamentName] = useState<string>('');
   const [editTournamentLoading, setEditTournamentLoading] = useState<boolean>(false);
   const [activeAdminSection, setActiveAdminSection] = useState<AdminEventSection>('tournaments');
-  const [pendingSlotInputFocus, setPendingSlotInputFocus] = useState(false);
   const slotsPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -58,18 +57,7 @@ const EventView: React.FC<EventViewProps> = ({
   useEffect(() => {
     if (!isOrganizer) return;
     setActiveAdminSection('tournaments');
-    setPendingSlotInputFocus(false);
   }, [event.id, isOrganizer]);
-
-  useEffect(() => {
-    if (!isOrganizer || activeAdminSection !== 'slots' || !pendingSlotInputFocus) return;
-    const timer = setTimeout(() => {
-      const input = slotsPanelRef.current?.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select');
-      if (input) input.focus();
-    }, 150);
-    setPendingSlotInputFocus(false);
-    return () => clearTimeout(timer);
-  }, [activeAdminSection, pendingSlotInputFocus, isOrganizer]);
 
   const handleSaveRules = async () => {
     setLoading(true);
@@ -286,16 +274,6 @@ const EventView: React.FC<EventViewProps> = ({
               onClick={() => setActiveAdminSection('slots')}
             >
               Slot orari
-            </button>
-
-            <button
-              className="px-3 py-1 rounded bg-tertiary text-text-primary text-sm hover:bg-tertiary/90 transition-colors"
-              onClick={() => {
-                setActiveAdminSection('slots');
-                setPendingSlotInputFocus(true);
-              }}
-            >
-              Aggiungi nuovo slot
             </button>
 
             <button
