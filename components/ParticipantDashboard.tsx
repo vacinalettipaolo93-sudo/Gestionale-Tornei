@@ -2,6 +2,7 @@ import React from 'react';
 import { type Event } from '../types';
 import { calculateStandings } from '../utils/standings';
 import { calculateSummerRanking } from '../utils/summerRanking';
+import { isEventConcluded } from '../utils/eventStatus';
 
 interface ParticipantDashboardProps {
   events: Event[];
@@ -74,48 +75,115 @@ const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, hea
     <div className="space-y-6 animate-fadeIn">
         {headerContent}
         <h2 className="text-3xl font-bold">I Miei Eventi</h2>
-        {myEvents.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {myEvents.map(event => {
-                    const stats = getPlayerStats(event);
-                    return (
-                        <div 
-                            key={event.id}
-                            onClick={() => onSelectEvent(event)} 
-                            className="bg-secondary rounded-xl shadow-lg transition-all duration-300 group relative overflow-hidden flex flex-col cursor-pointer"
-                        >
-                             <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-accent/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                            <div className="p-6 flex-grow z-10">
-                                <h3 className="text-xl font-bold text-accent truncate">{event.name}</h3>
-                                <p className="text-text-secondary mt-1 text-sm">{stats.tournamentName}</p>
-                                <div className="mt-4 pt-4 border-t border-tertiary/50 grid grid-cols-3 gap-4 text-center">
-                                    <div>
-                                        <div className="text-2xl font-bold">{stats.position}</div>
-                                        <div className="text-xs text-text-secondary">Classifica</div>
-                                    </div>
-                                     <div>
-                                        <div className="text-2xl font-bold">{stats.played}</div>
-                                        <div className="text-xs text-text-secondary">Giocate</div>
-                                    </div>
-                                     <div>
-                                        <div className="text-2xl font-bold">{stats.toPlay}</div>
-                                        <div className="text-xs text-text-secondary">Da giocare</div>
-                                    </div>
-                                </div>
-                                <div className="mt-2">
-                                    <div className="w-full bg-tertiary/30 h-2 rounded-full">
-                                        <div className="bg-accent h-2 rounded-full transition-all duration-300" style={{ width: `${stats.completionPercentage}%` }}></div>
-                                    </div>
-                                    <div className="text-xs text-text-secondary mt-1 text-right">{stats.completionPercentage}% Completato</div>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        ) : (
+        {myEvents.length === 0 && (
             <p className="text-text-secondary text-center py-8">Nessun evento trovato.</p>
         )}
+        {myEvents.length > 0 && (() => {
+            const ongoing = myEvents.filter(e => !isEventConcluded(e));
+            const concluded = myEvents.filter(e => isEventConcluded(e));
+            return (
+                <div className="space-y-8">
+                    {/* Sezione: In corso */}
+                    <div>
+                        <h3 className="text-lg font-semibold text-text-secondary mb-4 flex items-center gap-2">
+                            <span className="inline-block w-2 h-2 rounded-full bg-green-400"></span>
+                            In corso
+                        </h3>
+                        {ongoing.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {ongoing.map(event => {
+                                    const stats = getPlayerStats(event);
+                                    return (
+                                        <div
+                                            key={event.id}
+                                            onClick={() => onSelectEvent(event)}
+                                            className="bg-secondary rounded-xl shadow-lg transition-all duration-300 group relative overflow-hidden flex flex-col cursor-pointer"
+                                        >
+                                            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-accent/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                            <div className="p-6 flex-grow z-10">
+                                                <h3 className="text-xl font-bold text-accent truncate">{event.name}</h3>
+                                                <p className="text-text-secondary mt-1 text-sm">{stats.tournamentName}</p>
+                                                <div className="mt-4 pt-4 border-t border-tertiary/50 grid grid-cols-3 gap-4 text-center">
+                                                    <div>
+                                                        <div className="text-2xl font-bold">{stats.position}</div>
+                                                        <div className="text-xs text-text-secondary">Classifica</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-2xl font-bold">{stats.played}</div>
+                                                        <div className="text-xs text-text-secondary">Giocate</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-2xl font-bold">{stats.toPlay}</div>
+                                                        <div className="text-xs text-text-secondary">Da giocare</div>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-2">
+                                                    <div className="w-full bg-tertiary/30 h-2 rounded-full">
+                                                        <div className="bg-accent h-2 rounded-full transition-all duration-300" style={{ width: `${stats.completionPercentage}%` }}></div>
+                                                    </div>
+                                                    <div className="text-xs text-text-secondary mt-1 text-right">{stats.completionPercentage}% Completato</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <p className="text-text-secondary text-sm py-4">Nessun evento in corso.</p>
+                        )}
+                    </div>
+
+                    {/* Sezione: Conclusi */}
+                    <div>
+                        <h3 className="text-lg font-semibold text-text-secondary mb-4 flex items-center gap-2">
+                            <span className="inline-block w-2 h-2 rounded-full bg-tertiary"></span>
+                            Conclusi
+                        </h3>
+                        {concluded.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {concluded.map(event => {
+                                    const stats = getPlayerStats(event);
+                                    return (
+                                        <div
+                                            key={event.id}
+                                            onClick={() => onSelectEvent(event)}
+                                            className="bg-secondary/60 rounded-xl shadow transition-all duration-300 group relative overflow-hidden flex flex-col cursor-pointer opacity-80"
+                                        >
+                                            <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-tertiary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                            <div className="p-6 flex-grow z-10">
+                                                <div className="flex items-start justify-between gap-2 mb-1">
+                                                    <h3 className="text-xl font-bold text-text-primary truncate">{event.name}</h3>
+                                                    <span className="flex-shrink-0 text-xs font-semibold bg-tertiary/60 text-text-secondary px-2 py-0.5 rounded-full">
+                                                        Terminato
+                                                    </span>
+                                                </div>
+                                                <p className="text-text-secondary mt-1 text-sm">{stats.tournamentName}</p>
+                                                <div className="mt-4 pt-4 border-t border-tertiary/50 grid grid-cols-3 gap-4 text-center">
+                                                    <div>
+                                                        <div className="text-2xl font-bold">{stats.position}</div>
+                                                        <div className="text-xs text-text-secondary">Classifica</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-2xl font-bold">{stats.played}</div>
+                                                        <div className="text-xs text-text-secondary">Giocate</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-2xl font-bold">{stats.toPlay}</div>
+                                                        <div className="text-xs text-text-secondary">Da giocare</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <p className="text-text-secondary text-sm py-4">Nessun evento concluso.</p>
+                        )}
+                    </div>
+                </div>
+            );
+        })()}
     </div>
   );
 };
