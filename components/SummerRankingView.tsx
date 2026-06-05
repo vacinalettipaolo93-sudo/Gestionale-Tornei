@@ -91,6 +91,9 @@ interface SummerRankingViewProps {
   onSaveRankingData: (nextData: SummerRankingData) => Promise<void>;
   onUpdatePlayerStartPoints: (playerId: string, points: number) => Promise<void>;
   onOpenPlayersAdmin?: () => void;
+  title?: string;
+  description?: string;
+  playersAdminLabel?: string;
 }
 
 const generateId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -164,6 +167,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   onSaveRankingData,
   onUpdatePlayerStartPoints,
   onOpenPlayersAdmin,
+  title,
+  description,
+  playersAdminLabel,
 }) => {
   const [activeTab, setActiveTab] = useState<RankingTab>('ranking');
   const [slotForm, setSlotForm] = useState({ start: '', location: '', field: '' });
@@ -695,9 +701,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       <div className="bg-secondary rounded-xl shadow-lg p-6">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-3xl font-bold text-accent">{SUMMER_RANKING_NAME}</h2>
+            <h2 className="text-3xl font-bold text-accent">{title ?? SUMMER_RANKING_NAME}</h2>
             <p className="text-text-secondary mt-1">
-              Ranking globale unico con preview, partite, regolamento, disponibilità e slot prenotabili.
+              {description ?? 'Classifica, partite, regolamento, disponibilità e slot prenotabili per questo evento.'}
             </p>
           </div>
           <div className="text-sm text-text-secondary">
@@ -972,7 +978,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   onClick={onOpenPlayersAdmin}
                   className="px-3 py-2 rounded bg-tertiary text-text-primary text-xs font-semibold"
                 >
-                  Apri gestione globale Giocatori
+                  {playersAdminLabel ?? 'Apri gestione giocatori evento'}
                 </button>
               )}
             </div>

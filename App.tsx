@@ -7,16 +7,16 @@ import Login from './components/Login';
 import EditProfileModal from './components/EditProfileModal';
 import ParticipantDashboard from './components/ParticipantDashboard';
 import ContactModal from './components/ContactModal';
-import SummerRankingPreview from './components/SummerRankingPreview';
 import SummerRankingView from './components/SummerRankingView';
 import AdminPlayersView from './components/AdminPlayersView';
 import { BackArrowIcon, NextTsBrandIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
 
 import { db } from "./firebase";
-import { collection, onSnapshot, addDoc, deleteDoc, doc, setDoc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
 import { DEFAULT_SUMMER_RANKING_RULES } from './utils/summerRanking';
 
-type View = 'dashboard' | 'event' | 'tournament' | 'summerRanking' | 'playersAdmin';
+type View = 'dashboard' | 'event' | 'tournament' | 'playersAdmin';
+type EventType = NonNullable<Event['eventType']>;
 
 type TournamentTab =
   | 'standings'
@@ -30,18 +30,40 @@ type TournamentTab =
   | 'players'
   | 'availability'; // <-- aggiunto
 
+const EMPTY_RANKING_DATA: SummerRankingData = {
+  slots: [],
+  matches: [],
+  participantIds: [],
+  rules: DEFAULT_SUMMER_RANKING_RULES,
+  availabilities: {},
+  master: undefined,
+};
+
+const getEventType = (event?: Partial<Event> | null): EventType =>
+  event?.eventType === 'ranking_singolare' ? 'ranking_singolare' : 'tournament_singolare';
+
+const normalizeRankingData = (data?: SummerRankingData | null): SummerRankingData => ({
+  slots: Array.isArray(data?.slots) ? data.slots : [],
+  matches: Array.isArray(data?.matches) ? data.matches : [],
+  participantIds: Array.isArray(data?.participantIds) ? data.participantIds : [],
+  rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+  availabilities: data?.availabilities ?? {},
+  master: data?.master
+    ? {
+      manualQualifiedPlayerIds: Array.isArray(data.master.manualQualifiedPlayerIds) ? data.master.manualQualifiedPlayerIds : undefined,
+      generatedQualifiedPlayerIds: Array.isArray(data.master.generatedQualifiedPlayerIds) ? data.master.generatedQualifiedPlayerIds : undefined,
+      bracket: data.master.bracket ?? undefined,
+      matches: Array.isArray(data.master.matches) ? data.master.matches : [],
+      generatedAt: data.master.generatedAt,
+    }
+    : undefined,
+});
+
 const App: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [summerRanking, setSummerRanking] = useState<SummerRankingData>({
-    slots: [],
-    matches: [],
-    participantIds: [],
-    rules: DEFAULT_SUMMER_RANKING_RULES,
-    availabilities: {},
-    master: undefined,
-  });
+  const [legacySummerRanking, setLegacySummerRanking] = useState<SummerRankingData | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -54,15 +76,38 @@ const App: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [newEventName, setNewEventName] = useState('');
+  const [newEventType, setNewEventType] = useState<EventType>('tournament_singolare');
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
   const [contactPlayer, setContactPlayer] = useState<Player | null>(null);
 
   const isOrganizer = currentUser?.role === 'organizer';
   const loggedInPlayerId = currentUser?.playerId;
 
+  const getEventRankingData = (event?: Event | null) => {
+    const eventType = getEventType(event);
+    if (eventType !== 'ranking_singolare') return EMPTY_RANKING_DATA;
+    if (event?.rankingData) return normalizeRankingData(event.rankingData);
+    return normalizeRankingData(legacySummerRanking);
+  };
+
   useEffect(() => {
     const unsubEvents = onSnapshot(collection(db, "events"), snapshot => {
-      setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event)));
+      const nextEvents = snapshot.docs.map(snapshotDoc => {
+        const raw = snapshotDoc.data() as Partial<Event>;
+        const eventType = getEventType(raw);
+        return {
+          id: snapshotDoc.id,
+          name: raw.name ?? '',
+          invitationCode: raw.invitationCode ?? '',
+          players: Array.isArray(raw.players) ? raw.players : [],
+          tournaments: Array.isArray(raw.tournaments) ? raw.tournaments : [],
+          globalTimeSlots: Array.isArray(raw.globalTimeSlots) ? raw.globalTimeSlots : [],
+          rules: raw.rules,
+          eventType,
+          rankingData: eventType === 'ranking_singolare' ? normalizeRankingData(raw.rankingData) : undefined,
+        } as Event;
+      });
+      setEvents(nextEvents);
     });
     const unsubPlayers = onSnapshot(collection(db, "players"), snapshot => {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player)));
@@ -70,36 +115,28 @@ const App: React.FC = () => {
     const unsubUsers = onSnapshot(collection(db, "users"), snapshot => {
       setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
     });
-    const unsubSummerRanking = onSnapshot(doc(db, "summerRankingNext", "main"), snapshot => {
-      const data = snapshot.data() as SummerRankingData | undefined;
-      setSummerRanking({
-        slots: Array.isArray(data?.slots) ? data!.slots : [],
-        matches: Array.isArray(data?.matches) ? data!.matches : [],
-        participantIds: Array.isArray(data?.participantIds) ? data!.participantIds : [],
-        rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
-        availabilities: data?.availabilities ?? {},
-        master: data?.master
-          ? {
-              manualQualifiedPlayerIds: Array.isArray(data.master.manualQualifiedPlayerIds) ? data.master.manualQualifiedPlayerIds : undefined,
-              generatedQualifiedPlayerIds: Array.isArray(data.master.generatedQualifiedPlayerIds) ? data.master.generatedQualifiedPlayerIds : undefined,
-              bracket: data.master.bracket ?? undefined,
-              matches: Array.isArray(data.master.matches) ? data.master.matches : [],
-              generatedAt: data.master.generatedAt,
-            }
-          : undefined,
+
+    void getDoc(doc(db, "summerRankingNext", "main"))
+      .then(snapshot => {
+        if (!snapshot.exists()) return;
+        const data = snapshot.data() as SummerRankingData | undefined;
+        setLegacySummerRanking(normalizeRankingData(data));
+      })
+      .catch(error => {
+        console.error('Errore lettura fallback Summer Ranking Next', error);
       });
-    });
+
     return () => {
       unsubEvents();
       unsubPlayers();
       unsubUsers();
-      unsubSummerRanking();
     };
   }, []);
 
   const handleSelectEvent = (event: Event) => {
     setTournamentInitialTab(undefined);
     setTournamentInitialGroupId(undefined);
+    setSelectedTournament(null);
     setSelectedEvent(event);
     setCurrentView('event');
   };
@@ -117,23 +154,28 @@ const App: React.FC = () => {
       setSelectedTournament(null);
       setTournamentInitialTab(undefined);
       setTournamentInitialGroupId(undefined);
-    } else if (currentView === 'summerRanking') {
-      setCurrentView('dashboard');
     } else if (currentView === 'playersAdmin') {
-      setCurrentView('dashboard');
+      setCurrentView(selectedEvent ? 'event' : 'dashboard');
     } else if (currentView === 'event') {
       setCurrentView('dashboard');
       setSelectedEvent(null);
     }
   };
 
-  const openSummerRanking = () => {
-    setCurrentView('summerRanking');
-  };
-
-  const saveSummerRankingData = async (nextData: SummerRankingData) => {
-    setSummerRanking(nextData);
-    await setDoc(doc(db, "summerRankingNext", "main"), nextData, { merge: true });
+  const saveEventRankingData = async (eventId: string, nextData: SummerRankingData) => {
+    const normalized = normalizeRankingData(nextData);
+    setEvents(prevEvents => prevEvents.map(event =>
+      event.id === eventId
+        ? { ...event, eventType: 'ranking_singolare', rankingData: normalized }
+        : event
+    ));
+    if (selectedEvent?.id === eventId) {
+      setSelectedEvent(prev => prev ? { ...prev, eventType: 'ranking_singolare', rankingData: normalized } : prev);
+    }
+    await updateDoc(doc(db, "events", eventId), {
+      eventType: 'ranking_singolare',
+      rankingData: normalized,
+    });
   };
 
   const updatePlayerSummerRankingStartPoints = async (playerId: string, points: number) => {
@@ -152,22 +194,29 @@ const App: React.FC = () => {
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventName.trim()) return;
-    const newEvent = {
+    const newEvent: Omit<Event, 'id'> = {
       name: newEventName.trim(),
       invitationCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
       players: [],
       tournaments: [],
+      eventType: newEventType,
+      rankingData: newEventType === 'ranking_singolare' ? { ...EMPTY_RANKING_DATA } : undefined,
     };
 
     await addDoc(collection(db, "events"), newEvent);
 
     setNewEventName('');
+    setNewEventType('tournament_singolare');
     setIsCreateModalOpen(false);
   };
 
   const handleDeleteEvent = async () => {
     if (!eventToDelete) return;
     await deleteDoc(doc(db, "events", eventToDelete.id));
+    if (selectedEvent?.id === eventToDelete.id) {
+      setSelectedEvent(null);
+      setCurrentView('dashboard');
+    }
     setEventToDelete(null);
   };
 
@@ -182,14 +231,6 @@ const App: React.FC = () => {
 
   const currentEventState = useMemo(() => events.find(e => e.id === selectedEvent?.id), [events, selectedEvent]);
   const currentTournamentState = useMemo(() => currentEventState?.tournaments.find(t => t.id === selectedTournament?.id), [currentEventState, selectedTournament]);
-  const summerRankingParticipantIdSet = useMemo(
-    () => new Set(Array.isArray(summerRanking.participantIds) ? summerRanking.participantIds : []),
-    [summerRanking.participantIds],
-  );
-  const summerRankingPlayers = useMemo(
-    () => players.filter(player => player.status === 'confirmed' && summerRankingParticipantIdSet.has(player.id)),
-    [players, summerRankingParticipantIdSet],
-  );
 
   const filteredEventsForOrganizer = useMemo(() => {
     if (isOrganizer) return events;
@@ -206,13 +247,6 @@ const App: React.FC = () => {
         return (
           <ParticipantDashboard
             events={events}
-            headerContent={(
-              <SummerRankingPreview
-                players={summerRankingPlayers}
-                matches={summerRanking.matches}
-                onOpen={openSummerRanking}
-              />
-            )}
             playerId={loggedInPlayerId}
             onSelectEvent={handleSelectEvent}
           />
@@ -220,21 +254,10 @@ const App: React.FC = () => {
       }
       return (
         <div className="space-y-6 animate-fadeIn">
-          <SummerRankingPreview
-            players={summerRankingPlayers}
-            matches={summerRanking.matches}
-            onOpen={openSummerRanking}
-          />
           <div className="flex justify-between items-center">
             <h2 className="text-3xl font-bold">I Miei Eventi</h2>
             {isOrganizer && (
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setCurrentView('playersAdmin')}
-                  className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
-                >
-                  Giocatori
-                </button>
                 <button
                   onClick={() => setIsCreateModalOpen(true)}
                   className="flex items-center gap-2 bg-highlight/80 hover:bg-highlight text-white font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
@@ -249,17 +272,31 @@ const App: React.FC = () => {
           {filteredEventsForOrganizer.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredEventsForOrganizer.map(event => {
+                const eventType = getEventType(event);
+                const rankingData = getEventRankingData(event);
                 const { totalMatches, completedMatches, completionPercentage } = (() => {
-                  let totalMatches = 0;
-                  let completedMatches = 0;
+                  if (eventType === 'ranking_singolare') {
+                    const total = rankingData.matches.length;
+                    const completed = rankingData.matches.filter(match => match.status === 'completed').length;
+                    return {
+                      totalMatches: total,
+                      completedMatches: completed,
+                      completionPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
+                    };
+                  }
+                  let total = 0;
+                  let completed = 0;
                   event.tournaments.forEach(tournament => {
                     tournament.groups.forEach(group => {
-                      totalMatches += group.matches.length;
-                      completedMatches += group.matches.filter(m => m.status === 'completed').length;
+                      total += group.matches.length;
+                      completed += group.matches.filter(m => m.status === 'completed').length;
                     });
                   });
-                  const completionPercentage = totalMatches > 0 ? Math.round((completedMatches / totalMatches) * 100) : 0;
-                  return { totalMatches, completedMatches, completionPercentage };
+                  return {
+                    totalMatches: total,
+                    completedMatches: completed,
+                    completionPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
+                  };
                 })();
 
                 return (
@@ -267,7 +304,11 @@ const App: React.FC = () => {
                     <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-accent/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                     <div onClick={() => handleSelectEvent(event)} className="p-6 cursor-pointer flex-grow z-10">
                       <h3 className="text-xl font-bold text-accent truncate">{event.name}</h3>
-                      <p className="text-text-secondary mt-2 text-sm">{event.tournaments.length} tornei • {event.players.length} giocatori</p>
+                      <p className="text-text-secondary mt-2 text-sm">
+                        {eventType === 'ranking_singolare'
+                          ? `Ranking tennis singolare • ${(rankingData.participantIds ?? []).length} partecipanti`
+                          : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
+                      </p>
                       <div className="mt-4 pt-4 border-t border-tertiary/50">
                         <div className="flex justify-between items-center text-sm mb-1">
                           <span className="text-text-secondary">Progresso</span>
@@ -305,6 +346,27 @@ const App: React.FC = () => {
     }
 
     if (currentView === 'event' && currentEventState) {
+      if (getEventType(currentEventState) === 'ranking_singolare') {
+        const rankingData = getEventRankingData(currentEventState);
+        return (
+          <div className="animate-fadeIn">
+            <SummerRankingView
+              players={currentEventState.players ?? []}
+              rankingData={rankingData}
+              isOrganizer={isOrganizer}
+              loggedInPlayerId={loggedInPlayerId}
+              onPlayerContact={setContactPlayer}
+              onSaveRankingData={(nextData) => saveEventRankingData(currentEventState.id, nextData)}
+              onUpdatePlayerStartPoints={updatePlayerSummerRankingStartPoints}
+              onOpenPlayersAdmin={isOrganizer ? () => setCurrentView('playersAdmin') : undefined}
+              title={`${currentEventState.name} • Ranking tennis singolare`}
+              description="Classifica, partite, master finale, disponibilità, slot e regolamento di questo evento."
+              playersAdminLabel="Apri gestione giocatori evento"
+            />
+          </div>
+        );
+      }
+
       return (
         <div className="animate-fadeIn">
           <EventView
@@ -335,31 +397,18 @@ const App: React.FC = () => {
       );
     }
 
-    if (currentView === 'summerRanking') {
-      return (
-        <div className="animate-fadeIn">
-          <SummerRankingView
-            players={players}
-            rankingData={summerRanking}
-            isOrganizer={isOrganizer}
-            loggedInPlayerId={loggedInPlayerId}
-            onPlayerContact={setContactPlayer}
-            onSaveRankingData={saveSummerRankingData}
-            onUpdatePlayerStartPoints={updatePlayerSummerRankingStartPoints}
-            onOpenPlayersAdmin={isOrganizer ? () => setCurrentView('playersAdmin') : undefined}
-          />
-        </div>
-      );
-    }
-
-    if (currentView === 'playersAdmin' && isOrganizer) {
+    if (
+      currentView === 'playersAdmin'
+      && isOrganizer
+      && currentEventState
+      && getEventType(currentEventState) === 'ranking_singolare'
+    ) {
       return (
         <AdminPlayersView
           players={players}
           events={events}
-          summerRanking={summerRanking}
+          rankingEvent={currentEventState}
           setEvents={setEvents}
-          onSaveRankingData={saveSummerRankingData}
         />
       );
     }
@@ -424,7 +473,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
           <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-sm border border-tertiary">
             <h4 className="text-lg font-bold mb-4">Crea Nuovo Evento</h4>
-            <form onSubmit={handleCreateEvent}>
+            <form onSubmit={handleCreateEvent} className="space-y-4">
               <input
                 type="text"
                 placeholder="Nome dell'evento"
@@ -433,10 +482,25 @@ const App: React.FC = () => {
                 className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
                 autoFocus
               />
+              <div>
+                <label htmlFor="event-type" className="block text-sm text-text-secondary mb-1">Tipo evento</label>
+                <select
+                  id="event-type"
+                  value={newEventType}
+                  onChange={event => setNewEventType(event.target.value as EventType)}
+                  className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
+                >
+                  <option value="ranking_singolare">Ranking tennis singolare</option>
+                  <option value="tournament_singolare">Torneo tennis singolare</option>
+                </select>
+              </div>
               <div className="flex justify-end gap-4 mt-6">
                 <button
                   type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
+                  onClick={() => {
+                    setIsCreateModalOpen(false);
+                    setNewEventType('tournament_singolare');
+                  }}
                   className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   Annulla

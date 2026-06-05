@@ -2,13 +2,13 @@ import React, { useMemo, useState } from 'react';
 import { collection, addDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { type Event, type Player, type SummerRankingData } from '../types';
+import { DEFAULT_SUMMER_RANKING_RULES } from '../utils/summerRanking';
 
 interface AdminPlayersViewProps {
   players: Player[];
   events: Event[];
-  summerRanking: SummerRankingData;
+  rankingEvent: Event;
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
-  onSaveRankingData: (nextData: SummerRankingData) => Promise<void>;
 }
 
 const createInitialsAvatar = (name: string): string => {
@@ -22,9 +22,8 @@ const createInitialsAvatar = (name: string): string => {
 const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   players,
   events,
-  summerRanking,
+  rankingEvent,
   setEvents,
-  onSaveRankingData,
 }) => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
@@ -37,19 +36,34 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     () => players.slice().sort((a, b) => a.name.localeCompare(b.name)),
     [players],
   );
+  const rankingData = useMemo<SummerRankingData>(() => ({
+    slots: Array.isArray(rankingEvent.rankingData?.slots) ? rankingEvent.rankingData.slots : [],
+    matches: Array.isArray(rankingEvent.rankingData?.matches) ? rankingEvent.rankingData.matches : [],
+    participantIds: Array.isArray(rankingEvent.rankingData?.participantIds) ? rankingEvent.rankingData.participantIds : [],
+    rules: rankingEvent.rankingData?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+    availabilities: rankingEvent.rankingData?.availabilities ?? {},
+    master: rankingEvent.rankingData?.master,
+  }), [rankingEvent.rankingData]);
   const rankingParticipantIds = useMemo(
-    () => Array.isArray(summerRanking.participantIds) ? summerRanking.participantIds : [],
-    [summerRanking.participantIds],
+    () => Array.isArray(rankingData.participantIds) ? rankingData.participantIds : [],
+    [rankingData.participantIds],
   );
   const participantIdSet = useMemo(
     () => new Set(rankingParticipantIds),
     [rankingParticipantIds],
   );
 
+  const saveRankingData = async (nextData: SummerRankingData) => {
+    setEvents(prev =>
+      prev.map(item => item.id === rankingEvent.id ? { ...item, rankingData: nextData } : item),
+    );
+    await updateDoc(doc(db, 'events', rankingEvent.id), { rankingData: nextData });
+  };
+
   const addPlayerToRanking = async (playerId: string) => {
     if (participantIdSet.has(playerId)) return;
-    await onSaveRankingData({
-      ...summerRanking,
+    await saveRankingData({
+      ...rankingData,
       participantIds: [...rankingParticipantIds, playerId],
     });
   };
@@ -145,7 +159,7 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       <div className="bg-secondary rounded-xl shadow-lg p-6">
         <h2 className="text-3xl font-bold text-accent">Giocatori</h2>
         <p className="text-text-secondary mt-1">
-          Archivio globale condiviso tra ranking ed eventi.
+          Archivio globale condiviso tra eventi. Gestione ranking per l&apos;evento: <strong>{rankingEvent.name}</strong>.
         </p>
       </div>
 
@@ -199,7 +213,7 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
             checked={addNewPlayerToRanking}
             onChange={event => setAddNewPlayerToRanking(event.target.checked)}
           />
-          Aggiungi subito il nuovo giocatore al Summer Ranking Next
+          Aggiungi subito il nuovo giocatore al ranking dell&apos;evento
         </label>
       </div>
 
