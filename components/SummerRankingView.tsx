@@ -29,7 +29,7 @@ import {
 } from '../utils/summerRanking';
 
 type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'settings' | 'availability' | 'players';
-type AvailabilityFormState = Omit<SummerPlayerAvailability, 'updatedAt'>;
+type AvailabilityFormState = { status: SummerAvailabilityStatus | null; days: SummerAvailabilityDay[]; periods: SummerAvailabilityPeriod[] };
 type MasterScoreFormState = { matchId: string | null; score1: string; score2: string };
 
 const AVAILABILITY_DAYS: Array<{ value: SummerAvailabilityDay; label: string; shortLabel: string }> = [
@@ -49,7 +49,7 @@ const AVAILABILITY_PERIODS: Array<{ value: SummerAvailabilityPeriod; label: stri
 ];
 
 const normalizeAvailability = (availability?: SummerPlayerAvailability): AvailabilityFormState => ({
-  status: availability?.status ?? 'unavailable',
+  status: availability?.status ?? null,
   days: availability?.status === 'available' ? availability.days ?? [] : [],
   periods: availability?.status === 'available' ? availability.periods ?? [] : [],
 });
@@ -58,7 +58,13 @@ const toggleArrayValue = <T,>(items: T[], value: T) =>
   items.includes(value) ? items.filter(item => item !== value) : [...items, value];
 
 const getAvailabilitySummary = (availability?: SummerPlayerAvailability) => {
-  if (!availability || availability.status !== 'available') {
+  if (!availability) {
+    return {
+      status: 'Non dichiarata',
+      details: null as string | null,
+    };
+  }
+  if (availability.status !== 'available') {
     return {
       status: 'Non disponibile',
       details: null as string | null,
@@ -182,9 +188,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [isSavingRulesSettings, setIsSavingRulesSettings] = useState(false);
   const [startPointsDrafts, setStartPointsDrafts] = useState<Record<string, string>>({});
   const [busyPlayerId, setBusyPlayerId] = useState<string | null>(null);
+  const [rankingSearchInput, setRankingSearchInput] = useState('');
   const [rankingSearch, setRankingSearch] = useState('');
-  const [minRankingPoints, setMinRankingPoints] = useState('');
-  const [maxRankingPoints, setMaxRankingPoints] = useState('');
+  const [rankingRangeMin, setRankingRangeMin] = useState(0);
+  const [rankingRangeMax, setRankingRangeMax] = useState<number | null>(null);
+  const [filterAvailDays, setFilterAvailDays] = useState<SummerAvailabilityDay[]>([]);
+  const [filterAvailPeriods, setFilterAvailPeriods] = useState<SummerAvailabilityPeriod[]>([]);
   const [availabilityForm, setAvailabilityForm] = useState<AvailabilityFormState>(() =>
     normalizeAvailability(loggedInPlayerId ? rankingData.availabilities?.[loggedInPlayerId] : undefined)
   );
@@ -624,6 +633,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
   const handleSaveAvailability = async () => {
     if (!currentPlayer) return;
+    if (availabilityForm.status === null) return;
     if (availabilityForm.status === 'available' && (availabilityForm.days.length === 0 || availabilityForm.periods.length === 0)) {
       return;
     }
@@ -668,26 +678,33 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     [currentMasterQualifiedPlayerIds],
   );
   const topEightQualified = ranking.filter(entry => masterQualifiedIdSet.has(entry.player.id));
+  const maxPossiblePoints = useMemo(
+    () => (ranking.length > 0 ? Math.max(...ranking.map(entry => entry.points)) : 0),
+    [ranking],
+  );
+  const effectiveRangeMax = rankingRangeMax ?? maxPossiblePoints;
   const normalizedRankingSearch = rankingSearch.trim().toLowerCase();
-  const hasMinRankingPoints = minRankingPoints.trim() !== '';
-  const hasMaxRankingPoints = maxRankingPoints.trim() !== '';
-  const parsedMinRankingPoints = hasMinRankingPoints ? Number(minRankingPoints) : null;
-  const parsedMaxRankingPoints = hasMaxRankingPoints ? Number(maxRankingPoints) : null;
-  const hasActiveRankingFilters = normalizedRankingSearch.length > 0 || hasMinRankingPoints || hasMaxRankingPoints;
+  const hasActivePointsFilter = rankingRangeMin > 0 || effectiveRangeMax < maxPossiblePoints;
+  const hasActiveAvailFilter = filterAvailDays.length > 0 || filterAvailPeriods.length > 0;
+  const hasActiveRankingFilters = normalizedRankingSearch.length > 0 || hasActivePointsFilter || hasActiveAvailFilter;
   const filteredRanking = useMemo(
     () =>
       ranking.filter(entry => {
-        const matchesSearch = normalizedRankingSearch.length === 0
-          || entry.player.name.toLowerCase().includes(normalizedRankingSearch)
-          || entry.player.id.toLowerCase().includes(normalizedRankingSearch);
-        if (!matchesSearch) return false;
-        if (hasMinRankingPoints && (parsedMinRankingPoints === null || Number.isNaN(parsedMinRankingPoints))) return false;
-        if (hasMaxRankingPoints && (parsedMaxRankingPoints === null || Number.isNaN(parsedMaxRankingPoints))) return false;
-        if (parsedMinRankingPoints !== null && !Number.isNaN(parsedMinRankingPoints) && entry.points < parsedMinRankingPoints) return false;
-        if (parsedMaxRankingPoints !== null && !Number.isNaN(parsedMaxRankingPoints) && entry.points > parsedMaxRankingPoints) return false;
+        if (
+          normalizedRankingSearch.length > 0 &&
+          !entry.player.name.toLowerCase().includes(normalizedRankingSearch) &&
+          !entry.player.id.toLowerCase().includes(normalizedRankingSearch)
+        ) return false;
+        if (entry.points < rankingRangeMin || entry.points > effectiveRangeMax) return false;
+        if (filterAvailDays.length > 0 || filterAvailPeriods.length > 0) {
+          const avail = rankingData.availabilities?.[entry.player.id];
+          if (!avail || avail.status !== 'available') return false;
+          if (filterAvailDays.length > 0 && !filterAvailDays.some(day => avail.days.includes(day))) return false;
+          if (filterAvailPeriods.length > 0 && !filterAvailPeriods.some(period => avail.periods.includes(period))) return false;
+        }
         return true;
       }),
-    [ranking, normalizedRankingSearch, hasMinRankingPoints, hasMaxRankingPoints, parsedMinRankingPoints, parsedMaxRankingPoints],
+    [ranking, normalizedRankingSearch, rankingRangeMin, effectiveRangeMax, filterAvailDays, filterAvailPeriods, rankingData.availabilities],
   );
   const currentPlayerRankingEntry = useMemo(
     () => loggedInPlayerId ? ranking.find(entry => entry.player.id === loggedInPlayerId) : undefined,
@@ -728,9 +745,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   );
 
   const resetRankingFilters = () => {
+    setRankingSearchInput('');
     setRankingSearch('');
-    setMinRankingPoints('');
-    setMaxRankingPoints('');
+    setRankingRangeMin(0);
+    setRankingRangeMax(null);
+    setFilterAvailDays([]);
+    setFilterAvailPeriods([]);
   };
 
   return (
@@ -793,50 +813,117 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             <div className="flex flex-col gap-1">
               <h3 className="text-lg font-bold text-accent">Ricerca e filtri ranking</h3>
               <p className="text-sm text-text-secondary">
-                Cerca rapidamente il giocatore da sfidare e filtra per punteggio.
+                Cerca giocatori per nome, filtra per punti e disponibilità.
               </p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div className="md:col-span-2">
+
+            {/* Row 1: Name search with OK button */}
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
                 <label htmlFor="ranking-search" className="block text-xs font-semibold text-text-secondary mb-1">
                   Cerca giocatore
                 </label>
                 <input
                   id="ranking-search"
                   type="search"
-                  value={rankingSearch}
-                  onChange={event => setRankingSearch(event.target.value)}
+                  value={rankingSearchInput}
+                  onChange={event => setRankingSearchInput(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') setRankingSearch(rankingSearchInput); }}
                   placeholder="Nome o ID giocatore"
                   className="w-full bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
                 />
               </div>
-              <div>
-                <label htmlFor="ranking-points-min" className="block text-xs font-semibold text-text-secondary mb-1">
-                  Punti min
-                </label>
-                <input
-                  id="ranking-points-min"
-                  type="number"
-                  value={minRankingPoints}
-                  onChange={event => setMinRankingPoints(event.target.value)}
-                  placeholder="Es. 100"
-                  className="w-full bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
-                />
+              <button
+                onClick={() => setRankingSearch(rankingSearchInput)}
+                className="px-4 py-2 rounded-lg bg-accent text-primary font-semibold text-sm whitespace-nowrap"
+              >
+                OK
+              </button>
+            </div>
+
+            {/* Row 2: Points dual range slider */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold text-text-secondary">Punti classifica</label>
+                <span className="text-xs font-semibold text-accent">
+                  {rankingRangeMin} – {effectiveRangeMax}
+                  {maxPossiblePoints > 0 && (
+                    <span className="text-text-secondary font-normal ml-1">/ {maxPossiblePoints}</span>
+                  )}
+                </span>
               </div>
-              <div>
-                <label htmlFor="ranking-points-max" className="block text-xs font-semibold text-text-secondary mb-1">
-                  Punti max
-                </label>
+              <div className="relative h-8 flex items-center px-1">
+                {/* Base track */}
+                <div className="absolute left-1 right-1 h-1 bg-tertiary rounded" />
+                {/* Active range highlight */}
+                <div
+                  className="absolute h-1 bg-accent rounded"
+                  style={{
+                    left: `calc(${maxPossiblePoints > 0 ? (rankingRangeMin / maxPossiblePoints) * 100 : 0}% + 4px)`,
+                    right: `calc(${maxPossiblePoints > 0 ? ((maxPossiblePoints - effectiveRangeMax) / maxPossiblePoints) * 100 : 0}% + 4px)`,
+                  }}
+                />
+                {/* Min thumb */}
                 <input
-                  id="ranking-points-max"
-                  type="number"
-                  value={maxRankingPoints}
-                  onChange={event => setMaxRankingPoints(event.target.value)}
-                  placeholder="Es. 200"
-                  className="w-full bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  type="range"
+                  className="dual-range"
+                  min={0}
+                  max={maxPossiblePoints}
+                  value={rankingRangeMin}
+                  onChange={event => setRankingRangeMin(Math.min(Number(event.target.value), effectiveRangeMax))}
+                />
+                {/* Max thumb */}
+                <input
+                  type="range"
+                  className="dual-range"
+                  min={0}
+                  max={maxPossiblePoints}
+                  value={effectiveRangeMax}
+                  onChange={event => setRankingRangeMax(Math.max(Number(event.target.value), rankingRangeMin))}
                 />
               </div>
             </div>
+
+            {/* Row 3: Day filter */}
+            <div>
+              <div className="text-xs font-semibold text-text-secondary mb-2">Giorni disponibili</div>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABILITY_DAYS.map(day => (
+                  <button
+                    key={day.value}
+                    onClick={() => setFilterAvailDays(prev => toggleArrayValue(prev, day.value))}
+                    className={`px-3 py-1 rounded-lg border text-xs font-semibold ${
+                      filterAvailDays.includes(day.value)
+                        ? 'bg-highlight text-white border-highlight'
+                        : 'bg-primary border-tertiary text-text-primary'
+                    }`}
+                  >
+                    {day.shortLabel}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Row 4: Period filter */}
+            <div>
+              <div className="text-xs font-semibold text-text-secondary mb-2">Fasce orarie</div>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABILITY_PERIODS.map(period => (
+                  <button
+                    key={period.value}
+                    onClick={() => setFilterAvailPeriods(prev => toggleArrayValue(prev, period.value))}
+                    className={`px-3 py-1 rounded-lg border text-xs font-semibold ${
+                      filterAvailPeriods.includes(period.value)
+                        ? 'bg-highlight text-white border-highlight'
+                        : 'bg-primary border-tertiary text-text-primary'
+                    }`}
+                  >
+                    {period.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-text-secondary">
                 {filteredRanking.length} risultati su {ranking.length}
@@ -970,7 +1057,11 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                       <div className="mt-1">{entry.lastMatchAt ? `Ultima: ${formatDateTime(entry.lastMatchAt)}` : 'Nessuna partita'}</div>
                     </td>
                     <td className="py-4 pr-3 text-xs text-text-secondary">
-                      <div className={`font-semibold ${availabilitySummary.status === 'Disponibile' ? 'text-green-400' : 'text-text-primary'}`}>
+                      <div className={`font-semibold ${
+                        availabilitySummary.status === 'Disponibile' ? 'text-green-400' :
+                        availabilitySummary.status === 'Non disponibile' ? 'text-red-400' :
+                        'text-text-secondary'
+                      }`}>
                         {availabilitySummary.status}
                       </div>
                       {availabilitySummary.details && (
@@ -1561,16 +1652,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               <div className="mt-6 space-y-6">
                 <div>
                   <div className="text-sm font-semibold mb-3">Stato disponibilità</div>
-                  <div className="flex flex-wrap gap-3">
-                    {[
-                      ['available', 'Disponibile'],
-                      ['unavailable', 'Non disponibile'],
-                    ].map(([status, label]) => (
+              {availabilityForm.status === null && (
+                <p className="text-xs text-text-secondary mb-2">Nessuna disponibilità dichiarata. Scegli un'opzione per procedere.</p>
+              )}
+              <div className="flex flex-wrap gap-3">
+                {([['available', 'Disponibile'], ['unavailable', 'Non disponibile']] as const).map(([status, label]) => (
                       <button
                         key={status}
                         onClick={() => setAvailabilityForm(prev => ({
                           ...prev,
-                          status: status as AvailabilityFormState['status'],
+                      status,
                           days: status === 'available' ? prev.days : [],
                           periods: status === 'available' ? prev.periods : [],
                         }))}
@@ -1635,16 +1726,17 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 )}
 
                 <div className="rounded-lg border border-tertiary bg-primary p-4 text-sm text-text-secondary">
-                  {(() => {
+                  <div className="font-semibold text-text-primary">Riepilogo tabella</div>
+                  {availabilityForm.status === null ? (
+                    <div className="mt-1 text-text-secondary">Non dichiarata</div>
+                  ) : (() => {
                     const summary = getAvailabilitySummary({
                       status: availabilityForm.status,
                       days: availabilityForm.days,
                       periods: availabilityForm.periods,
                     });
-
                     return (
                       <>
-                        <div className="font-semibold text-text-primary">Riepilogo tabella</div>
                         <div className="mt-1">{summary.status}</div>
                         {summary.details && <div className="mt-1">{summary.details}</div>}
                       </>
@@ -1661,7 +1753,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 <div className="flex flex-wrap gap-3">
                   <button
                     onClick={handleSaveAvailability}
-                    disabled={availabilityForm.status === 'available' && (availabilityForm.days.length === 0 || availabilityForm.periods.length === 0)}
+                    disabled={
+                      availabilityForm.status === null ||
+                      (availabilityForm.status === 'available' && (availabilityForm.days.length === 0 || availabilityForm.periods.length === 0))
+                    }
                     className="px-4 py-2 rounded bg-highlight text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Salva disponibilità

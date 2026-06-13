@@ -12,3 +12,38 @@ body {
   background: var(--secondary);
   color: var(--text);
 }
+
+/* Dual range slider: transparent track, styled thumb only */
+.dual-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0;
+  background: transparent;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.dual-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #22d3ee;
+  cursor: pointer;
+  pointer-events: all;
+  border: 2px solid #0f172a;
+  box-shadow: 0 0 0 1px #22d3ee40;
+}
+.dual-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #22d3ee;
+  cursor: pointer;
+  pointer-events: all;
+  border: 2px solid #0f172a;
+  box-shadow: 0 0 0 1px #22d3ee40;
+}
