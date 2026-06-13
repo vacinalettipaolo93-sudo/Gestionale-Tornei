@@ -5,27 +5,74 @@ import {
   type PlayoffMatch,
   type SummerRankingMasterData,
   type SummerRankingMasterMatch,
+  type SummerRankingRulesConfig,
 } from '../types';
 
 export const SUMMER_RANKING_NAME = 'Summer Ranking Next';
 export const SUMMER_RANKING_MASTER_SIZE = 8;
 export const SUMMER_RANKING_MASTER_MIN_MATCHES = 5;
 
-export const DEFAULT_SUMMER_RANKING_RULES = [
-  'Summer Ranking Next',
-  '',
-  '• Ranking globale unico con tutti i giocatori iscritti.',
-  '• Il punteggio iniziale viene impostato manualmente dall’amministratore.',
-  '• Fasce differenza punti: 0-100 bassa, 101-200 media, 201+ alta.',
-  '• Se vince il favorito: +20/-20, +10/-30, +5/-40.',
-  '• Se vince lo sfavorito: +20/-20, +30/-10, +40/-5.',
-  '• Pareggio: ogni giocatore riceve il 50% dei punti che prenderebbe vincendo.',
-  '• Bonus partecipazione: +5 a partita, oppure +10 a partita se il giocatore disputa almeno 2 match nella stessa settimana.',
-  '• Bonus differenza game al vincitore: +1 con 2 game di scarto, +2 con 3, +3 con 4 o più.',
-  '• Malus inattività: -5 punti ogni 10 giorni consecutivi senza partite.',
-  `• Master finale: top ${SUMMER_RANKING_MASTER_SIZE} con almeno ${SUMMER_RANKING_MASTER_MIN_MATCHES} partite giocate.`,
-  '• Limite massimo: 5 scontri contro lo stesso avversario.',
-].join('\n');
+export const DEFAULT_RULES_CONFIG: SummerRankingRulesConfig = {
+  diffBandLowMax: 100,
+  diffBandMediumMax: 200,
+
+  favoriteWinLow: 20,
+  favoriteLossLow: -20,
+  favoriteWinMedium: 10,
+  favoriteLossMedium: -30,
+  favoriteWinHigh: 5,
+  favoriteLossHigh: -40,
+
+  underdogWinLow: 20,
+  underdogLossLow: -20,
+  underdogWinMedium: 30,
+  underdogLossMedium: -10,
+  underdogWinHigh: 40,
+  underdogLossHigh: -5,
+
+  participationBase: 5,
+  participationWeeklyBonus: 10,
+  participationWeeklyMinMatches: 2,
+
+  gameDiffBonus2: 1,
+  gameDiffBonus3: 2,
+  gameDiffBonus4plus: 3,
+
+  inactivityMalusPoints: 5,
+  inactivityMalusDays: 10,
+
+  masterSize: 8,
+  masterMinMatches: 5,
+
+  headToHeadLimit: 5,
+};
+
+export const normalizeRulesConfig = (config?: Partial<SummerRankingRulesConfig> | null): SummerRankingRulesConfig => ({
+  ...DEFAULT_RULES_CONFIG,
+  ...config,
+});
+
+export const generateRulesText = (config: SummerRankingRulesConfig): string => {
+  const lo = config.diffBandLowMax;
+  const med = config.diffBandMediumMax;
+  return [
+    SUMMER_RANKING_NAME,
+    '',
+    '• Ranking globale unico con tutti i giocatori iscritti.',
+    '• Il punteggio iniziale viene impostato manualmente dall\u2019amministratore.',
+    `• Fasce differenza punti: 0-${lo} bassa, ${lo + 1}-${med} media, ${med + 1}+ alta.`,
+    `• Se vince il favorito: +${config.favoriteWinLow}/${config.favoriteLossLow}, +${config.favoriteWinMedium}/${config.favoriteLossMedium}, +${config.favoriteWinHigh}/${config.favoriteLossHigh}.`,
+    `• Se vince lo sfavorito: +${config.underdogWinLow}/${config.underdogLossLow}, +${config.underdogWinMedium}/${config.underdogLossMedium}, +${config.underdogWinHigh}/${config.underdogLossHigh}.`,
+    '• Pareggio: ogni giocatore riceve il 50% dei punti che prenderebbe vincendo.',
+    `• Bonus partecipazione: +${config.participationBase} a partita, oppure +${config.participationWeeklyBonus} a partita se il giocatore disputa almeno ${config.participationWeeklyMinMatches} match nella stessa settimana.`,
+    `• Bonus differenza game al vincitore: +${config.gameDiffBonus2} con 2 game di scarto, +${config.gameDiffBonus3} con 3, +${config.gameDiffBonus4plus} con 4 o più.`,
+    `• Malus inattività: -${config.inactivityMalusPoints} punti ogni ${config.inactivityMalusDays} giorni consecutivi senza partite.`,
+    `• Master finale: top ${config.masterSize} con almeno ${config.masterMinMatches} partite giocate.`,
+    `• Limite massimo: ${config.headToHeadLimit} scontri contro lo stesso avversario.`,
+  ].join('\n');
+};
+
+export const DEFAULT_SUMMER_RANKING_RULES = generateRulesText(DEFAULT_RULES_CONFIG);
 
 type Trend = 'up' | 'down' | 'steady';
 
@@ -49,18 +96,6 @@ export interface SummerRankingEntry {
   upcomingMatches: number;
 }
 
-const FAVORITE_WIN_RULES = {
-  low: { winner: 20, loser: -20 },
-  medium: { winner: 10, loser: -30 },
-  high: { winner: 5, loser: -40 },
-} as const;
-
-const UNDERDOG_WIN_RULES = {
-  low: { winner: 20, loser: -20 },
-  medium: { winner: 30, loser: -10 },
-  high: { winner: 40, loser: -5 },
-} as const;
-
 const getStartingPoints = (player: Player) => Number(player.summerRankingStartPoints ?? 0);
 
 const MASTER_SEED_PAIRINGS: Array<[number, number]> = [
@@ -81,17 +116,22 @@ const MASTER_MATCH_METADATA = {
   'master-third': { label: 'Finale 3°/4° posto', stage: 'thirdPlace' },
 } as const satisfies Record<string, { label: string; stage: SummerRankingMasterMatch['stage'] }>;
 
-export const getSummerRankingDiffBand = (diff: number) => {
-  if (diff <= 100) return 'low' as const;
-  if (diff <= 200) return 'medium' as const;
+export const getSummerRankingDiffBand = (diff: number, config?: SummerRankingRulesConfig) => {
+  const cfg = config ?? DEFAULT_RULES_CONFIG;
+  if (diff <= cfg.diffBandLowMax) return 'low' as const;
+  if (diff <= cfg.diffBandMediumMax) return 'medium' as const;
   return 'high' as const;
 };
 
-export const getSummerRankingWinPoints = (winnerPoints: number, loserPoints: number) => {
+export const getSummerRankingWinPoints = (winnerPoints: number, loserPoints: number, config?: SummerRankingRulesConfig) => {
+  const cfg = config ?? DEFAULT_RULES_CONFIG;
   const diff = Math.abs(winnerPoints - loserPoints);
-  const band = getSummerRankingDiffBand(diff);
+  const band = getSummerRankingDiffBand(diff, cfg);
   const winnerIsFavorite = winnerPoints >= loserPoints;
-  return (winnerIsFavorite ? FAVORITE_WIN_RULES : UNDERDOG_WIN_RULES)[band].winner;
+  if (winnerIsFavorite) {
+    return band === 'low' ? cfg.favoriteWinLow : band === 'medium' ? cfg.favoriteWinMedium : cfg.favoriteWinHigh;
+  }
+  return band === 'low' ? cfg.underdogWinLow : band === 'medium' ? cfg.underdogWinMedium : cfg.underdogWinHigh;
 };
 
 const hasValidKnockoutScore = (match: Pick<PlayoffMatch, 'player1Id' | 'player2Id' | 'score1' | 'score2'>) =>
@@ -132,23 +172,27 @@ const setParticipants = (
   match.winnerId = getWinnerId(match);
 };
 
-export const getSummerRankingAutoQualifiedPlayerIds = (ranking: SummerRankingEntry[]) =>
-  ranking
+export const getSummerRankingAutoQualifiedPlayerIds = (ranking: SummerRankingEntry[], config?: SummerRankingRulesConfig) => {
+  const cfg = config ?? DEFAULT_RULES_CONFIG;
+  return ranking
     .filter(entry => entry.qualifiedForMaster)
-    .slice(0, SUMMER_RANKING_MASTER_SIZE)
+    .slice(0, cfg.masterSize)
     .map(entry => entry.player.id);
+};
 
 export const getSummerRankingMasterQualifiedPlayerIds = (
   ranking: SummerRankingEntry[],
   master?: SummerRankingMasterData,
+  config?: SummerRankingRulesConfig,
 ) => {
+  const cfg = config ?? DEFAULT_RULES_CONFIG;
   const manualQualified = Array.isArray(master?.manualQualifiedPlayerIds)
     ? master!.manualQualifiedPlayerIds.filter(Boolean)
     : [];
 
-  return manualQualified.length === SUMMER_RANKING_MASTER_SIZE
+  return manualQualified.length === cfg.masterSize
     ? manualQualified
-    : getSummerRankingAutoQualifiedPlayerIds(ranking);
+    : getSummerRankingAutoQualifiedPlayerIds(ranking, cfg);
 };
 
 export const createSummerRankingMasterBracket = (qualifiedPlayerIds: string[]): PlayoffBracket => {
@@ -379,15 +423,17 @@ const getWeekKey = (date: Date) => {
 
 const getMatchPlayedAt = (match: Match) => match.completedAt ?? match.scheduledTime;
 
-const getParticipationBonus = (playerId: string, matchDate: Date, weeklyMatchCounts: Map<string, number>) => {
+const getParticipationBonus = (playerId: string, matchDate: Date, weeklyMatchCounts: Map<string, number>, config: SummerRankingRulesConfig) => {
   const key = `${playerId}:${getWeekKey(matchDate)}`;
-  return (weeklyMatchCounts.get(key) ?? 0) >= 2 ? 10 : 5;
+  return (weeklyMatchCounts.get(key) ?? 0) >= config.participationWeeklyMinMatches
+    ? config.participationWeeklyBonus
+    : config.participationBase;
 };
 
-const getGameDiffBonus = (scoreDiff: number) => {
-  if (scoreDiff >= 4) return 3;
-  if (scoreDiff === 3) return 2;
-  if (scoreDiff === 2) return 1;
+const getGameDiffBonus = (scoreDiff: number, config: SummerRankingRulesConfig) => {
+  if (scoreDiff >= 4) return config.gameDiffBonus4plus;
+  if (scoreDiff === 3) return config.gameDiffBonus3;
+  if (scoreDiff === 2) return config.gameDiffBonus2;
   return 0;
 };
 
@@ -400,18 +446,22 @@ const countEncounterMatches = (matches: Match[], player1Id: string, player2Id: s
 export const getHeadToHeadCount = (matches: Match[], player1Id: string, player2Id: string) =>
   countEncounterMatches(matches, player1Id, player2Id);
 
-export const getEligibleOpponents = (players: Player[], matches: Match[], playerId: string) =>
-  players.filter(player =>
+export const getEligibleOpponents = (players: Player[], matches: Match[], playerId: string, config?: SummerRankingRulesConfig) => {
+  const limit = config?.headToHeadLimit ?? DEFAULT_RULES_CONFIG.headToHeadLimit;
+  return players.filter(player =>
     player.id !== playerId &&
     player.status === 'confirmed' &&
-    countEncounterMatches(matches, playerId, player.id) < 5
+    countEncounterMatches(matches, playerId, player.id) < limit
   );
+};
 
 export const calculateSummerRanking = (
   players: Player[],
   matches: Match[],
+  config?: SummerRankingRulesConfig,
   now: Date = new Date(),
 ): SummerRankingEntry[] => {
+  const cfg = config ?? DEFAULT_RULES_CONFIG;
   const confirmedPlayers = players.filter(player => player.status === 'confirmed');
   const completedMatches = matches
     .filter(match => match.status === 'completed' && match.score1 !== null && match.score2 !== null)
@@ -468,7 +518,7 @@ export const calculateSummerRanking = (
     const player1PointsBefore = player1Stats.points;
     const player2PointsBefore = player2Stats.points;
     const diff = Math.abs(player1PointsBefore - player2PointsBefore);
-    const band = getSummerRankingDiffBand(diff);
+    const band = getSummerRankingDiffBand(diff, cfg);
     const isPlayer1Favorite = player1PointsBefore >= player2PointsBefore;
     const playedAt = getMatchPlayedAt(match);
     const playedDate = toTimestamp(playedAt);
@@ -476,8 +526,8 @@ export const calculateSummerRanking = (
       playedDatesByPlayer.get(match.player1Id)?.push(playedDate);
       playedDatesByPlayer.get(match.player2Id)?.push(playedDate);
     }
-    const participation1 = Number.isNaN(playedDate) ? 5 : getParticipationBonus(match.player1Id, new Date(playedDate), weeklyMatchCounts);
-    const participation2 = Number.isNaN(playedDate) ? 5 : getParticipationBonus(match.player2Id, new Date(playedDate), weeklyMatchCounts);
+    const participation1 = Number.isNaN(playedDate) ? cfg.participationBase : getParticipationBonus(match.player1Id, new Date(playedDate), weeklyMatchCounts, cfg);
+    const participation2 = Number.isNaN(playedDate) ? cfg.participationBase : getParticipationBonus(match.player2Id, new Date(playedDate), weeklyMatchCounts, cfg);
     const scoreDiff = Math.abs((match.score1 ?? 0) - (match.score2 ?? 0));
 
     player1Stats.matchesPlayed += 1;
@@ -490,10 +540,10 @@ export const calculateSummerRanking = (
     player2Stats.lastMatchAt = playedAt;
 
     if (match.score1 === match.score2) {
-      const favoriteWinRule = FAVORITE_WIN_RULES[band];
-      const underdogWinRule = UNDERDOG_WIN_RULES[band];
-      const player1DrawPoints = (isPlayer1Favorite ? favoriteWinRule.winner : underdogWinRule.winner) / 2;
-      const player2DrawPoints = (!isPlayer1Favorite ? favoriteWinRule.winner : underdogWinRule.winner) / 2;
+      const favWin = band === 'low' ? cfg.favoriteWinLow : band === 'medium' ? cfg.favoriteWinMedium : cfg.favoriteWinHigh;
+      const undWin = band === 'low' ? cfg.underdogWinLow : band === 'medium' ? cfg.underdogWinMedium : cfg.underdogWinHigh;
+      const player1DrawPoints = (isPlayer1Favorite ? favWin : undWin) / 2;
+      const player2DrawPoints = (!isPlayer1Favorite ? favWin : undWin) / 2;
 
       player1Stats.points += player1DrawPoints;
       player2Stats.points += player2DrawPoints;
@@ -510,13 +560,18 @@ export const calculateSummerRanking = (
     const winnerStats = player1Won ? player1Stats : player2Stats;
     const loserStats = player1Won ? player2Stats : player1Stats;
     const winnerWasFavorite = player1Won ? isPlayer1Favorite : !isPlayer1Favorite;
-    const rule = winnerWasFavorite ? FAVORITE_WIN_RULES[band] : UNDERDOG_WIN_RULES[band];
-    const gameDiffBonus = getGameDiffBonus(scoreDiff);
+    const winnerResult = winnerWasFavorite
+      ? (band === 'low' ? cfg.favoriteWinLow : band === 'medium' ? cfg.favoriteWinMedium : cfg.favoriteWinHigh)
+      : (band === 'low' ? cfg.underdogWinLow : band === 'medium' ? cfg.underdogWinMedium : cfg.underdogWinHigh);
+    const loserResult = winnerWasFavorite
+      ? (band === 'low' ? cfg.favoriteLossLow : band === 'medium' ? cfg.favoriteLossMedium : cfg.favoriteLossHigh)
+      : (band === 'low' ? cfg.underdogLossLow : band === 'medium' ? cfg.underdogLossMedium : cfg.underdogLossHigh);
+    const gameDiffBonus = getGameDiffBonus(scoreDiff, cfg);
 
-    winnerStats.points += rule.winner + gameDiffBonus;
-    loserStats.points += rule.loser;
-    winnerStats.resultPoints += rule.winner;
-    loserStats.resultPoints += rule.loser;
+    winnerStats.points += winnerResult + gameDiffBonus;
+    loserStats.points += loserResult;
+    winnerStats.resultPoints += winnerResult;
+    loserStats.resultPoints += loserResult;
     winnerStats.gameDiffBonus += gameDiffBonus;
     winnerStats.wins += 1;
     loserStats.losses += 1;
@@ -536,11 +591,11 @@ export const calculateSummerRanking = (
       let inactivityPenalty = 0;
       for (let index = 1; index < referenceDates.length; index += 1) {
         const gap = Math.floor((referenceDates[index] - referenceDates[index - 1]) / 86400000);
-        inactivityPenalty += Math.floor(gap / 10) * 5;
+        inactivityPenalty += Math.floor(gap / cfg.inactivityMalusDays) * cfg.inactivityMalusPoints;
       }
       const lastReference = referenceDates[referenceDates.length - 1];
       const currentGap = Math.floor((now.getTime() - lastReference) / 86400000);
-      inactivityPenalty += Math.floor(currentGap / 10) * 5;
+      inactivityPenalty += Math.floor(currentGap / cfg.inactivityMalusDays) * cfg.inactivityMalusPoints;
       playerStats.inactivityMalus = inactivityPenalty;
       playerStats.points -= inactivityPenalty;
     }
@@ -587,8 +642,8 @@ export const calculateSummerRanking = (
     .map((entry, index) => ({ ...entry, rank: index + 1 }));
 
   ranking
-    .filter(entry => entry.matchesPlayed >= SUMMER_RANKING_MASTER_MIN_MATCHES)
-    .slice(0, SUMMER_RANKING_MASTER_SIZE)
+    .filter(entry => entry.matchesPlayed >= cfg.masterMinMatches)
+    .slice(0, cfg.masterSize)
     .forEach(entry => {
       entry.qualifiedForMaster = true;
     });
