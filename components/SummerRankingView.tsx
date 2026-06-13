@@ -1097,86 +1097,54 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       )}
 
       {activeTab === 'players' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <h3 className="text-xl font-bold text-accent">Partecipanti ranking ({confirmedPlayers.length})</h3>
-              {isOrganizer && onOpenPlayersAdmin && (
-                <button
-                  onClick={onOpenPlayersAdmin}
-                  className="px-3 py-2 rounded bg-tertiary text-text-primary text-xs font-semibold"
-                >
-                  {playersAdminLabel ?? 'Apri gestione giocatori evento'}
-                </button>
-              )}
-            </div>
-            <table className="w-full min-w-[520px] text-sm">
-              <thead>
-                <tr className="text-left border-b border-tertiary text-text-secondary">
-                  <th className="py-3 pr-3">Giocatore</th>
-                  <th className="py-3 pr-3">Telefono</th>
-                  <th className="py-3 pr-3">Punti iniziali</th>
-                  {isOrganizer && <th className="py-3 pr-3">Azioni</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {confirmedPlayers.map(player => (
-                  <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
-                    <td className="py-3 pr-3 font-semibold">{player.name}</td>
-                    <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
-                    <td className="py-3 pr-3 text-text-secondary">{player.summerRankingStartPoints ?? 0}</td>
-                    {isOrganizer && (
-                      <td className="py-3 pr-3">
-                        <button
-                          onClick={() => handleRemoveParticipant(player.id)}
-                          className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
-                        >
-                          Rimuovi dal ranking
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-                {confirmedPlayers.length === 0 && (
-                  <tr>
-                    <td colSpan={isOrganizer ? 4 : 3} className="py-8 text-center text-text-secondary">
-                      Nessun partecipante nel ranking.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+        <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="text-xl font-bold text-accent">Partecipanti ranking ({confirmedPlayers.length})</h3>
+            {isOrganizer && onOpenPlayersAdmin && (
+              <button
+                onClick={onOpenPlayersAdmin}
+                className="px-3 py-2 rounded bg-tertiary text-text-primary text-xs font-semibold"
+              >
+                {playersAdminLabel ?? 'Apri gestione giocatori evento'}
+              </button>
+            )}
           </div>
-
-          {isOrganizer && (
-            <div className="bg-secondary rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-accent">Aggiungi dal database giocatori</h3>
-              <p className="text-text-secondary mt-1 text-sm">
-                L&apos;archivio globale resta separato: qui gestisci solo l&apos;appartenenza a questo ranking.
-              </p>
-              <div className="mt-4 space-y-3 max-h-[460px] overflow-y-auto pr-1">
-                {addablePlayers.map(player => (
-                  <div key={player.id} className="flex items-center justify-between gap-3 bg-primary rounded-lg border border-tertiary p-3">
-                    <div>
-                      <div className="font-semibold">{player.name}</div>
-                      <div className="text-xs text-text-secondary">{player.phone || 'Telefono non inserito'}</div>
-                    </div>
-                    <button
-                      onClick={() => handleAddParticipant(player.id)}
-                      className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
-                    >
-                      Aggiungi
-                    </button>
-                  </div>
-                ))}
-                {addablePlayers.length === 0 && (
-                  <div className="text-sm text-text-secondary">
-                    Tutti i giocatori confermati sono già presenti nel ranking.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          <table className="w-full min-w-[520px] text-sm">
+            <thead>
+              <tr className="text-left border-b border-tertiary text-text-secondary">
+                <th className="py-3 pr-3">Giocatore</th>
+                <th className="py-3 pr-3">Telefono</th>
+                <th className="py-3 pr-3">Punti iniziali</th>
+                {isOrganizer && <th className="py-3 pr-3">Azioni</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {confirmedPlayers.map(player => (
+                <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
+                  <td className="py-3 pr-3 font-semibold">{player.name}</td>
+                  <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
+                  <td className="py-3 pr-3 text-text-secondary">{player.summerRankingStartPoints ?? 0}</td>
+                  {isOrganizer && (
+                    <td className="py-3 pr-3">
+                      <button
+                        onClick={() => handleRemoveParticipant(player.id)}
+                        className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
+                      >
+                        Rimuovi dal ranking
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {confirmedPlayers.length === 0 && (
+                <tr>
+                  <td colSpan={isOrganizer ? 4 : 3} className="py-8 text-center text-text-secondary">
+                    Nessun partecipante nel ranking.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
 
