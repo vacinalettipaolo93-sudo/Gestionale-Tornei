@@ -201,6 +201,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [masterBookingSlotIdByMatch, setMasterBookingSlotIdByMatch] = useState<Record<string, string>>({});
   const [editingMasterMatchId, setEditingMasterMatchId] = useState<string | null>(null);
   const [masterScoreForm, setMasterScoreForm] = useState<MasterScoreFormState>({ matchId: null, score1: '', score2: '' });
+  const [challengeModal, setChallengeModal] = useState<{ opponentId: string; opponentName: string; scheduledTime: string; location: string; field: string } | null>(null);
+  const [challengeError, setChallengeError] = useState<string | null>(null);
+  const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
+  const [isSavingChallenge, setIsSavingChallenge] = useState(false);
 
   useEffect(() => {
     setRulesConfigForm(normalizeRulesConfig(rankingData.rulesConfig));
@@ -420,6 +424,74 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       ...rankingData,
       matches: rankingData.matches.filter(match => match.id !== matchId),
     });
+  };
+
+  const openChallengeModal = (opponentId: string, opponentName: string) => {
+    setChallengeModal({ opponentId, opponentName, scheduledTime: '', location: '', field: '' });
+    setChallengeError(null);
+    setChallengeSuccess(null);
+  };
+
+  const closeChallengeModal = () => {
+    setChallengeModal(null);
+    setChallengeError(null);
+    setChallengeSuccess(null);
+  };
+
+  const handleCreateChallenge = async () => {
+    if (!challengeModal || !loggedInPlayerId || !currentPlayer) return;
+    const { opponentId, scheduledTime, location, field } = challengeModal;
+
+    if (!scheduledTime) {
+      setChallengeError('Seleziona una data e un orario per la sfida.');
+      return;
+    }
+
+    const chosenDate = new Date(scheduledTime);
+    if (Number.isNaN(chosenDate.getTime())) {
+      setChallengeError('Data o orario non validi.');
+      return;
+    }
+
+    if (opponentId === loggedInPlayerId) {
+      setChallengeError('Non puoi sfidare te stesso.');
+      return;
+    }
+
+    if (getHeadToHeadCount(rankingData.matches, loggedInPlayerId, opponentId) >= effectiveConfig.headToHeadLimit) {
+      setChallengeError(`Hai già raggiunto il limite massimo di ${effectiveConfig.headToHeadLimit} scontri con questo avversario.`);
+      return;
+    }
+
+    const nextMatch: Match = {
+      id: generateId('srn-challenge'),
+      player1Id: loggedInPlayerId,
+      player2Id: opponentId,
+      score1: null,
+      score2: null,
+      status: 'scheduled',
+      scheduledTime: chosenDate.toISOString(),
+      ...(location.trim() ? { location: location.trim() } : {}),
+      ...(field.trim() ? { field: field.trim() } : {}),
+    };
+
+    setIsSavingChallenge(true);
+    setChallengeError(null);
+    try {
+      await onSaveRankingData({
+        ...rankingData,
+        matches: [...rankingData.matches, nextMatch],
+      });
+      setChallengeSuccess('Sfida programmata con successo! La partita è ora visibile nel tab Partite.');
+      setTimeout(() => {
+        closeChallengeModal();
+      }, 1500);
+    } catch (err) {
+      console.error('Errore creazione sfida', err);
+      setChallengeError('Salvataggio non riuscito. Riprova.');
+    } finally {
+      setIsSavingChallenge(false);
+    }
   };
 
   const persistMasterQualifiedPlayers = async (qualifiedPlayerIds: string[]) => {
@@ -1071,12 +1143,24 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                       )}
                     </td>
                     <td className="py-4 pr-3">
-                      <button
-                        onClick={() => onPlayerContact(entry.player)}
-                        className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
-                      >
-                        Contatta
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => onPlayerContact(entry.player)}
+                          className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
+                        >
+                          Contatta
+                        </button>
+                        {!isCurrentPlayerRow && currentPlayer && loggedInPlayerId && (
+                          <button
+                            onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
+                            disabled={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit}
+                            className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit ? `Limite di ${effectiveConfig.headToHeadLimit} scontri raggiunto` : `Sfida ${entry.player.name}`}
+                          >
+                            Sfida
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   );
@@ -1192,6 +1276,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                           <>
                             <div>{formatDateTime(match.scheduledTime)}</div>
                             <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>
+                          </>
+                        ) : match.scheduledTime ? (
+                          <>
+                            <div>{formatDateTime(match.scheduledTime)}</div>
+                            {match.location && <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>}
+                            <div className="text-text-secondary italic">Sfida diretta</div>
                           </>
                         ) : 'Nessuno slot'}
                       </td>
@@ -1949,6 +2039,82 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             >
               Ripristina
             </button>
+          </div>
+        </div>
+      )}
+
+      {challengeModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) closeChallengeModal(); }}
+        >
+          <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <h3 className="text-xl font-bold text-accent">Programma sfida</h3>
+            <p className="text-sm text-text-secondary">
+              Stai sfidando <span className="font-semibold text-text-primary">{challengeModal.opponentName}</span>. Scegli la data e l'orario in cui vuoi giocare.
+            </p>
+
+            <div className="space-y-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Data e orario <span className="text-red-400">*</span></span>
+                <input
+                  type="datetime-local"
+                  value={challengeModal.scheduledTime}
+                  onChange={e => setChallengeModal(prev => prev ? { ...prev, scheduledTime: e.target.value } : prev)}
+                  className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Luogo (opzionale)</span>
+                <input
+                  type="text"
+                  value={challengeModal.location}
+                  onChange={e => setChallengeModal(prev => prev ? { ...prev, location: e.target.value } : prev)}
+                  placeholder="es. Centro sportivo"
+                  className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Campo (opzionale)</span>
+                <input
+                  type="text"
+                  value={challengeModal.field}
+                  onChange={e => setChallengeModal(prev => prev ? { ...prev, field: e.target.value } : prev)}
+                  placeholder="es. Campo 1"
+                  className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                />
+              </label>
+            </div>
+
+            {challengeError && (
+              <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                {challengeError}
+              </div>
+            )}
+            {challengeSuccess && (
+              <div className="rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm text-green-200">
+                {challengeSuccess}
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                onClick={closeChallengeModal}
+                disabled={isSavingChallenge}
+                className="px-4 py-2 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleCreateChallenge}
+                disabled={isSavingChallenge || !challengeModal.scheduledTime}
+                className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isSavingChallenge ? 'Salvataggio...' : 'Programma sfida'}
+              </button>
+            </div>
           </div>
         </div>
       )}
