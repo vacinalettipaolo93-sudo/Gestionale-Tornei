@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, addDoc, deleteDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, getDocs, query, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { type Event, type Player, type SummerRankingData } from '../types';
 import { DEFAULT_SUMMER_RANKING_RULES } from '../utils/summerRanking';
@@ -29,6 +29,29 @@ const normalizeEventRankingData = (data?: SummerRankingData): SummerRankingData 
   availabilities: data?.availabilities ?? {},
   master: data?.master,
 });
+
+const sanitizeRankingDataForFirestore = (data: SummerRankingData): SummerRankingData => {
+  const payload: SummerRankingData = {
+    slots: Array.isArray(data.slots) ? data.slots : [],
+    matches: Array.isArray(data.matches) ? data.matches : [],
+    participantIds: Array.isArray(data.participantIds) ? Array.from(new Set(data.participantIds)) : [],
+    rules: data.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+    availabilities: data.availabilities ?? {},
+  };
+
+  if (data.rulesConfig) payload.rulesConfig = data.rulesConfig;
+  if (data.master) {
+    const nextMaster: NonNullable<SummerRankingData['master']> = {};
+    if (Array.isArray(data.master.manualQualifiedPlayerIds)) nextMaster.manualQualifiedPlayerIds = data.master.manualQualifiedPlayerIds;
+    if (Array.isArray(data.master.generatedQualifiedPlayerIds)) nextMaster.generatedQualifiedPlayerIds = data.master.generatedQualifiedPlayerIds;
+    if (data.master.bracket !== undefined) nextMaster.bracket = data.master.bracket;
+    if (Array.isArray(data.master.matches)) nextMaster.matches = data.master.matches;
+    if (data.master.generatedAt !== undefined) nextMaster.generatedAt = data.master.generatedAt;
+    payload.master = nextMaster;
+  }
+
+  return payload;
+};
 
 const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   players,
@@ -82,11 +105,10 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     const alreadyInEventPlayers = Boolean(existingEventPlayer);
     const joinedAt = player.summerRankingJoinedAt ?? existingEventPlayer?.summerRankingJoinedAt ?? new Date().toISOString();
     const eventPlayer: Player = {
-      ...(existingEventPlayer ?? {}),
       id: player.id,
       name: player.name,
-      phone: player.phone ?? '',
-      avatar: player.avatar,
+      phone: player.phone ?? existingEventPlayer?.phone ?? '',
+      avatar: player.avatar ?? existingEventPlayer?.avatar ?? createInitialsAvatar(player.name),
       status: 'confirmed',
       summerRankingStartPoints: startPoints,
       summerRankingJoinedAt: joinedAt,
@@ -98,29 +120,26 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       ...currentRankingData,
       participantIds,
     };
+    const eventPayload = {
+      eventType: 'ranking_singolare' as const,
+      players: nextPlayers,
+      rankingData: sanitizeRankingDataForFirestore(nextRankingData),
+    };
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'players', player.id), {
+      summerRankingStartPoints: startPoints,
+      summerRankingJoinedAt: joinedAt,
+    });
+    batch.update(doc(db, 'events', rankingEvent.id), eventPayload);
+    await batch.commit();
 
     setEvents(prev =>
       prev.map(item => item.id === rankingEvent.id ? {
         ...item,
-        eventType: 'ranking_singolare',
-        players: nextPlayers,
-        rankingData: {
-          ...normalizeEventRankingData(item.rankingData),
-          participantIds,
-        },
+        ...eventPayload,
       } : item),
     );
-    await Promise.all([
-      updateDoc(doc(db, 'players', player.id), {
-        summerRankingStartPoints: startPoints,
-        summerRankingJoinedAt: joinedAt,
-      }),
-      updateDoc(doc(db, 'events', rankingEvent.id), {
-        eventType: 'ranking_singolare',
-        players: nextPlayers,
-        rankingData: nextRankingData,
-      }),
-    ]);
 
     return {
       wasAlreadyParticipant: participantIdSet.has(player.id),
