@@ -558,7 +558,7 @@ const App: React.FC = () => {
               onUpdatePlayerStartPoints={updatePlayerSummerRankingStartPoints}
               onOpenPlayersAdmin={isOrganizer ? () => setCurrentView('playersAdmin') : undefined}
               title={`${currentEventState.name} • Ranking tennis singolare`}
-              description="Classifica, partite, master finale, disponibilità, slot e regolamento di questo evento."
+              description="Classifica, partite, master finale, disponibilità e regolamento di questo evento."
               playersAdminLabel="Apri gestione giocatori evento"
             />
           </div>

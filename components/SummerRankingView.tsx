@@ -28,7 +28,7 @@ import {
   syncSummerRankingMasterMatches,
 } from '../utils/summerRanking';
 
-type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'slots' | 'availability' | 'players';
+type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'availability' | 'players';
 type AvailabilityFormState = Omit<SummerPlayerAvailability, 'updatedAt'>;
 type MasterScoreFormState = { matchId: string | null; score1: string; score2: string };
 
@@ -703,7 +703,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           <div>
             <h2 className="text-3xl font-bold text-accent">{title ?? SUMMER_RANKING_NAME}</h2>
             <p className="text-text-secondary mt-1">
-              {description ?? 'Classifica, partite, regolamento, disponibilità e slot prenotabili per questo evento.'}
+              {description ?? 'Classifica, partite, regolamento e disponibilità per questo evento.'}
             </p>
           </div>
           <div className="text-sm text-text-secondary">
@@ -718,7 +718,6 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             ['master', 'Master finale'],
             ['availability', 'Disponibilità'],
             ['rules', 'Regolamento'],
-            ['slots', 'Slot / Prenotazioni'],
             ['players', 'Giocatori'],
           ] as Array<[RankingTab, string]>).map(([tab, label]) => (
             <button
@@ -746,9 +745,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               <div className="text-text-secondary mt-1">Servono almeno {SUMMER_RANKING_MASTER_MIN_MATCHES} partite giocate.</div>
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
-              <div className="text-sm text-text-secondary">Slot disponibili</div>
-              <div className="text-xl font-bold mt-2">{availableSlots.length}</div>
-              <div className="text-text-secondary mt-1">Prenotabili dal tab dedicato.</div>
+              <div className="text-sm text-text-secondary">Partite in programma</div>
+              <div className="text-xl font-bold mt-2">{rankingData.matches.filter(match => match.status === 'scheduled').length}</div>
+              <div className="text-text-secondary mt-1">Prenotazioni attive nel calendario ranking.</div>
             </div>
           </div>
 
@@ -1689,168 +1688,6 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
         </div>
       )}
 
-      {activeTab === 'slots' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <div className="space-y-6">
-            {isOrganizer && (
-              <div className="bg-secondary rounded-xl shadow-lg p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <PlusIcon className="w-5 h-5 text-accent" />
-                  <h3 className="text-xl font-bold text-accent">Aggiungi slot</h3>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <input
-                    type="datetime-local"
-                    value={slotForm.start}
-                    onChange={event => setSlotForm(prev => ({ ...prev, start: event.target.value }))}
-                    className="bg-primary border border-tertiary rounded-lg p-2"
-                  />
-                  <input
-                    type="text"
-                    value={slotForm.location}
-                    onChange={event => setSlotForm(prev => ({ ...prev, location: event.target.value }))}
-                    placeholder="Luogo"
-                    className="bg-primary border border-tertiary rounded-lg p-2"
-                  />
-                  <input
-                    type="text"
-                    value={slotForm.field}
-                    onChange={event => setSlotForm(prev => ({ ...prev, field: event.target.value }))}
-                    placeholder="Campo"
-                    className="bg-primary border border-tertiary rounded-lg p-2"
-                  />
-                </div>
-                <button
-                  onClick={handleAddSlot}
-                  className="mt-4 px-4 py-2 rounded bg-highlight text-white font-semibold"
-                >
-                  Salva slot
-                </button>
-              </div>
-            )}
-
-            {(canBookAsParticipant || isOrganizer) && (
-              <div className="bg-secondary rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-bold text-accent mb-4">Prenota una partita ranking</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <select
-                    value={bookingForm.slotId}
-                    onChange={event => setBookingForm(prev => ({ ...prev, slotId: event.target.value }))}
-                    className="bg-primary border border-tertiary rounded-lg p-2"
-                  >
-                    <option value="">Seleziona slot</option>
-                    {availableSlots.map(slot => (
-                      <option key={slot.id} value={slot.id}>
-                        {formatDateTime(slot.start)} • {slot.location} {slot.field ? `• ${slot.field}` : ''}
-                      </option>
-                    ))}
-                  </select>
-
-                  {isOrganizer && !loggedInPlayerId ? (
-                    <>
-                      <select
-                        value={bookingForm.player1Id}
-                        onChange={event => setBookingForm(prev => ({ ...prev, player1Id: event.target.value }))}
-                        className="bg-primary border border-tertiary rounded-lg p-2"
-                      >
-                        <option value="">Giocatore 1</option>
-                        {confirmedPlayers.map(player => (
-                          <option key={player.id} value={player.id}>{player.name}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={bookingForm.player2Id}
-                        onChange={event => setBookingForm(prev => ({ ...prev, player2Id: event.target.value }))}
-                        className="bg-primary border border-tertiary rounded-lg p-2"
-                      >
-                        <option value="">Giocatore 2</option>
-                        {confirmedPlayers
-                          .filter(player => player.id !== bookingForm.player1Id)
-                          .map(player => (
-                            <option key={player.id} value={player.id}>{player.name}</option>
-                          ))}
-                      </select>
-                    </>
-                  ) : (
-                    <select
-                      value={bookingForm.opponentId}
-                      onChange={event => setBookingForm(prev => ({ ...prev, opponentId: event.target.value }))}
-                      className="bg-primary border border-tertiary rounded-lg p-2"
-                    >
-                      <option value="">Seleziona avversario</option>
-                      {eligibleOpponents.map(player => (
-                        <option key={player.id} value={player.id}>
-                          {player.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <p className="text-xs text-text-secondary mt-3">
-                  Ogni coppia di giocatori può prenotare al massimo 5 incontri.
-                </p>
-                <button
-                  onClick={handleCreateBookedMatch}
-                  className="mt-4 px-4 py-2 rounded bg-highlight text-white font-semibold"
-                >
-                  Conferma prenotazione
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-6">
-            <div className="bg-secondary rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-accent mb-4">Slot disponibili</h3>
-              <ul className="space-y-3">
-                {availableSlots.map(slot => (
-                  <li key={slot.id} className="flex items-center justify-between gap-4 bg-primary rounded-lg p-3 border border-tertiary">
-                    <div>
-                      <div className="font-semibold">{formatDateTime(slot.start)}</div>
-                      <div className="text-xs text-text-secondary">{slot.location} {slot.field ? `• ${slot.field}` : ''}</div>
-                    </div>
-                    {isOrganizer && (
-                      <button
-                        onClick={() => handleDeleteSlot(slot.id)}
-                        className="p-2 rounded bg-red-600 text-white"
-                        aria-label="Elimina slot"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
-                    )}
-                  </li>
-                ))}
-                {availableSlots.length === 0 && (
-                  <li className="text-text-secondary">Nessuno slot disponibile.</li>
-                )}
-              </ul>
-            </div>
-
-            <div className="bg-secondary rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-accent mb-4">Prenotazioni attive</h3>
-              <ul className="space-y-3">
-                {rankingData.matches
-                  .filter(match => match.status === 'scheduled')
-                  .slice()
-                  .sort((a, b) => new Date(a.scheduledTime ?? 0).getTime() - new Date(b.scheduledTime ?? 0).getTime())
-                  .map(match => (
-                    <li key={match.id} className="bg-primary rounded-lg p-3 border border-tertiary">
-                      <div className="font-semibold">
-                        {playerMap.get(match.player1Id)?.name ?? match.player1Id} vs {playerMap.get(match.player2Id)?.name ?? match.player2Id}
-                      </div>
-                      <div className="text-xs text-text-secondary mt-1">
-                        {formatDateTime(match.scheduledTime)} • {match.location} {match.field ? `• ${match.field}` : ''}
-                      </div>
-                    </li>
-                  ))}
-                {rankingData.matches.every(match => match.status !== 'scheduled') && (
-                  <li className="text-text-secondary">Nessuna prenotazione attiva.</li>
-                )}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { type Event, type Tournament, type TimeSlot, type Match } from '../types';
+import React, { useState, useEffect } from 'react';
+import { type Event, type Tournament, type Match } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
-import TimeSlots from './TimeSlots';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
 import { TrashIcon, PlusIcon } from './Icons';
@@ -12,7 +11,7 @@ interface EventViewProps {
   // accept optional initial tab and groupId when invoked
   onSelectTournament: (
     tournament: Tournament,
-    initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability',
+    initialTab?: 'standings' | 'matches' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability',
     initialGroupId?: string
   ) => void;
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
@@ -22,8 +21,7 @@ interface EventViewProps {
 
 const makeId = () => `${Date.now()}${Math.floor(Math.random() * 10000)}`;
 
-const generateSlotId = () => 'slot_' + Math.random().toString(36).slice(2, 10);
-type AdminEventSection = 'tournaments' | 'slots' | 'rules' | 'groupRules' | 'matchControl';
+type AdminEventSection = 'tournaments' | 'rules' | 'groupRules' | 'matchControl';
 
 const EventView: React.FC<EventViewProps> = ({
   event,
@@ -48,7 +46,6 @@ const EventView: React.FC<EventViewProps> = ({
   const [editTournamentName, setEditTournamentName] = useState<string>('');
   const [editTournamentLoading, setEditTournamentLoading] = useState<boolean>(false);
   const [activeAdminSection, setActiveAdminSection] = useState<AdminEventSection>('tournaments');
-  const slotsPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setRulesDraft(event.rules ?? "");
@@ -227,13 +224,6 @@ const EventView: React.FC<EventViewProps> = ({
     return g?.id;
   };
 
-  // Ordina gli slot globali per data/ora (campo `start`) prima di passarli al componente TimeSlots
-  const sortedGlobalTimeSlots = (event.globalTimeSlots ?? []).slice().sort((a, b) => {
-    const ta = a?.start ? new Date(a.start).getTime() : 0;
-    const tb = b?.start ? new Date(b.start).getTime() : 0;
-    return ta - tb;
-  });
-
   return (
     <div>
       <div className="bg-primary p-6 rounded-xl shadow-lg mb-6">
@@ -267,13 +257,6 @@ const EventView: React.FC<EventViewProps> = ({
               onClick={() => setActiveAdminSection('tournaments')}
             >
               Tornei
-            </button>
-
-            <button
-              className={`px-3 py-1 rounded text-text-primary text-sm transition-colors ${activeAdminSection === 'slots' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90'}`}
-              onClick={() => setActiveAdminSection('slots')}
-            >
-              Slot orari
             </button>
 
             <button
@@ -384,13 +367,6 @@ const EventView: React.FC<EventViewProps> = ({
                       Consolazione
                     </button>
                     <button
-                      onClick={() => onSelectTournament(tournament, 'slot', myGroupId)}
-                      className="text-sm bg-tertiary/60 text-white px-3 py-1 rounded hover:bg-tertiary transition"
-                      title="Apri il tab Slot Disponibili"
-                    >
-                      Slot Disponibili
-                    </button>
-                    <button
                       onClick={(e) => { e.stopPropagation(); onSelectTournament(tournament, 'availability'); }}
                       className="px-3 py-1 rounded-md bg-tertiary text-text-primary text-sm font-semibold hover:bg-tertiary/90 transition"
                     >
@@ -431,23 +407,6 @@ const EventView: React.FC<EventViewProps> = ({
             );
           })}
         </div>
-      </div>
-      )}
-
-      {/* SLOT ORARI GLOBALI (solo organizzatore) - top anchor */}
-      {(!isOrganizer || activeAdminSection === 'slots') && (
-      <div ref={slotsPanelRef} className="mb-10 mt-8" id="slots-top">
-        <h2 className="text-2xl font-bold mb-4 text-white">Slot Orari Globali</h2>
-        <TimeSlots
-          event={event}
-          tournament={undefined}
-          setEvents={setEvents}
-          isOrganizer={isOrganizer}
-          loggedInPlayerId={loggedInPlayerId}
-          selectedGroupId={undefined}
-          globalTimeSlots={sortedGlobalTimeSlots}
-          onSelectTournament={onSelectTournament}
-        />
       </div>
       )}
 

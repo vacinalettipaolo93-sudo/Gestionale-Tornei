@@ -19,7 +19,6 @@ import TournamentSettings from './TournamentSettings';
 import Playoffs from './Playoffs';
 import ConsolationBracket from './ConsolationBracket';
 import PlayerManagement from './PlayerManagement';
-import AvailableSlotsList from './AvailableSlotsList';
 import AvailabilityTab from './AvailabilityTab';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
@@ -31,7 +30,7 @@ interface TournamentViewProps {
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   isOrganizer: boolean;
   loggedInPlayerId?: string;
-  initialActiveTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability';
+  initialActiveTab?: 'standings' | 'matches' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability';
   initialSelectedGroupId?: string;
   onPlayerContact?: (player: Player | { phone?: string }) => void;
 }
@@ -192,7 +191,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   );
   const selectedGroup = tournament.groups.find(g => g.id === selectedGroupId);
 
-  const [activeTab, setActiveTab] = useState<'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability'>(
+  const [activeTab, setActiveTab] = useState<'standings' | 'matches' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players' | 'availability'>(
     (initialActiveTab ?? 'standings') as any
   );
 
@@ -997,14 +996,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
         >
           Partite
         </button>
-        <button onClick={() => setActiveTab('slot')}
-          className={`px-4 py-2 rounded-full ${activeTab === 'slot'
-            ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg'
-            : 'bg-transparent text-accent'
-          }`}
-        >
-          Slot Disponibili
-        </button>
         {!isPadel && (
           <button onClick={() => setActiveTab('availability')}
             className={`px-4 py-2 rounded-full ${activeTab === 'availability'
@@ -1266,52 +1257,6 @@ const TournamentView: React.FC<TournamentViewProps> = ({
               </Portal>
             )}
           </div>
-        )}
-
-        {activeTab === 'slot' && (
-          <>
-            <AvailableSlotsList
-              event={event}
-              tournament={tournament}
-              userId={loggedInPlayerId}
-              onClickBook={handleClickBookSlot}
-              matchesPending={myPendingMatches}
-            />
-            {slotToBook && myPendingMatches.length > 0 && (
-              <Portal>
-                <div className={modalBackdrop} role="dialog" aria-modal="true">
-                  <div ref={slotToBookModalRef} style={slotToBookModalStyle} className="bg-secondary p-6 rounded-xl shadow-lg w-full max-w-sm border border-tertiary">
-                    <h4 className="mb-4 font-bold text-lg text-accent">Prenota Slot</h4>
-                    <div className="mb-2">
-                      <span className="font-semibold">Slot:</span> {new Date(slotToBook.start).toLocaleString('it-IT')}
-                      {slotToBook.location && <> – <span className="font-semibold">{slotToBook.location}</span></>}
-                      {slotToBook.field && <> – <span>{slotToBook.field}</span></>}
-                    </div>
-                    <div className="flex flex-col gap-4 mt-2">
-                      <span className="font-semibold mb-2">Scegli partita da prenotare:</span>
-                      {myPendingMatches.map(m => (
-                        <button
-                          key={m.id}
-                          className="w-full bg-accent hover:bg-highlight text-white rounded-lg px-4 py-2 mb-2 font-bold"
-                          onClick={(e) => {
-                            const el = e.currentTarget as HTMLElement;
-                            el.focus();
-                            const rect = el.getBoundingClientRect();
-                            e.stopPropagation();
-                            setSlotToBookTriggerRect(rect);
-                            handleConfirmBookSlot(m.id);
-                          }}
-                        >
-                          {getCompetitorName(event, tournament, m.player1Id)} vs {getCompetitorName(event, tournament, m.player2Id)}
-                        </button>
-                      ))}
-                    </div>
-                    <button onClick={() => { setSlotToBook(null); setSlotToBookTriggerRect(null); }} className="mt-4 bg-tertiary px-4 py-2 rounded">Annulla</button>
-                  </div>
-                </div>
-              </Portal>
-            )}
-          </>
         )}
 
         {activeTab === 'participants' && !isOrganizer && (
