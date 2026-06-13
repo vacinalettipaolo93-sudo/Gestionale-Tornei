@@ -8,85 +8,29 @@ import {
   type SummerPlayerAvailability,
   type SummerRankingData,
   type SummerRankingMasterMatch,
+  type SummerRankingRulesConfig,
   type TimeSlot,
 } from '../types';
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon } from './Icons';
 import {
-  DEFAULT_SUMMER_RANKING_RULES,
   SUMMER_RANKING_NAME,
   calculateSummerRanking,
   createSummerRankingMasterBracket,
+  generateRulesText,
   getSummerRankingAutoQualifiedPlayerIds,
   getEligibleOpponents,
   getHeadToHeadCount,
   getSummerRankingMasterQualifiedPlayerIds,
   getSummerRankingWinPoints,
+  normalizeRulesConfig,
   recomputeSummerRankingMasterBracket,
   removePlayerFromSummerRankingMaster,
-  SUMMER_RANKING_MASTER_MIN_MATCHES,
-  SUMMER_RANKING_MASTER_SIZE,
   syncSummerRankingMasterMatches,
 } from '../utils/summerRanking';
 
 type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'settings' | 'availability' | 'players';
 type AvailabilityFormState = Omit<SummerPlayerAvailability, 'updatedAt'>;
 type MasterScoreFormState = { matchId: string | null; score1: string; score2: string };
-type RulesFormState = {
-  title: string;
-  rankingScope: string;
-  startingPoints: string;
-  diffBands: string;
-  favoriteWin: string;
-  underdogWin: string;
-  drawRule: string;
-  participationBonus: string;
-  gameDiffBonus: string;
-  inactivityMalus: string;
-  masterRule: string;
-  headToHeadLimit: string;
-};
-
-const getRuleLineText = (line?: string) => (line ?? '').replace(/^•\s*/, '').trim();
-const getDefaultRuleLines = () => DEFAULT_SUMMER_RANKING_RULES.split('\n');
-const parseRulesFormState = (rulesText?: string): RulesFormState => {
-  const lines = (rulesText ?? DEFAULT_SUMMER_RANKING_RULES).split('\n');
-  const defaults = getDefaultRuleLines();
-  const pickLine = (index: number, fallbackIndex = index) => lines[index] ?? defaults[fallbackIndex] ?? '';
-
-  return {
-    title: pickLine(0, 0).trim(),
-    rankingScope: getRuleLineText(pickLine(2, 2)),
-    startingPoints: getRuleLineText(pickLine(3, 3)),
-    diffBands: getRuleLineText(pickLine(4, 4)),
-    favoriteWin: getRuleLineText(pickLine(5, 5)),
-    underdogWin: getRuleLineText(pickLine(6, 6)),
-    drawRule: getRuleLineText(pickLine(7, 7)),
-    participationBonus: getRuleLineText(pickLine(8, 8)),
-    gameDiffBonus: getRuleLineText(pickLine(9, 9)),
-    inactivityMalus: getRuleLineText(pickLine(10, 10)),
-    masterRule: getRuleLineText(pickLine(11, 11)),
-    headToHeadLimit: getRuleLineText(pickLine(12, 12)),
-  };
-};
-
-const buildRulesTextFromFormState = (formState: RulesFormState) => {
-  const title = formState.title.trim() || getDefaultRuleLines()[0];
-  const bulletLines = [
-    formState.rankingScope,
-    formState.startingPoints,
-    formState.diffBands,
-    formState.favoriteWin,
-    formState.underdogWin,
-    formState.drawRule,
-    formState.participationBonus,
-    formState.gameDiffBonus,
-    formState.inactivityMalus,
-    formState.masterRule,
-    formState.headToHeadLimit,
-  ].map(line => `• ${line.trim()}`);
-
-  return [title, '', ...bulletLines].join('\n');
-};
 
 const AVAILABILITY_DAYS: Array<{ value: SummerAvailabilityDay; label: string; shortLabel: string }> = [
   { value: 'monday', label: 'Lunedì', shortLabel: 'Lun' },
@@ -232,7 +176,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [bookingForm, setBookingForm] = useState({ slotId: '', opponentId: '', player1Id: '', player2Id: '' });
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [scoreForm, setScoreForm] = useState({ score1: '', score2: '' });
-  const [rulesSettingsForm, setRulesSettingsForm] = useState<RulesFormState>(() => parseRulesFormState(rankingData.rules));
+  const [rulesConfigForm, setRulesConfigForm] = useState<SummerRankingRulesConfig>(() => normalizeRulesConfig(rankingData.rulesConfig));
   const [rulesSettingsError, setRulesSettingsError] = useState<string | null>(null);
   const [rulesSettingsSuccess, setRulesSettingsSuccess] = useState<string | null>(null);
   const [isSavingRulesSettings, setIsSavingRulesSettings] = useState(false);
@@ -250,8 +194,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [masterScoreForm, setMasterScoreForm] = useState<MasterScoreFormState>({ matchId: null, score1: '', score2: '' });
 
   useEffect(() => {
-    setRulesSettingsForm(parseRulesFormState(rankingData.rules));
-  }, [rankingData.rules]);
+    setRulesConfigForm(normalizeRulesConfig(rankingData.rulesConfig));
+  }, [rankingData.rulesConfig]);
 
   const rankingParticipantIds = useMemo(
     () => (Array.isArray(rankingData.participantIds) ? rankingData.participantIds : []),
@@ -276,17 +220,21 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       }, {})
     );
   }, [confirmedPlayers]);
+  const effectiveConfig = useMemo(
+    () => normalizeRulesConfig(rankingData.rulesConfig),
+    [rankingData.rulesConfig],
+  );
   const ranking = useMemo(
-    () => calculateSummerRanking(confirmedPlayers, rankingData.matches),
-    [confirmedPlayers, rankingData.matches],
+    () => calculateSummerRanking(confirmedPlayers, rankingData.matches, effectiveConfig),
+    [confirmedPlayers, rankingData.matches, effectiveConfig],
   );
   const autoQualifiedPlayerIds = useMemo(
-    () => getSummerRankingAutoQualifiedPlayerIds(ranking),
-    [ranking],
+    () => getSummerRankingAutoQualifiedPlayerIds(ranking, effectiveConfig),
+    [ranking, effectiveConfig],
   );
   const currentMasterQualifiedPlayerIds = useMemo(
-    () => getSummerRankingMasterQualifiedPlayerIds(ranking, rankingData.master),
-    [ranking, rankingData.master],
+    () => getSummerRankingMasterQualifiedPlayerIds(ranking, rankingData.master, effectiveConfig),
+    [ranking, rankingData.master, effectiveConfig],
   );
   const playerMap = useMemo(
     () => new Map(players.map(player => [player.id, player])),
@@ -320,8 +268,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const currentPlayer = confirmedPlayers.find(player => player.id === loggedInPlayerId);
   const currentPlayerAvailability = loggedInPlayerId ? rankingData.availabilities?.[loggedInPlayerId] : undefined;
   const eligibleOpponents = useMemo(
-    () => currentPlayer ? getEligibleOpponents(confirmedPlayers, rankingData.matches, currentPlayer.id) : [],
-    [confirmedPlayers, rankingData.matches, currentPlayer],
+    () => currentPlayer ? getEligibleOpponents(confirmedPlayers, rankingData.matches, currentPlayer.id, effectiveConfig) : [],
+    [confirmedPlayers, rankingData.matches, currentPlayer, effectiveConfig],
   );
 
   const canBookAsParticipant = !!currentPlayer;
@@ -388,7 +336,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       : [loggedInPlayerId ?? '', bookingForm.opponentId];
 
     if (!participantIds[0] || !participantIds[1] || participantIds[0] === participantIds[1]) return;
-    if (getHeadToHeadCount(rankingData.matches, participantIds[0], participantIds[1]) >= 5) return;
+    if (getHeadToHeadCount(rankingData.matches, participantIds[0], participantIds[1]) >= effectiveConfig.headToHeadLimit) return;
 
     const nextMatch: Match = {
       id: generateId('srn-match'),
@@ -467,7 +415,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
   const persistMasterQualifiedPlayers = async (qualifiedPlayerIds: string[]) => {
     const normalizedQualifiedPlayerIds = qualifiedPlayerIds.filter(Boolean);
-    if (normalizedQualifiedPlayerIds.length !== SUMMER_RANKING_MASTER_SIZE) return;
+    if (normalizedQualifiedPlayerIds.length !== effectiveConfig.masterSize) return;
 
     const manualQualifiedPlayerIds = arraysEqual(normalizedQualifiedPlayerIds, autoQualifiedPlayerIds)
       ? undefined
@@ -483,7 +431,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const handleGenerateMaster = async () => {
-    if (!isOrganizer || masterQualifiedDraft.length !== SUMMER_RANKING_MASTER_SIZE) return;
+    if (!isOrganizer || masterQualifiedDraft.length !== effectiveConfig.masterSize) return;
 
     const manualQualifiedPlayerIds = arraysEqual(masterQualifiedDraft, autoQualifiedPlayerIds)
       ? undefined
@@ -622,55 +570,38 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const hasRulesSettingsChanges = useMemo(
-    () => buildRulesTextFromFormState(rulesSettingsForm).trim() !== (rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES).trim(),
-    [rulesSettingsForm, rankingData.rules],
+    () => JSON.stringify(rulesConfigForm) !== JSON.stringify(effectiveConfig),
+    [rulesConfigForm, effectiveConfig],
   );
 
-  const updateRulesSetting = (key: keyof RulesFormState, value: string) => {
-    setRulesSettingsForm(prev => ({ ...prev, [key]: value }));
+  const updateRulesConfig = (key: keyof SummerRankingRulesConfig, rawValue: string) => {
+    const parsed = Number(rawValue);
+    if (!Number.isNaN(parsed)) {
+      setRulesConfigForm(prev => ({ ...prev, [key]: parsed }));
+    }
     setRulesSettingsError(null);
     setRulesSettingsSuccess(null);
   };
 
   const resetRulesSettings = () => {
-    setRulesSettingsForm(parseRulesFormState(rankingData.rules));
+    setRulesConfigForm(normalizeRulesConfig(rankingData.rulesConfig));
     setRulesSettingsError(null);
     setRulesSettingsSuccess(null);
   };
 
   const handleSaveRulesSettings = async () => {
-    const requiredValues: Array<keyof RulesFormState> = [
-      'title',
-      'rankingScope',
-      'startingPoints',
-      'diffBands',
-      'favoriteWin',
-      'underdogWin',
-      'drawRule',
-      'participationBonus',
-      'gameDiffBonus',
-      'inactivityMalus',
-      'masterRule',
-      'headToHeadLimit',
-    ];
-    const hasEmptyField = requiredValues.some(field => !rulesSettingsForm[field].trim());
-    if (hasEmptyField) {
-      setRulesSettingsError('Compila tutti i campi del regolamento prima di salvare.');
-      setRulesSettingsSuccess(null);
-      return;
-    }
-
     setIsSavingRulesSettings(true);
     setRulesSettingsError(null);
     setRulesSettingsSuccess(null);
     try {
       await onSaveRankingData({
         ...rankingData,
-        rules: buildRulesTextFromFormState(rulesSettingsForm),
+        rulesConfig: rulesConfigForm,
+        rules: generateRulesText(rulesConfigForm),
       });
-      setRulesSettingsSuccess('Impostazioni regolamento salvate con successo.');
+      setRulesSettingsSuccess('Impostazioni salvate con successo. La classifica e il regolamento sono stati aggiornati.');
     } catch (error) {
-      console.error('Errore salvataggio impostazioni regolamento', error);
+      console.error('Errore salvataggio impostazioni', error);
       setRulesSettingsError('Salvataggio non riuscito. Riprova.');
     } finally {
       setIsSavingRulesSettings(false);
@@ -777,9 +708,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   );
   const hasValidMasterDraft = useMemo(
     () =>
-      normalizedMasterQualifiedDraft.length === SUMMER_RANKING_MASTER_SIZE &&
-      new Set(normalizedMasterQualifiedDraft).size === SUMMER_RANKING_MASTER_SIZE,
-    [normalizedMasterQualifiedDraft],
+      normalizedMasterQualifiedDraft.length === effectiveConfig.masterSize &&
+      new Set(normalizedMasterQualifiedDraft).size === effectiveConfig.masterSize,
+    [normalizedMasterQualifiedDraft, effectiveConfig.masterSize],
   );
   const generatedMasterQualifiedPlayerIds = rankingData.master?.generatedQualifiedPlayerIds ?? [];
   const masterNeedsRegeneration = !!masterBracket?.isGenerated && !arraysEqual(currentMasterQualifiedPlayerIds, generatedMasterQualifiedPlayerIds);
@@ -848,8 +779,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Master finale</div>
-              <div className="text-xl font-bold mt-2">{topEightQualified.length}/{SUMMER_RANKING_MASTER_SIZE} qualificati</div>
-              <div className="text-text-secondary mt-1">Servono almeno {SUMMER_RANKING_MASTER_MIN_MATCHES} partite giocate.</div>
+              <div className="text-xl font-bold mt-2">{topEightQualified.length}/{effectiveConfig.masterSize} qualificati</div>
+              <div className="text-text-secondary mt-1">Servono almeno {effectiveConfig.masterMinMatches} partite giocate.</div>
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Partite in programma</div>
@@ -955,7 +886,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   const availabilitySummary = getAvailabilitySummary(rankingData.availabilities?.[entry.player.id]);
                   const isCurrentPlayerRow = entry.player.id === loggedInPlayerId;
                   const pointsToWin = currentPlayerRankingEntry
-                    ? getSummerRankingWinPoints(currentPlayerRankingEntry.points, entry.points)
+                    ? getSummerRankingWinPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
                     : 0;
 
                   return (
@@ -1287,14 +1218,14 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Qualificati automatici</div>
-              <div className="text-xl font-bold mt-2">{autoQualifiedPlayerIds.length}/{SUMMER_RANKING_MASTER_SIZE}</div>
-              <div className="text-text-secondary mt-1">Top {SUMMER_RANKING_MASTER_SIZE} con almeno {SUMMER_RANKING_MASTER_MIN_MATCHES} partite.</div>
+              <div className="text-xl font-bold mt-2">{autoQualifiedPlayerIds.length}/{effectiveConfig.masterSize}</div>
+              <div className="text-text-secondary mt-1">Top {effectiveConfig.masterSize} con almeno {effectiveConfig.masterMinMatches} partite.</div>
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Selezione attuale</div>
-              <div className="text-xl font-bold mt-2">{currentMasterQualifiedPlayerIds.length}/{SUMMER_RANKING_MASTER_SIZE}</div>
+              <div className="text-xl font-bold mt-2">{currentMasterQualifiedPlayerIds.length}/{effectiveConfig.masterSize}</div>
               <div className="text-text-secondary mt-1">
-                {rankingData.master?.manualQualifiedPlayerIds?.length === SUMMER_RANKING_MASTER_SIZE
+                {rankingData.master?.manualQualifiedPlayerIds?.length === effectiveConfig.masterSize
                   ? 'Override manuale salvato.'
                   : 'Basata sui qualificati automatici.'}
               </div>
@@ -1313,12 +1244,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               <div>
                 <h3 className="text-xl font-bold text-accent">Configurazione Master finale</h3>
                 <p className="text-sm text-text-secondary mt-1">
-                  I primi {SUMMER_RANKING_MASTER_SIZE} vengono proposti automaticamente, ma puoi sostituirli manualmente in caso di assenza o infortunio.
+                  I primi {effectiveConfig.masterSize} vengono proposti automaticamente, ma puoi sostituirli manualmente in caso di assenza o infortunio.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Array.from({ length: SUMMER_RANKING_MASTER_SIZE }).map((_, index) => {
+                {Array.from({ length: effectiveConfig.masterSize }).map((_, index) => {
                   const selectedId = masterQualifiedDraft[index] ?? '';
                   return (
                     <div key={index} className="bg-primary rounded-lg border border-tertiary p-4">
@@ -1359,7 +1290,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
               {!hasValidMasterDraft && (
                 <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm text-yellow-200">
-                  Per salvare o generare il Master servono {SUMMER_RANKING_MASTER_SIZE} giocatori univoci.
+                  Per salvare o generare il Master servono {effectiveConfig.masterSize} giocatori univoci.
                 </div>
               )}
 
@@ -1381,7 +1312,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   onClick={() => setMasterQualifiedDraft(autoQualifiedPlayerIds)}
                   className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold"
                 >
-                  Ripristina top {SUMMER_RANKING_MASTER_SIZE}
+                  Ripristina top {effectiveConfig.masterSize}
                 </button>
                 <button
                   onClick={handleGenerateMaster}
@@ -1758,51 +1689,175 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             <h3 className="text-xl font-bold text-accent">Regolamento ufficiale</h3>
           </div>
           <div className="bg-primary rounded-lg p-4 whitespace-pre-line border border-tertiary">
-            {rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES}
+            {generateRulesText(effectiveConfig)}
           </div>
         </div>
       )}
 
       {activeTab === 'settings' && isOrganizer && (
-        <div className="bg-secondary rounded-xl shadow-lg p-6 space-y-5">
+        <div className="bg-secondary rounded-xl shadow-lg p-6 space-y-6">
           <div>
-            <h3 className="text-xl font-bold text-accent">Impostazioni regolamento ranking</h3>
+            <h3 className="text-xl font-bold text-accent">Impostazioni ranking</h3>
             <p className="text-sm text-text-secondary mt-1">
-              Modifica tutte le regole visualizzate nel tab Regolamento e salva per sincronizzarle subito con tutti gli utenti.
+              Modifica i valori numerici delle regole. Premendo Salva la classifica si ricalcola e il Regolamento si aggiorna automaticamente.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {([
-              ['title', 'Titolo regolamento', false],
-              ['rankingScope', 'Regola: ranking globale', true],
-              ['startingPoints', 'Regola: punteggio iniziale', true],
-              ['diffBands', 'Regola: fasce differenza punti', true],
-              ['favoriteWin', 'Regola: vittoria favorito', true],
-              ['underdogWin', 'Regola: vittoria sfavorito', true],
-              ['drawRule', 'Regola: pareggio', true],
-              ['participationBonus', 'Regola: bonus partecipazione', true],
-              ['gameDiffBonus', 'Regola: bonus differenza game', true],
-              ['inactivityMalus', 'Regola: malus inattività', true],
-              ['masterRule', 'Regola: Master finale', true],
-              ['headToHeadLimit', 'Regola: limite scontri diretti', true],
-            ] as Array<[keyof RulesFormState, string, boolean]>).map(([fieldKey, label, withBullet]) => (
-              <label key={fieldKey} className={`flex flex-col gap-2 ${fieldKey === 'title' ? 'md:col-span-2' : ''}`}>
-                <span className="text-sm font-semibold text-text-secondary">{label}</span>
-                <div className="relative">
-                  {withBullet && (
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary">•</span>
-                  )}
-                  <input
-                    type="text"
-                    value={rulesSettingsForm[fieldKey]}
-                    onChange={event => updateRulesSetting(fieldKey, event.target.value)}
-                    className={`w-full bg-primary border border-tertiary rounded-lg py-2 ${withBullet ? 'pl-7' : 'pl-3'} pr-3`}
-                    placeholder={label}
-                  />
-                </div>
+          {/* Fasce differenza punti */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Fasce differenza punti</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Max punti fascia bassa (0 – N)</span>
+                <input type="number" value={rulesConfigForm.diffBandLowMax} onChange={e => updateRulesConfig('diffBandLowMax', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
-            ))}
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Max punti fascia media (N+1 – M)</span>
+                <input type="number" value={rulesConfigForm.diffBandMediumMax} onChange={e => updateRulesConfig('diffBandMediumMax', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+            </div>
+            <p className="text-xs text-text-secondary">La fascia alta inizia da (fascia media + 1) in su.</p>
+          </div>
+
+          {/* Vittoria favorito */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Se vince il favorito</h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia bassa</span>
+                <input type="number" value={rulesConfigForm.favoriteWinLow} onChange={e => updateRulesConfig('favoriteWinLow', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia bassa</span>
+                <input type="number" value={rulesConfigForm.favoriteLossLow} onChange={e => updateRulesConfig('favoriteLossLow', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia media</span>
+                <input type="number" value={rulesConfigForm.favoriteWinMedium} onChange={e => updateRulesConfig('favoriteWinMedium', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia media</span>
+                <input type="number" value={rulesConfigForm.favoriteLossMedium} onChange={e => updateRulesConfig('favoriteLossMedium', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia alta</span>
+                <input type="number" value={rulesConfigForm.favoriteWinHigh} onChange={e => updateRulesConfig('favoriteWinHigh', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia alta</span>
+                <input type="number" value={rulesConfigForm.favoriteLossHigh} onChange={e => updateRulesConfig('favoriteLossHigh', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+            </div>
+          </div>
+
+          {/* Vittoria sfavorito */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Se vince lo sfavorito</h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia bassa</span>
+                <input type="number" value={rulesConfigForm.underdogWinLow} onChange={e => updateRulesConfig('underdogWinLow', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia bassa</span>
+                <input type="number" value={rulesConfigForm.underdogLossLow} onChange={e => updateRulesConfig('underdogLossLow', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia media</span>
+                <input type="number" value={rulesConfigForm.underdogWinMedium} onChange={e => updateRulesConfig('underdogWinMedium', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia media</span>
+                <input type="number" value={rulesConfigForm.underdogLossMedium} onChange={e => updateRulesConfig('underdogLossMedium', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia alta</span>
+                <input type="number" value={rulesConfigForm.underdogWinHigh} onChange={e => updateRulesConfig('underdogWinHigh', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia alta</span>
+                <input type="number" value={rulesConfigForm.underdogLossHigh} onChange={e => updateRulesConfig('underdogLossHigh', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+            </div>
+          </div>
+
+          {/* Bonus partecipazione */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus partecipazione</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Bonus base per partita (+)</span>
+                <input type="number" value={rulesConfigForm.participationBase} onChange={e => updateRulesConfig('participationBase', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Bonus settimanale per partita (+)</span>
+                <input type="number" value={rulesConfigForm.participationWeeklyBonus} onChange={e => updateRulesConfig('participationWeeklyBonus', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Min. partite/settimana per bonus</span>
+                <input type="number" min="1" value={rulesConfigForm.participationWeeklyMinMatches} onChange={e => updateRulesConfig('participationWeeklyMinMatches', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+            </div>
+          </div>
+
+          {/* Bonus differenza game */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus differenza game (vincitore)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Scarto 2 game (+)</span>
+                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus2} onChange={e => updateRulesConfig('gameDiffBonus2', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Scarto 3 game (+)</span>
+                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus3} onChange={e => updateRulesConfig('gameDiffBonus3', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Scarto 4+ game (+)</span>
+                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus4plus} onChange={e => updateRulesConfig('gameDiffBonus4plus', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+            </div>
+          </div>
+
+          {/* Malus inattività */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Malus inattività</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Punti malus per periodo (-)</span>
+                <input type="number" min="0" value={rulesConfigForm.inactivityMalusPoints} onChange={e => updateRulesConfig('inactivityMalusPoints', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Giorni senza partite per periodo</span>
+                <input type="number" min="1" value={rulesConfigForm.inactivityMalusDays} onChange={e => updateRulesConfig('inactivityMalusDays', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+            </div>
+          </div>
+
+          {/* Master finale */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Master finale</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Top N qualificati</span>
+                <input type="number" min="2" value={rulesConfigForm.masterSize} onChange={e => updateRulesConfig('masterSize', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Min. partite giocate per qualificarsi</span>
+                <input type="number" min="1" value={rulesConfigForm.masterMinMatches} onChange={e => updateRulesConfig('masterMinMatches', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+            </div>
+          </div>
+
+          {/* Limite scontri */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Limite scontri diretti</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-text-secondary">Max incontri vs stesso avversario</span>
+                <input type="number" min="1" value={rulesConfigForm.headToHeadLimit} onChange={e => updateRulesConfig('headToHeadLimit', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+              </label>
+            </div>
           </div>
 
           {rulesSettingsError && (

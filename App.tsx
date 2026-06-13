@@ -52,6 +52,7 @@ const normalizeRankingData = (data?: SummerRankingData | null): SummerRankingDat
   matches: Array.isArray(data?.matches) ? data.matches : [],
   participantIds: Array.isArray(data?.participantIds) ? data.participantIds : [],
   rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+  rulesConfig: data?.rulesConfig,
   availabilities: data?.availabilities ?? {},
   master: data?.master
     ? {

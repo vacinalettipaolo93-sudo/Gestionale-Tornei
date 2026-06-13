@@ -167,11 +167,47 @@ export interface SummerRankingMasterData {
   generatedAt?: string;
 }
 
+export interface SummerRankingRulesConfig {
+  diffBandLowMax: number;
+  diffBandMediumMax: number;
+
+  favoriteWinLow: number;
+  favoriteLossLow: number;
+  favoriteWinMedium: number;
+  favoriteLossMedium: number;
+  favoriteWinHigh: number;
+  favoriteLossHigh: number;
+
+  underdogWinLow: number;
+  underdogLossLow: number;
+  underdogWinMedium: number;
+  underdogLossMedium: number;
+  underdogWinHigh: number;
+  underdogLossHigh: number;
+
+  participationBase: number;
+  participationWeeklyBonus: number;
+  participationWeeklyMinMatches: number;
+
+  gameDiffBonus2: number;
+  gameDiffBonus3: number;
+  gameDiffBonus4plus: number;
+
+  inactivityMalusPoints: number;
+  inactivityMalusDays: number;
+
+  masterSize: number;
+  masterMinMatches: number;
+
+  headToHeadLimit: number;
+}
+
 export interface SummerRankingData {
   slots: TimeSlot[];
   matches: Match[];
   participantIds?: string[];
   rules?: string;
+  rulesConfig?: SummerRankingRulesConfig;
   availabilities?: Record<string, SummerPlayerAvailability>;
   master?: SummerRankingMasterData;
 }
