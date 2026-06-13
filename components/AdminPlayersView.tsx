@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
-import { collection, addDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import React, { useEffect, useMemo, useState } from 'react';
+import { collection, addDoc, deleteDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { type Event, type Player, type SummerRankingData } from '../types';
 import { DEFAULT_SUMMER_RANKING_RULES } from '../utils/summerRanking';
+import { removePlayerFromSummerRankingMaster } from '../utils/summerRanking';
 
 interface AdminPlayersViewProps {
   players: Player[];
@@ -28,10 +29,11 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
   const [newPlayerStartPoints, setNewPlayerStartPoints] = useState('0');
-  const [addNewPlayerToRanking, setAddNewPlayerToRanking] = useState(true);
+  const [addNewPlayerToRanking, setAddNewPlayerToRanking] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [eventPlayerPointsById, setEventPlayerPointsById] = useState<Record<string, string>>({});
   const [playerSearchInput, setPlayerSearchInput] = useState('');
   const [playerSearchQuery, setPlayerSearchQuery] = useState('');
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
@@ -39,6 +41,7 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   const [editPlayerPhone, setEditPlayerPhone] = useState('');
   const [editPlayerPoints, setEditPlayerPoints] = useState('0');
   const [editLoading, setEditLoading] = useState(false);
+  const [deletingPlayerId, setDeletingPlayerId] = useState<string | null>(null);
 
   const sortedPlayers = useMemo(
     () => players.slice().sort((a, b) => a.name.localeCompare(b.name)),
@@ -146,6 +149,16 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     await updateDoc(doc(db, 'events', event.id), { players: updatedPlayers });
   };
 
+  useEffect(() => {
+    setEventPlayerPointsById(prev => {
+      const next: Record<string, string> = {};
+      for (const player of players) {
+        next[player.id] = prev[player.id] ?? String(player.summerRankingStartPoints ?? 0);
+      }
+      return next;
+    });
+  }, [players]);
+
   const ensureUserForPlayer = async (playerId: string, username: string) => {
     const usersRef = collection(db, 'users');
     const userSnap = await getDocs(query(usersRef, where('username', '==', username)));
@@ -213,6 +226,39 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       setFeedback({ type: 'error', message: 'Impossibile creare il giocatore. Riprova.' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddPlayerToCurrentEvent = async (player: Player) => {
+    const targetEventId = rankingEvent.id || selectedEventId;
+    if (!targetEventId) {
+      setFeedback({ type: 'error', message: 'Nessun evento disponibile per aggiungere il giocatore.' });
+      return;
+    }
+
+    const eventPointsValue = eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0);
+    const startPoints = Number(eventPointsValue);
+    if (!Number.isFinite(startPoints) || startPoints < 0) {
+      setFeedback({ type: 'error', message: `Punti livello non validi per ${player.name}.` });
+      return;
+    }
+
+    const targetEvent = events.find(event => event.id === targetEventId);
+    if (!targetEvent) {
+      setFeedback({ type: 'error', message: 'Evento non trovato.' });
+      return;
+    }
+    if (targetEvent.players.some(existing => existing.id === player.id)) {
+      setFeedback({ type: 'success', message: `${player.name} è già nell'evento.` });
+      return;
+    }
+
+    try {
+      await addPlayerToEvent(targetEventId, player, startPoints);
+      setFeedback({ type: 'success', message: `${player.name} aggiunto all'evento.` });
+    } catch (error) {
+      console.error('Errore aggiunta giocatore evento', error);
+      setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} all'evento.` });
     }
   };
 
@@ -287,6 +333,87 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       setFeedback({ type: 'error', message: 'Errore durante il salvataggio del giocatore.' });
     } finally {
       setEditLoading(false);
+    }
+  };
+
+  const handleDeletePlayer = async (player: Player) => {
+    if (!window.confirm(`Eliminare definitivamente ${player.name}?`)) return;
+    setDeletingPlayerId(player.id);
+    try {
+      const usersRef = collection(db, 'users');
+      const linkedUsersSnap = await getDocs(query(usersRef, where('playerId', '==', player.id)));
+      await Promise.all(linkedUsersSnap.docs.map(userDoc => deleteDoc(userDoc.ref)));
+      await deleteDoc(doc(db, 'players', player.id));
+
+      const eventsToPersist: Array<{ id: string; players: Player[]; rankingData?: SummerRankingData }> = [];
+      const localUpdatesByEventId = new Map<string, { players: Player[]; rankingData?: SummerRankingData }>();
+
+      for (const event of events) {
+        const nextPlayers = event.players.filter(eventPlayer => eventPlayer.id !== player.id);
+        const removedFromPlayers = nextPlayers.length !== event.players.length;
+        const participantIds = Array.isArray(event.rankingData?.participantIds)
+          ? event.rankingData.participantIds.filter(id => id !== player.id)
+          : undefined;
+        const removedFromParticipantIds = participantIds !== undefined
+          && participantIds.length !== (event.rankingData?.participantIds?.length ?? 0);
+        const nextMatches = Array.isArray(event.rankingData?.matches)
+          ? event.rankingData.matches.filter(match => match.player1Id !== player.id && match.player2Id !== player.id)
+          : [];
+        const removedFromMatches = Array.isArray(event.rankingData?.matches)
+          && nextMatches.length !== event.rankingData.matches.length;
+        const nextAvailabilities = { ...(event.rankingData?.availabilities ?? {}) };
+        const hadAvailability = player.id in nextAvailabilities;
+        delete nextAvailabilities[player.id];
+        const nextMaster = removePlayerFromSummerRankingMaster(event.rankingData?.master, player.id);
+        const removedFromMaster = nextMaster !== event.rankingData?.master;
+        const rankingChanged = removedFromParticipantIds || removedFromMatches || hadAvailability || removedFromMaster;
+
+        if (!removedFromPlayers && !rankingChanged) continue;
+
+        const nextRankingData: SummerRankingData | undefined = event.rankingData
+          ? {
+            ...event.rankingData,
+            participantIds,
+            matches: nextMatches,
+            availabilities: nextAvailabilities,
+            master: nextMaster,
+          }
+          : undefined;
+
+        localUpdatesByEventId.set(event.id, { players: nextPlayers, rankingData: nextRankingData });
+        eventsToPersist.push({ id: event.id, players: nextPlayers, rankingData: nextRankingData });
+      }
+
+      setEvents(prev =>
+        prev.map(event => {
+          const update = localUpdatesByEventId.get(event.id);
+          if (!update) return event;
+          return {
+            ...event,
+            players: update.players,
+            rankingData: update.rankingData,
+          };
+        }),
+      );
+
+      await Promise.all(
+        eventsToPersist.map(event =>
+          updateDoc(doc(db, 'events', event.id), {
+            players: event.players,
+            ...(event.rankingData ? { rankingData: event.rankingData } : {}),
+          }),
+        ),
+      );
+
+      if (editingPlayer?.id === player.id) {
+        closeEditPlayer();
+      }
+      setFeedback({ type: 'success', message: `${player.name} eliminato correttamente.` });
+    } catch (error) {
+      console.error('Errore eliminazione giocatore', error);
+      setFeedback({ type: 'error', message: `Errore durante l'eliminazione di ${player.name}.` });
+    } finally {
+      setDeletingPlayerId(null);
     }
   };
 
@@ -389,7 +516,7 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
             <tr className="text-left border-b border-tertiary text-text-secondary">
               <th className="py-3 pr-3">Giocatore</th>
               <th className="py-3 pr-3">Telefono</th>
-              <th className="py-3 pr-3">Punti iniziali</th>
+              <th className="py-3 pr-3">Punti livello</th>
               <th className="py-3 pr-3">Ranking</th>
               <th className="py-3 pr-3">Azioni</th>
             </tr>
@@ -400,7 +527,24 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                 <tr className="border-b border-tertiary/40">
                   <td className="py-3 pr-3 font-semibold">{player.name}</td>
                   <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
-                  <td className="py-3 pr-3 text-text-secondary">{player.summerRankingStartPoints ?? 0}</td>
+                  <td className="py-3 pr-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0)}
+                        onChange={event => setEventPlayerPointsById(prev => ({ ...prev, [player.id]: event.target.value }))}
+                        className="w-24 bg-primary border border-tertiary rounded px-2 py-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleAddPlayerToCurrentEvent(player)}
+                        className="px-3 py-1 rounded bg-tertiary text-text-primary text-xs font-semibold"
+                      >
+                        Aggiungi all&apos;evento
+                      </button>
+                    </div>
+                  </td>
                   <td className="py-3 pr-3">
                     {participantIdSet.has(player.id) ? (
                       <span className="px-2 py-1 rounded bg-green-600 text-white text-xs font-semibold">Nel ranking</span>
@@ -426,12 +570,21 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                     )}
                   </td>
                   <td className="py-3 pr-3">
-                    <button
-                      onClick={() => openEditPlayer(player)}
-                      className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
-                    >
-                      Modifica
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => openEditPlayer(player)}
+                        className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
+                      >
+                        Modifica
+                      </button>
+                      <button
+                        onClick={() => void handleDeletePlayer(player)}
+                        disabled={deletingPlayerId === player.id}
+                        className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold disabled:opacity-60"
+                      >
+                        {deletingPlayerId === player.id ? 'Eliminazione...' : 'Elimina'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 {editingPlayer?.id === player.id && (
