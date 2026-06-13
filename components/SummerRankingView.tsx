@@ -28,9 +28,65 @@ import {
   syncSummerRankingMasterMatches,
 } from '../utils/summerRanking';
 
-type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'availability' | 'players';
+type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'settings' | 'availability' | 'players';
 type AvailabilityFormState = Omit<SummerPlayerAvailability, 'updatedAt'>;
 type MasterScoreFormState = { matchId: string | null; score1: string; score2: string };
+type RulesFormState = {
+  title: string;
+  rankingScope: string;
+  startingPoints: string;
+  diffBands: string;
+  favoriteWin: string;
+  underdogWin: string;
+  drawRule: string;
+  participationBonus: string;
+  gameDiffBonus: string;
+  inactivityMalus: string;
+  masterRule: string;
+  headToHeadLimit: string;
+};
+
+const getRuleLineText = (line?: string) => (line ?? '').replace(/^•\s*/, '').trim();
+const getDefaultRuleLines = () => DEFAULT_SUMMER_RANKING_RULES.split('\n');
+const parseRulesFormState = (rulesText?: string): RulesFormState => {
+  const lines = (rulesText ?? DEFAULT_SUMMER_RANKING_RULES).split('\n');
+  const defaults = getDefaultRuleLines();
+  const pickLine = (index: number, fallbackIndex = index) => lines[index] ?? defaults[fallbackIndex] ?? '';
+
+  return {
+    title: pickLine(0, 0).trim(),
+    rankingScope: getRuleLineText(pickLine(2, 2)),
+    startingPoints: getRuleLineText(pickLine(3, 3)),
+    diffBands: getRuleLineText(pickLine(4, 4)),
+    favoriteWin: getRuleLineText(pickLine(5, 5)),
+    underdogWin: getRuleLineText(pickLine(6, 6)),
+    drawRule: getRuleLineText(pickLine(7, 7)),
+    participationBonus: getRuleLineText(pickLine(8, 8)),
+    gameDiffBonus: getRuleLineText(pickLine(9, 9)),
+    inactivityMalus: getRuleLineText(pickLine(10, 10)),
+    masterRule: getRuleLineText(pickLine(11, 11)),
+    headToHeadLimit: getRuleLineText(pickLine(12, 12)),
+  };
+};
+
+const buildRulesTextFromFormState = (formState: RulesFormState) => {
+  const title = formState.title.trim() || getDefaultRuleLines()[0];
+  const bulletLines = [
+    formState.rankingScope,
+    formState.startingPoints,
+    formState.diffBands,
+    formState.favoriteWin,
+    formState.underdogWin,
+    formState.drawRule,
+    formState.participationBonus,
+    formState.gameDiffBonus,
+    formState.inactivityMalus,
+    formState.masterRule,
+    formState.headToHeadLimit,
+  ].map(line => `• ${line.trim()}`);
+
+  return [title, '', ...bulletLines].join('\n');
+};
 
 const AVAILABILITY_DAYS: Array<{ value: SummerAvailabilityDay; label: string; shortLabel: string }> = [
   { value: 'monday', label: 'Lunedì', shortLabel: 'Lun' },
@@ -176,8 +232,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [bookingForm, setBookingForm] = useState({ slotId: '', opponentId: '', player1Id: '', player2Id: '' });
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [scoreForm, setScoreForm] = useState({ score1: '', score2: '' });
-  const [rulesDraft, setRulesDraft] = useState(rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES);
-  const [isEditingRules, setIsEditingRules] = useState(false);
+  const [rulesSettingsForm, setRulesSettingsForm] = useState<RulesFormState>(() => parseRulesFormState(rankingData.rules));
+  const [rulesSettingsError, setRulesSettingsError] = useState<string | null>(null);
+  const [rulesSettingsSuccess, setRulesSettingsSuccess] = useState<string | null>(null);
+  const [isSavingRulesSettings, setIsSavingRulesSettings] = useState(false);
   const [startPointsDrafts, setStartPointsDrafts] = useState<Record<string, string>>({});
   const [busyPlayerId, setBusyPlayerId] = useState<string | null>(null);
   const [rankingSearch, setRankingSearch] = useState('');
@@ -192,7 +250,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [masterScoreForm, setMasterScoreForm] = useState<MasterScoreFormState>({ matchId: null, score1: '', score2: '' });
 
   useEffect(() => {
-    setRulesDraft(rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES);
+    setRulesSettingsForm(parseRulesFormState(rankingData.rules));
   }, [rankingData.rules]);
 
   const rankingParticipantIds = useMemo(
@@ -563,12 +621,60 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     }
   };
 
-  const handleSaveRules = async () => {
-    await onSaveRankingData({
-      ...rankingData,
-      rules: rulesDraft.trim() || DEFAULT_SUMMER_RANKING_RULES,
-    });
-    setIsEditingRules(false);
+  const hasRulesSettingsChanges = useMemo(
+    () => buildRulesTextFromFormState(rulesSettingsForm).trim() !== (rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES).trim(),
+    [rulesSettingsForm, rankingData.rules],
+  );
+
+  const updateRulesSetting = (key: keyof RulesFormState, value: string) => {
+    setRulesSettingsForm(prev => ({ ...prev, [key]: value }));
+    setRulesSettingsError(null);
+    setRulesSettingsSuccess(null);
+  };
+
+  const resetRulesSettings = () => {
+    setRulesSettingsForm(parseRulesFormState(rankingData.rules));
+    setRulesSettingsError(null);
+    setRulesSettingsSuccess(null);
+  };
+
+  const handleSaveRulesSettings = async () => {
+    const requiredValues: Array<keyof RulesFormState> = [
+      'title',
+      'rankingScope',
+      'startingPoints',
+      'diffBands',
+      'favoriteWin',
+      'underdogWin',
+      'drawRule',
+      'participationBonus',
+      'gameDiffBonus',
+      'inactivityMalus',
+      'masterRule',
+      'headToHeadLimit',
+    ];
+    const hasEmptyField = requiredValues.some(field => !rulesSettingsForm[field].trim());
+    if (hasEmptyField) {
+      setRulesSettingsError('Compila tutti i campi del regolamento prima di salvare.');
+      setRulesSettingsSuccess(null);
+      return;
+    }
+
+    setIsSavingRulesSettings(true);
+    setRulesSettingsError(null);
+    setRulesSettingsSuccess(null);
+    try {
+      await onSaveRankingData({
+        ...rankingData,
+        rules: buildRulesTextFromFormState(rulesSettingsForm),
+      });
+      setRulesSettingsSuccess('Impostazioni regolamento salvate con successo.');
+    } catch (error) {
+      console.error('Errore salvataggio impostazioni regolamento', error);
+      setRulesSettingsError('Salvataggio non riuscito. Riprova.');
+    } finally {
+      setIsSavingRulesSettings(false);
+    }
   };
 
   const saveStartPoints = async (playerId: string) => {
@@ -718,6 +824,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             ['master', 'Master finale'],
             ['availability', 'Disponibilità'],
             ['rules', 'Regolamento'],
+            ...(isOrganizer ? [['settings', 'Impostazioni'] as [RankingTab, string]] : []),
             ['players', 'Giocatori'],
           ] as Array<[RankingTab, string]>).map(([tab, label]) => (
             <button
@@ -1649,42 +1756,82 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
         <div className="bg-secondary rounded-xl shadow-lg p-6">
           <div className="flex items-center justify-between gap-4 mb-4">
             <h3 className="text-xl font-bold text-accent">Regolamento ufficiale</h3>
-            {isOrganizer && !isEditingRules && (
-              <button
-                onClick={() => setIsEditingRules(true)}
-                className="px-4 py-2 rounded bg-highlight text-white font-semibold"
-              >
-                Modifica testo
-              </button>
-            )}
           </div>
-          {isEditingRules ? (
-            <div className="space-y-3">
-              <textarea
-                value={rulesDraft}
-                onChange={event => setRulesDraft(event.target.value)}
-                className="w-full min-h-[320px] bg-primary border border-tertiary rounded-lg p-3"
-              />
-              <div className="flex flex-wrap gap-3">
-                <button onClick={handleSaveRules} className="px-4 py-2 rounded bg-highlight text-white font-semibold">
-                  Salva regolamento
-                </button>
-                <button
-                  onClick={() => {
-                    setRulesDraft(rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES);
-                    setIsEditingRules(false);
-                  }}
-                  className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold"
-                >
-                  Annulla
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-primary rounded-lg p-4 whitespace-pre-line border border-tertiary">
-              {rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES}
+          <div className="bg-primary rounded-lg p-4 whitespace-pre-line border border-tertiary">
+            {rankingData.rules ?? DEFAULT_SUMMER_RANKING_RULES}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'settings' && isOrganizer && (
+        <div className="bg-secondary rounded-xl shadow-lg p-6 space-y-5">
+          <div>
+            <h3 className="text-xl font-bold text-accent">Impostazioni regolamento ranking</h3>
+            <p className="text-sm text-text-secondary mt-1">
+              Modifica tutte le regole visualizzate nel tab Regolamento e salva per sincronizzarle subito con tutti gli utenti.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {([
+              ['title', 'Titolo regolamento', false],
+              ['rankingScope', 'Regola: ranking globale', true],
+              ['startingPoints', 'Regola: punteggio iniziale', true],
+              ['diffBands', 'Regola: fasce differenza punti', true],
+              ['favoriteWin', 'Regola: vittoria favorito', true],
+              ['underdogWin', 'Regola: vittoria sfavorito', true],
+              ['drawRule', 'Regola: pareggio', true],
+              ['participationBonus', 'Regola: bonus partecipazione', true],
+              ['gameDiffBonus', 'Regola: bonus differenza game', true],
+              ['inactivityMalus', 'Regola: malus inattività', true],
+              ['masterRule', 'Regola: Master finale', true],
+              ['headToHeadLimit', 'Regola: limite scontri diretti', true],
+            ] as Array<[keyof RulesFormState, string, boolean]>).map(([fieldKey, label, withBullet]) => (
+              <label key={fieldKey} className={`flex flex-col gap-2 ${fieldKey === 'title' ? 'md:col-span-2' : ''}`}>
+                <span className="text-sm font-semibold text-text-secondary">{label}</span>
+                <div className="relative">
+                  {withBullet && (
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary">•</span>
+                  )}
+                  <input
+                    type="text"
+                    value={rulesSettingsForm[fieldKey]}
+                    onChange={event => updateRulesSetting(fieldKey, event.target.value)}
+                    className={`w-full bg-primary border border-tertiary rounded-lg py-2 ${withBullet ? 'pl-7' : 'pl-3'} pr-3`}
+                    placeholder={label}
+                  />
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {rulesSettingsError && (
+            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+              {rulesSettingsError}
             </div>
           )}
+          {rulesSettingsSuccess && (
+            <div className="rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm text-green-200">
+              {rulesSettingsSuccess}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleSaveRulesSettings}
+              disabled={isSavingRulesSettings || !hasRulesSettingsChanges}
+              className="px-4 py-2 rounded bg-highlight text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {isSavingRulesSettings ? 'Salvataggio...' : 'Salva'}
+            </button>
+            <button
+              onClick={resetRulesSettings}
+              disabled={isSavingRulesSettings || !hasRulesSettingsChanges}
+              className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              Ripristina
+            </button>
+          </div>
         </div>
       )}
 
