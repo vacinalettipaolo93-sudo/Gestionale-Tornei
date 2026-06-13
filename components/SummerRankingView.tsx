@@ -201,7 +201,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [masterBookingSlotIdByMatch, setMasterBookingSlotIdByMatch] = useState<Record<string, string>>({});
   const [editingMasterMatchId, setEditingMasterMatchId] = useState<string | null>(null);
   const [masterScoreForm, setMasterScoreForm] = useState<MasterScoreFormState>({ matchId: null, score1: '', score2: '' });
-  const [challengeModal, setChallengeModal] = useState<{ opponentId: string; opponentName: string; scheduledTime: string; location: string; field: string } | null>(null);
+  const [challengeModal, setChallengeModal] = useState<{ opponentId: string; opponentName: string; scheduledTime: string; location: string } | null>(null);
   const [challengeError, setChallengeError] = useState<string | null>(null);
   const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
   const [isSavingChallenge, setIsSavingChallenge] = useState(false);
@@ -427,7 +427,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const openChallengeModal = (opponentId: string, opponentName: string) => {
-    setChallengeModal({ opponentId, opponentName, scheduledTime: '', location: '', field: '' });
+    setChallengeModal({ opponentId, opponentName, scheduledTime: '', location: 'Tennis Salò Canottieri' });
     setChallengeError(null);
     setChallengeSuccess(null);
   };
@@ -440,7 +440,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
   const handleCreateChallenge = async () => {
     if (!challengeModal || !loggedInPlayerId || !currentPlayer) return;
-    const { opponentId, scheduledTime, location, field } = challengeModal;
+    const { opponentId, scheduledTime, location } = challengeModal;
 
     if (!scheduledTime) {
       setChallengeError('Seleziona una data e un orario per la sfida.');
@@ -471,8 +471,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       score2: null,
       status: 'scheduled',
       scheduledTime: chosenDate.toISOString(),
-      ...(location.trim() ? { location: location.trim() } : {}),
-      ...(field.trim() ? { field: field.trim() } : {}),
+      location: location,
     };
 
     setIsSavingChallenge(true);
@@ -2066,25 +2065,15 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               </label>
 
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Luogo (opzionale)</span>
-                <input
-                  type="text"
+                <span className="text-xs font-semibold text-text-secondary">Luogo</span>
+                <select
                   value={challengeModal.location}
                   onChange={e => setChallengeModal(prev => prev ? { ...prev, location: e.target.value } : prev)}
-                  placeholder="es. Centro sportivo"
                   className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Campo (opzionale)</span>
-                <input
-                  type="text"
-                  value={challengeModal.field}
-                  onChange={e => setChallengeModal(prev => prev ? { ...prev, field: e.target.value } : prev)}
-                  placeholder="es. Campo 1"
-                  className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
-                />
+                >
+                  <option value="Tennis Salò Canottieri">Tennis Salò Canottieri</option>
+                  <option value="Paitone Arena">Paitone Arena</option>
+                </select>
               </label>
             </div>
 
