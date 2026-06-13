@@ -55,6 +55,7 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     matches: Array.isArray(rankingEvent.rankingData?.matches) ? rankingEvent.rankingData.matches : [],
     participantIds: Array.isArray(rankingEvent.rankingData?.participantIds) ? rankingEvent.rankingData.participantIds : [],
     rules: rankingEvent.rankingData?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+    rulesConfig: rankingEvent.rankingData?.rulesConfig,
     availabilities: rankingEvent.rankingData?.availabilities ?? {},
     master: rankingEvent.rankingData?.master,
   }), [rankingEvent.rankingData]);
@@ -78,19 +79,56 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     });
   }, [players]);
 
-  const saveRankingData = async (nextData: SummerRankingData) => {
+  const addPlayerToRankingEvent = async (player: Player, startPoints: number) => {
+    const event = events.find(item => item.id === rankingEvent.id) ?? rankingEvent;
+    const participantIds = Array.from(new Set([...(rankingData.participantIds ?? []), player.id]));
+    const alreadyInEventPlayers = event.players.some(existing => existing.id === player.id);
+    const eventPlayer: Player = {
+      id: player.id,
+      name: player.name,
+      phone: player.phone ?? '',
+      avatar: player.avatar,
+      status: 'confirmed',
+      summerRankingStartPoints: startPoints,
+      summerRankingJoinedAt: player.summerRankingJoinedAt ?? new Date().toISOString(),
+    };
+    const nextPlayers = alreadyInEventPlayers ? event.players : [...event.players, eventPlayer];
+    const nextRankingData: SummerRankingData = {
+      ...rankingData,
+      participantIds,
+    };
+
     setEvents(prev =>
-      prev.map(item => item.id === rankingEvent.id ? { ...item, rankingData: nextData } : item),
+      prev.map(item => item.id === rankingEvent.id ? { ...item, players: nextPlayers, rankingData: nextRankingData } : item),
     );
-    await updateDoc(doc(db, 'events', rankingEvent.id), { rankingData: nextData });
+    await updateDoc(doc(db, 'events', rankingEvent.id), {
+      players: nextPlayers,
+      rankingData: nextRankingData,
+    });
+
+    return {
+      wasAlreadyParticipant: participantIdSet.has(player.id),
+      wasAlreadyInEventPlayers: alreadyInEventPlayers,
+    };
   };
 
-  const addPlayerToRanking = async (playerId: string) => {
-    if (participantIdSet.has(playerId)) return;
-    await saveRankingData({
-      ...rankingData,
-      participantIds: [...rankingParticipantIds, playerId],
-    });
+  const addPlayerToRanking = async (player: Player, startPoints: number) => {
+    const rankingEventPlayers = (events.find(item => item.id === rankingEvent.id) ?? rankingEvent).players;
+    if (participantIdSet.has(player.id) && rankingEventPlayers.some(existing => existing.id === player.id)) {
+      setFeedback({ type: 'success', message: `${player.name} è già nel ranking.` });
+      return;
+    }
+
+    const result = await addPlayerToRankingEvent(player, startPoints);
+    if (!result.wasAlreadyParticipant && !result.wasAlreadyInEventPlayers) {
+      setFeedback({ type: 'success', message: `${player.name} aggiunto al ranking.` });
+      return;
+    }
+    if (result.wasAlreadyParticipant && !result.wasAlreadyInEventPlayers) {
+      setFeedback({ type: 'success', message: `${player.name} aggiunto ai giocatori dell'evento ranking.` });
+      return;
+    }
+    setFeedback({ type: 'success', message: `${player.name} associato correttamente al ranking.` });
   };
 
   const addPlayerToEvent = async (eventId: string, player: Player, startPoints: number) => {
@@ -171,11 +209,12 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       };
 
       await ensureUserForPlayer(playerId, trimmedName);
+      const playerForActions = players.find(player => player.id === playerId) ?? createdPlayer;
       if (addNewPlayerToRanking) {
-        await addPlayerToRanking(playerId);
+        await addPlayerToRanking(playerForActions, startPoints);
       }
       if (selectedEventId) {
-        await addPlayerToEvent(selectedEventId, createdPlayer);
+        await addPlayerToEvent(selectedEventId, playerForActions, startPoints);
       }
 
       setNewPlayerName('');
@@ -381,7 +420,19 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                     <span className="px-2 py-1 rounded bg-green-600 text-white text-xs font-semibold">Nel ranking</span>
                   ) : (
                     <button
-                      onClick={() => addPlayerToRanking(player.id)}
+                      onClick={async () => {
+                        try {
+                          const startPoints = Number(eventPlayerPointsById[player.id] ?? player.summerRankingStartPoints ?? 0);
+                          if (!Number.isFinite(startPoints) || startPoints < 0) {
+                            setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
+                            return;
+                          }
+                          await addPlayerToRanking(player, startPoints);
+                        } catch (error) {
+                          console.error('Errore aggiunta giocatore ranking', error);
+                          setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} al ranking.` });
+                        }
+                      }}
                       className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
                     >
                       Aggiungi al ranking
