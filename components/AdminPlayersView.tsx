@@ -20,6 +20,16 @@ const createInitialsAvatar = (name: string): string => {
   return `data:image/svg+xml;base64,${btoa(svg)}`;
 };
 
+const normalizeEventRankingData = (data?: SummerRankingData): SummerRankingData => ({
+  slots: Array.isArray(data?.slots) ? data.slots : [],
+  matches: Array.isArray(data?.matches) ? data.matches : [],
+  participantIds: Array.isArray(data?.participantIds) ? data.participantIds : [],
+  rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+  rulesConfig: data?.rulesConfig,
+  availabilities: data?.availabilities ?? {},
+  master: data?.master,
+});
+
 const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   players,
   events,
@@ -52,15 +62,10 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     if (!query) return sortedPlayers;
     return sortedPlayers.filter(player => player.name.toLowerCase().includes(query));
   }, [playerSearchQuery, sortedPlayers]);
-  const rankingData = useMemo<SummerRankingData>(() => ({
-    slots: Array.isArray(rankingEvent.rankingData?.slots) ? rankingEvent.rankingData.slots : [],
-    matches: Array.isArray(rankingEvent.rankingData?.matches) ? rankingEvent.rankingData.matches : [],
-    participantIds: Array.isArray(rankingEvent.rankingData?.participantIds) ? rankingEvent.rankingData.participantIds : [],
-    rules: rankingEvent.rankingData?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
-    rulesConfig: rankingEvent.rankingData?.rulesConfig,
-    availabilities: rankingEvent.rankingData?.availabilities ?? {},
-    master: rankingEvent.rankingData?.master,
-  }), [rankingEvent.rankingData]);
+  const rankingData = useMemo<SummerRankingData>(
+    () => normalizeEventRankingData(rankingEvent.rankingData),
+    [rankingEvent.rankingData],
+  );
   const rankingParticipantIds = useMemo(
     () => Array.isArray(rankingData.participantIds) ? rankingData.participantIds : [],
     [rankingData.participantIds],
@@ -71,30 +76,51 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   );
   const addPlayerToRankingEvent = async (player: Player, startPoints: number) => {
     const event = events.find(item => item.id === rankingEvent.id) ?? rankingEvent;
-    const participantIds = Array.from(new Set([...(rankingData.participantIds ?? []), player.id]));
-    const alreadyInEventPlayers = event.players.some(existing => existing.id === player.id);
+    const currentRankingData = normalizeEventRankingData(event.rankingData ?? rankingData);
+    const participantIds = Array.from(new Set([...(currentRankingData.participantIds ?? []), player.id]));
+    const existingEventPlayer = event.players.find(existing => existing.id === player.id);
+    const alreadyInEventPlayers = Boolean(existingEventPlayer);
+    const joinedAt = player.summerRankingJoinedAt ?? existingEventPlayer?.summerRankingJoinedAt ?? new Date().toISOString();
     const eventPlayer: Player = {
+      ...(existingEventPlayer ?? {}),
       id: player.id,
       name: player.name,
       phone: player.phone ?? '',
       avatar: player.avatar,
       status: 'confirmed',
       summerRankingStartPoints: startPoints,
-      summerRankingJoinedAt: player.summerRankingJoinedAt ?? new Date().toISOString(),
+      summerRankingJoinedAt: joinedAt,
     };
-    const nextPlayers = alreadyInEventPlayers ? event.players : [...event.players, eventPlayer];
+    const nextPlayers = alreadyInEventPlayers
+      ? event.players.map(existing => existing.id === player.id ? eventPlayer : existing)
+      : [...event.players, eventPlayer];
     const nextRankingData: SummerRankingData = {
-      ...rankingData,
+      ...currentRankingData,
       participantIds,
     };
 
     setEvents(prev =>
-      prev.map(item => item.id === rankingEvent.id ? { ...item, players: nextPlayers, rankingData: nextRankingData } : item),
+      prev.map(item => item.id === rankingEvent.id ? {
+        ...item,
+        eventType: 'ranking_singolare',
+        players: nextPlayers,
+        rankingData: {
+          ...normalizeEventRankingData(item.rankingData),
+          participantIds,
+        },
+      } : item),
     );
-    await updateDoc(doc(db, 'events', rankingEvent.id), {
-      players: nextPlayers,
-      rankingData: nextRankingData,
-    });
+    await Promise.all([
+      updateDoc(doc(db, 'players', player.id), {
+        summerRankingStartPoints: startPoints,
+        summerRankingJoinedAt: joinedAt,
+      }),
+      updateDoc(doc(db, 'events', rankingEvent.id), {
+        eventType: 'ranking_singolare',
+        players: nextPlayers,
+        rankingData: nextRankingData,
+      }),
+    ]);
 
     return {
       wasAlreadyParticipant: participantIdSet.has(player.id),
@@ -103,8 +129,10 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   };
 
   const addPlayerToRanking = async (player: Player, startPoints: number) => {
-    const rankingEventPlayers = (events.find(item => item.id === rankingEvent.id) ?? rankingEvent).players;
-    if (participantIdSet.has(player.id) && rankingEventPlayers.some(existing => existing.id === player.id)) {
+    const event = events.find(item => item.id === rankingEvent.id) ?? rankingEvent;
+    const currentRankingData = normalizeEventRankingData(event.rankingData ?? rankingData);
+    const currentParticipantSet = new Set(currentRankingData.participantIds);
+    if (currentParticipantSet.has(player.id) && event.players.some(existing => existing.id === player.id)) {
       setFeedback({ type: 'success', message: `${player.name} è già nel ranking.` });
       return;
     }
@@ -147,6 +175,63 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       prev.map(item => item.id === event.id ? { ...item, players: updatedPlayers } : item),
     );
     await updateDoc(doc(db, 'events', event.id), { players: updatedPlayers });
+  };
+
+  const handleSaveLevelPoints = async (player: Player) => {
+    const rawValue = eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0);
+    if (rawValue.trim() === '') {
+      setFeedback({ type: 'error', message: `Punti livello non validi per ${player.name}.` });
+      return;
+    }
+    const startPoints = Number(rawValue);
+    if (!Number.isFinite(startPoints) || startPoints < 0) {
+      setFeedback({ type: 'error', message: `Punti livello non validi per ${player.name}.` });
+      return;
+    }
+    if ((player.summerRankingStartPoints ?? 0) === startPoints) {
+      setEventPlayerPointsById(prev => ({ ...prev, [player.id]: String(startPoints) }));
+      return;
+    }
+
+    const joinedAt = player.summerRankingJoinedAt ?? new Date().toISOString();
+    try {
+      await updateDoc(doc(db, 'players', player.id), {
+        summerRankingStartPoints: startPoints,
+        summerRankingJoinedAt: joinedAt,
+      });
+
+      const eventsToPersist = events
+        .filter(event => event.players.some(eventPlayer => eventPlayer.id === player.id))
+        .map(event => ({
+          id: event.id,
+          players: event.players.map(eventPlayer =>
+            eventPlayer.id === player.id
+              ? {
+                ...eventPlayer,
+                summerRankingStartPoints: startPoints,
+                summerRankingJoinedAt: joinedAt,
+              }
+              : eventPlayer,
+          ),
+        }));
+
+      if (eventsToPersist.length > 0) {
+        setEvents(prev =>
+          prev.map(event => {
+            const update = eventsToPersist.find(item => item.id === event.id);
+            return update ? { ...event, players: update.players } : event;
+          }),
+        );
+        await Promise.all(eventsToPersist.map(event => updateDoc(doc(db, 'events', event.id), { players: event.players })));
+      }
+    } catch (error) {
+      console.error('Errore salvataggio punti livello', error);
+      setFeedback({ type: 'error', message: `Errore salvataggio punti livello per ${player.name}.` });
+      return;
+    }
+
+    setEventPlayerPointsById(prev => ({ ...prev, [player.id]: String(startPoints) }));
+    setFeedback({ type: 'success', message: `Punti livello aggiornati per ${player.name}.` });
   };
 
   useEffect(() => {
@@ -226,39 +311,6 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       setFeedback({ type: 'error', message: 'Impossibile creare il giocatore. Riprova.' });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleAddPlayerToCurrentEvent = async (player: Player) => {
-    const targetEventId = rankingEvent.id || selectedEventId;
-    if (!targetEventId) {
-      setFeedback({ type: 'error', message: 'Nessun evento disponibile per aggiungere il giocatore.' });
-      return;
-    }
-
-    const eventPointsValue = eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0);
-    const startPoints = Number(eventPointsValue);
-    if (!Number.isFinite(startPoints) || startPoints < 0) {
-      setFeedback({ type: 'error', message: `Punti livello non validi per ${player.name}.` });
-      return;
-    }
-
-    const targetEvent = events.find(event => event.id === targetEventId);
-    if (!targetEvent) {
-      setFeedback({ type: 'error', message: 'Evento non trovato.' });
-      return;
-    }
-    if (targetEvent.players.some(existing => existing.id === player.id)) {
-      setFeedback({ type: 'success', message: `${player.name} è già nell'evento.` });
-      return;
-    }
-
-    try {
-      await addPlayerToEvent(targetEventId, player, startPoints);
-      setFeedback({ type: 'success', message: `${player.name} aggiunto all'evento.` });
-    } catch (error) {
-      console.error('Errore aggiunta giocatore evento', error);
-      setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} all'evento.` });
     }
   };
 
@@ -528,22 +580,22 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                   <td className="py-3 pr-3 font-semibold">{player.name}</td>
                   <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
                   <td className="py-3 pr-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0)}
-                        onChange={event => setEventPlayerPointsById(prev => ({ ...prev, [player.id]: event.target.value }))}
-                        className="w-24 bg-primary border border-tertiary rounded px-2 py-1"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void handleAddPlayerToCurrentEvent(player)}
-                        className="px-3 py-1 rounded bg-tertiary text-text-primary text-xs font-semibold"
-                      >
-                        Aggiungi all&apos;evento
-                      </button>
-                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0)}
+                      onChange={event => setEventPlayerPointsById(prev => ({ ...prev, [player.id]: event.target.value }))}
+                      onBlur={() => {
+                        void handleSaveLevelPoints(player);
+                      }}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          void handleSaveLevelPoints(player);
+                        }
+                      }}
+                      className="w-24 bg-primary border border-tertiary rounded px-2 py-1"
+                    />
                   </td>
                   <td className="py-3 pr-3">
                     {participantIdSet.has(player.id) ? (
@@ -552,7 +604,12 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                       <button
                         onClick={async () => {
                           try {
-                            const startPoints = Number(player.summerRankingStartPoints ?? 0);
+                            const rawValue = eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0);
+                            if (rawValue.trim() === '') {
+                              setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
+                              return;
+                            }
+                            const startPoints = Number(rawValue);
                             if (!Number.isFinite(startPoints) || startPoints < 0) {
                               setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
                               return;
