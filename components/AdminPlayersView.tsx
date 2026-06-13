@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { collection, addDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { type Event, type Player, type SummerRankingData } from '../types';
@@ -34,7 +34,6 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [playerSearchInput, setPlayerSearchInput] = useState('');
   const [playerSearchQuery, setPlayerSearchQuery] = useState('');
-  const [eventPlayerPointsById, setEventPlayerPointsById] = useState<Record<string, string>>({});
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [editPlayerName, setEditPlayerName] = useState('');
   const [editPlayerPhone, setEditPlayerPhone] = useState('');
@@ -67,18 +66,6 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     () => new Set(rankingParticipantIds),
     [rankingParticipantIds],
   );
-  useEffect(() => {
-    setEventPlayerPointsById(prev => {
-      const next = { ...prev };
-      players.forEach(player => {
-        if (!(player.id in next)) {
-          next[player.id] = String(player.summerRankingStartPoints ?? 0);
-        }
-      });
-      return next;
-    });
-  }, [players]);
-
   const addPlayerToRankingEvent = async (player: Player, startPoints: number) => {
     const event = events.find(item => item.id === rankingEvent.id) ?? rankingEvent;
     const participantIds = Array.from(new Set([...(rankingData.participantIds ?? []), player.id]));
@@ -293,7 +280,6 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
         );
       }
 
-      setEventPlayerPointsById(prev => ({ ...prev, [editingPlayer.id]: String(normalizedPoints) }));
       setFeedback({ type: 'success', message: 'Giocatore aggiornato correttamente.' });
       closeEditPlayer();
     } catch (error) {
@@ -398,92 +384,103 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
             {feedback.message}
           </div>
         )}
-        <table className="w-full min-w-[860px] text-sm">
+        <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="text-left border-b border-tertiary text-text-secondary">
               <th className="py-3 pr-3">Giocatore</th>
               <th className="py-3 pr-3">Telefono</th>
               <th className="py-3 pr-3">Punti iniziali</th>
               <th className="py-3 pr-3">Ranking</th>
-              <th className="py-3 pr-3">Evento</th>
               <th className="py-3 pr-3">Azioni</th>
             </tr>
           </thead>
           <tbody>
             {filteredPlayers.map(player => (
-              <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
-                <td className="py-3 pr-3 font-semibold">{player.name}</td>
-                <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
-                <td className="py-3 pr-3 text-text-secondary">{player.summerRankingStartPoints ?? 0}</td>
-                <td className="py-3 pr-3">
-                  {participantIdSet.has(player.id) ? (
-                    <span className="px-2 py-1 rounded bg-green-600 text-white text-xs font-semibold">Nel ranking</span>
-                  ) : (
-                    <button
-                      onClick={async () => {
-                        try {
-                          const startPoints = Number(eventPlayerPointsById[player.id] ?? player.summerRankingStartPoints ?? 0);
-                          if (!Number.isFinite(startPoints) || startPoints < 0) {
-                            setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
-                            return;
+              <React.Fragment key={player.id}>
+                <tr className="border-b border-tertiary/40">
+                  <td className="py-3 pr-3 font-semibold">{player.name}</td>
+                  <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
+                  <td className="py-3 pr-3 text-text-secondary">{player.summerRankingStartPoints ?? 0}</td>
+                  <td className="py-3 pr-3">
+                    {participantIdSet.has(player.id) ? (
+                      <span className="px-2 py-1 rounded bg-green-600 text-white text-xs font-semibold">Nel ranking</span>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const startPoints = Number(player.summerRankingStartPoints ?? 0);
+                            if (!Number.isFinite(startPoints) || startPoints < 0) {
+                              setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
+                              return;
+                            }
+                            await addPlayerToRanking(player, startPoints);
+                          } catch (error) {
+                            console.error('Errore aggiunta giocatore ranking', error);
+                            setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} al ranking.` });
                           }
-                          await addPlayerToRanking(player, startPoints);
-                        } catch (error) {
-                          console.error('Errore aggiunta giocatore ranking', error);
-                          setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} al ranking.` });
-                        }
-                      }}
+                        }}
+                        className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
+                      >
+                        Aggiungi al ranking
+                      </button>
+                    )}
+                  </td>
+                  <td className="py-3 pr-3">
+                    <button
+                      onClick={() => openEditPlayer(player)}
                       className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
                     >
-                      Aggiungi al ranking
+                      Modifica
                     </button>
-                  )}
-                </td>
-                <td className="py-3 pr-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="0"
-                      value={eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0)}
-                      onChange={event => setEventPlayerPointsById(prev => ({ ...prev, [player.id]: event.target.value }))}
-                      className="w-24 bg-primary border border-tertiary rounded px-2 py-1 text-xs"
-                      title="Valore giocatore"
-                    />
-                    <button
-                      onClick={async () => {
-                        const value = Number(eventPlayerPointsById[player.id] ?? player.summerRankingStartPoints ?? 0);
-                        if (!Number.isFinite(value) || value < 0) {
-                          setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
-                          return;
-                        }
-                        try {
-                          await addPlayerToEvent(selectedEventId, player, value);
-                          setFeedback({ type: 'success', message: `${player.name} aggiunto all'evento selezionato.` });
-                        } catch (error) {
-                          console.error('Errore aggiunta giocatore evento', error);
-                          setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} all'evento.` });
-                        }
-                      }}
-                      disabled={!selectedEventId}
-                      className="px-3 py-1 rounded bg-tertiary text-text-primary text-xs font-semibold disabled:opacity-40"
-                    >
-                      Aggiungi all&apos;evento
-                    </button>
-                  </div>
-                </td>
-                <td className="py-3 pr-3">
-                  <button
-                    onClick={() => openEditPlayer(player)}
-                    className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
-                  >
-                    Modifica
-                  </button>
-                </td>
-              </tr>
+                  </td>
+                </tr>
+                {editingPlayer?.id === player.id && (
+                  <tr className="border-b border-tertiary/40 last:border-b-0">
+                    <td colSpan={5} className="pb-4 pt-1">
+                      <div className="rounded-xl border border-highlight/30 bg-primary/60 p-4">
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-sm text-text-secondary block mb-1">Nome</label>
+                            <input
+                              value={editPlayerName}
+                              onChange={event => setEditPlayerName(event.target.value)}
+                              className="w-full bg-primary border border-tertiary rounded p-2"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-sm text-text-secondary block mb-1">Telefono</label>
+                            <input
+                              value={editPlayerPhone}
+                              onChange={event => setEditPlayerPhone(event.target.value)}
+                              className="w-full bg-primary border border-tertiary rounded p-2"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-sm text-text-secondary block mb-1">Valore iniziale</label>
+                            <input
+                              type="number"
+                              min="0"
+                              value={editPlayerPoints}
+                              onChange={event => setEditPlayerPoints(event.target.value)}
+                              className="w-full bg-primary border border-tertiary rounded p-2"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-3 mt-4">
+                          <button onClick={closeEditPlayer} className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold">Annulla</button>
+                          <button onClick={handleSaveEditedPlayer} disabled={editLoading} className="px-4 py-2 rounded bg-highlight text-white font-semibold">
+                            {editLoading ? 'Salvataggio...' : 'Salva'}
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
             {filteredPlayers.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-text-secondary">
+                <td colSpan={5} className="py-8 text-center text-text-secondary">
                   Nessun giocatore trovato.
                 </td>
               </tr>
@@ -491,48 +488,6 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
           </tbody>
         </table>
       </div>
-
-      {editingPlayer && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
-            <h4 className="text-lg font-bold mb-4">Modifica giocatore</h4>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm text-text-secondary block mb-1">Nome</label>
-                <input
-                  value={editPlayerName}
-                  onChange={event => setEditPlayerName(event.target.value)}
-                  className="w-full bg-primary border border-tertiary rounded p-2"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-text-secondary block mb-1">Telefono</label>
-                <input
-                  value={editPlayerPhone}
-                  onChange={event => setEditPlayerPhone(event.target.value)}
-                  className="w-full bg-primary border border-tertiary rounded p-2"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-text-secondary block mb-1">Valore iniziale</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={editPlayerPoints}
-                  onChange={event => setEditPlayerPoints(event.target.value)}
-                  className="w-full bg-primary border border-tertiary rounded p-2"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-5">
-              <button onClick={closeEditPlayer} className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold">Annulla</button>
-              <button onClick={handleSaveEditedPlayer} disabled={editLoading} className="px-4 py-2 rounded bg-highlight text-white font-semibold">
-                {editLoading ? 'Salvataggio...' : 'Salva'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
