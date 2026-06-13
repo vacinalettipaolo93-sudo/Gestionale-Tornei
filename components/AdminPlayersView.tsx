@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { collection, addDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { type Event, type Player, type SummerRankingData } from '../types';
@@ -31,11 +31,25 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   const [addNewPlayerToRanking, setAddNewPlayerToRanking] = useState(true);
   const [selectedEventId, setSelectedEventId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [playerSearchInput, setPlayerSearchInput] = useState('');
+  const [playerSearchQuery, setPlayerSearchQuery] = useState('');
+  const [eventPlayerPointsById, setEventPlayerPointsById] = useState<Record<string, string>>({});
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+  const [editPlayerName, setEditPlayerName] = useState('');
+  const [editPlayerPhone, setEditPlayerPhone] = useState('');
+  const [editPlayerPoints, setEditPlayerPoints] = useState('0');
+  const [editLoading, setEditLoading] = useState(false);
 
   const sortedPlayers = useMemo(
     () => players.slice().sort((a, b) => a.name.localeCompare(b.name)),
     [players],
   );
+  const filteredPlayers = useMemo(() => {
+    const query = playerSearchQuery.trim().toLowerCase();
+    if (!query) return sortedPlayers;
+    return sortedPlayers.filter(player => player.name.toLowerCase().includes(query));
+  }, [playerSearchQuery, sortedPlayers]);
   const rankingData = useMemo<SummerRankingData>(() => ({
     slots: Array.isArray(rankingEvent.rankingData?.slots) ? rankingEvent.rankingData.slots : [],
     matches: Array.isArray(rankingEvent.rankingData?.matches) ? rankingEvent.rankingData.matches : [],
@@ -52,6 +66,17 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     () => new Set(rankingParticipantIds),
     [rankingParticipantIds],
   );
+  useEffect(() => {
+    setEventPlayerPointsById(prev => {
+      const next = { ...prev };
+      players.forEach(player => {
+        if (!(player.id in next)) {
+          next[player.id] = String(player.summerRankingStartPoints ?? 0);
+        }
+      });
+      return next;
+    });
+  }, [players]);
 
   const saveRankingData = async (nextData: SummerRankingData) => {
     setEvents(prev =>
@@ -68,10 +93,17 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     });
   };
 
-  const addPlayerToEvent = async (eventId: string, player: Player) => {
+  const addPlayerToEvent = async (eventId: string, player: Player, startPoints: number) => {
     if (!eventId) return;
     const event = events.find(item => item.id === eventId);
     if (!event || event.players.some(existing => existing.id === player.id)) return;
+
+    if ((player.summerRankingStartPoints ?? 0) !== startPoints) {
+      await updateDoc(doc(db, 'players', player.id), {
+        summerRankingStartPoints: startPoints,
+        summerRankingJoinedAt: player.summerRankingJoinedAt ?? new Date().toISOString(),
+      });
+    }
 
     const eventPlayer: Player = {
       id: player.id,
@@ -79,8 +111,8 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       phone: player.phone ?? '',
       avatar: player.avatar,
       status: 'confirmed',
-      summerRankingStartPoints: player.summerRankingStartPoints,
-      summerRankingJoinedAt: player.summerRankingJoinedAt,
+      summerRankingStartPoints: startPoints,
+      summerRankingJoinedAt: player.summerRankingJoinedAt ?? new Date().toISOString(),
     };
     const updatedPlayers = [...event.players, eventPlayer];
     setEvents(prev =>
@@ -149,8 +181,87 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       setNewPlayerName('');
       setNewPlayerPhone('');
       setNewPlayerStartPoints('0');
+      setFeedback({ type: 'success', message: 'Giocatore creato correttamente.' });
+    } catch (error) {
+      console.error('Errore creazione giocatore', error);
+      setFeedback({ type: 'error', message: 'Impossibile creare il giocatore. Riprova.' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openEditPlayer = (player: Player) => {
+    setEditingPlayer(player);
+    setEditPlayerName(player.name);
+    setEditPlayerPhone(player.phone ?? '');
+    setEditPlayerPoints(String(player.summerRankingStartPoints ?? 0));
+  };
+
+  const closeEditPlayer = () => {
+    setEditingPlayer(null);
+    setEditPlayerName('');
+    setEditPlayerPhone('');
+    setEditPlayerPoints('0');
+  };
+
+  const handleSaveEditedPlayer = async () => {
+    if (!editingPlayer) return;
+    const normalizedName = editPlayerName.trim();
+    const normalizedPhone = editPlayerPhone.trim();
+    const normalizedPoints = Number(editPlayerPoints);
+
+    if (!normalizedName) {
+      setFeedback({ type: 'error', message: 'Il nome giocatore è obbligatorio.' });
+      return;
+    }
+    if (!Number.isFinite(normalizedPoints) || normalizedPoints < 0) {
+      setFeedback({ type: 'error', message: 'Il valore del giocatore deve essere un numero valido maggiore o uguale a 0.' });
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      const joinedAt = editingPlayer.summerRankingJoinedAt ?? new Date().toISOString();
+      await updateDoc(doc(db, 'players', editingPlayer.id), {
+        name: normalizedName,
+        phone: normalizedPhone,
+        summerRankingStartPoints: normalizedPoints,
+        summerRankingJoinedAt: joinedAt,
+      });
+
+      const eventsToUpdate = events.filter(event => event.players.some(player => player.id === editingPlayer.id));
+      if (eventsToUpdate.length > 0) {
+        const updatedEvents = events.map(event => ({
+          ...event,
+          players: event.players.map(player =>
+            player.id === editingPlayer.id
+              ? {
+                ...player,
+                name: normalizedName,
+                phone: normalizedPhone,
+                summerRankingStartPoints: normalizedPoints,
+                summerRankingJoinedAt: joinedAt,
+              }
+              : player,
+          ),
+        }));
+
+        setEvents(updatedEvents);
+        await Promise.all(
+          updatedEvents
+            .filter(event => event.players.some(player => player.id === editingPlayer.id))
+            .map(event => updateDoc(doc(db, 'events', event.id), { players: event.players })),
+        );
+      }
+
+      setEventPlayerPointsById(prev => ({ ...prev, [editingPlayer.id]: String(normalizedPoints) }));
+      setFeedback({ type: 'success', message: 'Giocatore aggiornato correttamente.' });
+      closeEditPlayer();
+    } catch (error) {
+      console.error('Errore aggiornamento giocatore', error);
+      setFeedback({ type: 'error', message: 'Errore durante il salvataggio del giocatore.' });
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -220,10 +331,34 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
       <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h3 className="text-xl font-semibold">Giocatori globali ({sortedPlayers.length})</h3>
-          <div className="text-sm text-text-secondary">
-            Ordinati alfabeticamente • Nel ranking: {rankingParticipantIds.length}
+          <div className="flex items-center gap-2">
+            <input
+              type="search"
+              value={playerSearchInput}
+              onChange={event => {
+                setPlayerSearchInput(event.target.value);
+                setPlayerSearchQuery(event.target.value);
+              }}
+              placeholder="Cerca giocatore per nome"
+              className="bg-primary border border-tertiary rounded-lg p-2 text-sm min-w-[220px]"
+            />
+            <button
+              type="button"
+              onClick={() => setPlayerSearchQuery(playerSearchInput)}
+              className="px-3 py-2 rounded bg-tertiary text-text-primary text-sm font-semibold"
+            >
+              Cerca
+            </button>
+          </div>
+          <div className="text-sm text-text-secondary w-full md:w-auto md:text-right">
+            Ordinati alfabeticamente • Nel ranking: {rankingParticipantIds.length} • Risultati: {filteredPlayers.length}
           </div>
         </div>
+        {feedback && (
+          <div className={`mb-4 rounded-lg px-3 py-2 text-sm ${feedback.type === 'success' ? 'bg-green-600/20 text-green-200 border border-green-500/30' : 'bg-red-600/20 text-red-200 border border-red-500/30'}`}>
+            {feedback.message}
+          </div>
+        )}
         <table className="w-full min-w-[860px] text-sm">
           <thead>
             <tr className="text-left border-b border-tertiary text-text-secondary">
@@ -232,10 +367,11 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
               <th className="py-3 pr-3">Punti iniziali</th>
               <th className="py-3 pr-3">Ranking</th>
               <th className="py-3 pr-3">Evento</th>
+              <th className="py-3 pr-3">Azioni</th>
             </tr>
           </thead>
           <tbody>
-            {sortedPlayers.map(player => (
+            {filteredPlayers.map(player => (
               <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
                 <td className="py-3 pr-3 font-semibold">{player.name}</td>
                 <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
@@ -254,8 +390,29 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                 </td>
                 <td className="py-3 pr-3">
                   <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0)}
+                      onChange={event => setEventPlayerPointsById(prev => ({ ...prev, [player.id]: event.target.value }))}
+                      className="w-24 bg-primary border border-tertiary rounded px-2 py-1 text-xs"
+                      title="Valore giocatore"
+                    />
                     <button
-                      onClick={() => addPlayerToEvent(selectedEventId, player)}
+                      onClick={async () => {
+                        const value = Number(eventPlayerPointsById[player.id] ?? player.summerRankingStartPoints ?? 0);
+                        if (!Number.isFinite(value) || value < 0) {
+                          setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
+                          return;
+                        }
+                        try {
+                          await addPlayerToEvent(selectedEventId, player, value);
+                          setFeedback({ type: 'success', message: `${player.name} aggiunto all'evento selezionato.` });
+                        } catch (error) {
+                          console.error('Errore aggiunta giocatore evento', error);
+                          setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} all'evento.` });
+                        }
+                      }}
                       disabled={!selectedEventId}
                       className="px-3 py-1 rounded bg-tertiary text-text-primary text-xs font-semibold disabled:opacity-40"
                     >
@@ -263,18 +420,68 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                     </button>
                   </div>
                 </td>
+                <td className="py-3 pr-3">
+                  <button
+                    onClick={() => openEditPlayer(player)}
+                    className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
+                  >
+                    Modifica
+                  </button>
+                </td>
               </tr>
             ))}
-            {sortedPlayers.length === 0 && (
+            {filteredPlayers.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-8 text-center text-text-secondary">
-                  Nessun giocatore presente nell&apos;archivio globale.
+                <td colSpan={6} className="py-8 text-center text-text-secondary">
+                  Nessun giocatore trovato.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {editingPlayer && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
+            <h4 className="text-lg font-bold mb-4">Modifica giocatore</h4>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-text-secondary block mb-1">Nome</label>
+                <input
+                  value={editPlayerName}
+                  onChange={event => setEditPlayerName(event.target.value)}
+                  className="w-full bg-primary border border-tertiary rounded p-2"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-text-secondary block mb-1">Telefono</label>
+                <input
+                  value={editPlayerPhone}
+                  onChange={event => setEditPlayerPhone(event.target.value)}
+                  className="w-full bg-primary border border-tertiary rounded p-2"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-text-secondary block mb-1">Valore iniziale</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editPlayerPoints}
+                  onChange={event => setEditPlayerPoints(event.target.value)}
+                  className="w-full bg-primary border border-tertiary rounded p-2"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-5">
+              <button onClick={closeEditPlayer} className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold">Annulla</button>
+              <button onClick={handleSaveEditedPlayer} disabled={editLoading} className="px-4 py-2 rounded bg-highlight text-white font-semibold">
+                {editLoading ? 'Salvataggio...' : 'Salva'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -13,7 +13,7 @@ interface TimeSlotsProps {
   globalTimeSlots: TimeSlot[];
   onSelectTournament?: (
     tournament: Tournament,
-    initialTab?: 'standings' | 'matches' | 'slot' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players',
+    initialTab?: 'standings' | 'matches' | 'participants' | 'playoffs' | 'consolation' | 'groups' | 'settings' | 'rules' | 'players',
     initialGroupId?: string
   ) => void;
 }
