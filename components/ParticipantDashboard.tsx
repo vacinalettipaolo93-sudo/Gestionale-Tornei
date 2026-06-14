@@ -105,6 +105,7 @@ const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, hea
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {ongoing.map(event => {
                                     const stats = getPlayerStats(event);
+                                    const isRankingEvent = event.eventType === 'ranking_singolare';
                                     return (
                                         <div
                                             key={event.id}
@@ -129,12 +130,14 @@ const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, hea
                                                         <div className="text-xs text-text-secondary">Da giocare</div>
                                                     </div>
                                                 </div>
-                                                <div className="mt-2">
-                                                    <div className="w-full bg-tertiary/30 h-2 rounded-full">
-                                                        <div className="bg-accent h-2 rounded-full transition-all duration-300" style={{ width: `${stats.completionPercentage}%` }}></div>
+                                                {!isRankingEvent && (
+                                                    <div className="mt-2">
+                                                        <div className="w-full bg-tertiary/30 h-2 rounded-full">
+                                                            <div className="bg-accent h-2 rounded-full transition-all duration-300" style={{ width: `${stats.completionPercentage}%` }}></div>
+                                                        </div>
+                                                        <div className="text-xs text-text-secondary mt-1 text-right">{stats.completionPercentage}% Completato</div>
                                                     </div>
-                                                    <div className="text-xs text-text-secondary mt-1 text-right">{stats.completionPercentage}% Completato</div>
-                                                </div>
+                                                )}
                                             </div>
                                         </div>
                                     );
