@@ -9,7 +9,7 @@ import ParticipantDashboard from './components/ParticipantDashboard';
 import ContactModal from './components/ContactModal';
 import SummerRankingView from './components/SummerRankingView';
 import AdminPlayersView from './components/AdminPlayersView';
-import { BackArrowIcon, NextTsBrandIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
+import { BackArrowIcon, NextTsBrandIcon, PencilIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
 
 import { db } from "./firebase";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
@@ -86,6 +86,10 @@ const App: React.FC = () => {
   const [createEventError, setCreateEventError] = useState<string | null>(null);
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   const [eventToDelete, setEventToDelete] = useState<Event | null>(null);
+  const [eventToRename, setEventToRename] = useState<Event | null>(null);
+  const [renameEventName, setRenameEventName] = useState('');
+  const [renameEventError, setRenameEventError] = useState<string | null>(null);
+  const [isRenamingEvent, setIsRenamingEvent] = useState(false);
   const [contactPlayer, setContactPlayer] = useState<Player | null>(null);
 
   const isOrganizer = currentUser?.role === 'organizer';
@@ -266,6 +270,43 @@ const App: React.FC = () => {
     setEventToDelete(null);
   };
 
+  const openRenameModal = (event: Event) => {
+    setEventToRename(event);
+    setRenameEventName(event.name);
+    setRenameEventError(null);
+  };
+
+  const closeRenameModal = () => {
+    setEventToRename(null);
+    setRenameEventName('');
+    setRenameEventError(null);
+    setIsRenamingEvent(false);
+  };
+
+  const handleRenameEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!eventToRename) return;
+    const trimmedName = renameEventName.trim();
+    if (!trimmedName) {
+      setRenameEventError("Il nome dell'evento non può essere vuoto.");
+      return;
+    }
+    setRenameEventError(null);
+    setIsRenamingEvent(true);
+    try {
+      await updateDoc(doc(db, "events", eventToRename.id), { name: trimmedName });
+      if (selectedEvent?.id === eventToRename.id) {
+        setSelectedEvent(prev => prev ? { ...prev, name: trimmedName } : prev);
+      }
+      closeRenameModal();
+    } catch (error) {
+      console.error('Errore rinomina evento', error);
+      setRenameEventError('Impossibile salvare il nome. Riprova.');
+    } finally {
+      setIsRenamingEvent(false);
+    }
+  };
+
   const handleLogout = () => {
     setCurrentUser(null);
     setCurrentView('dashboard');
@@ -420,10 +461,18 @@ const App: React.FC = () => {
                             )}
                           </div>
                           {isOrganizer && (
-                            <div className="p-2 flex justify-end z-10">
+                            <div className="p-2 flex justify-end gap-1 z-10">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); openRenameModal(event); }}
+                                className="text-text-secondary/50 hover:text-accent transition-colors"
+                                title="Modifica nome evento"
+                              >
+                                <PencilIcon className="w-5 h-5" />
+                              </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); setEventToDelete(event); }}
                                 className="text-text-secondary/50 hover:text-red-500 transition-colors"
+                                title="Elimina evento"
                               >
                                 <TrashIcon className="w-5 h-5" />
                               </button>
@@ -520,10 +569,18 @@ const App: React.FC = () => {
                             )}
                           </div>
                           {isOrganizer && (
-                            <div className="p-2 flex justify-end z-10">
+                            <div className="p-2 flex justify-end gap-1 z-10">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); openRenameModal(event); }}
+                                className="text-text-secondary/50 hover:text-accent transition-colors"
+                                title="Modifica nome evento"
+                              >
+                                <PencilIcon className="w-5 h-5" />
+                              </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); setEventToDelete(event); }}
                                 className="text-text-secondary/50 hover:text-red-500 transition-colors"
+                                title="Elimina evento"
                               >
                                 <TrashIcon className="w-5 h-5" />
                               </button>
@@ -714,6 +771,48 @@ const App: React.FC = () => {
                   className="bg-highlight hover:bg-highlight/80 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
                 >
                   {isCreatingEvent ? 'Creazione...' : 'Crea Evento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {eventToRename && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-md border border-tertiary">
+            <h4 className="text-lg font-bold mb-4">Modifica Nome Evento</h4>
+            <form onSubmit={handleRenameEvent}>
+              <label htmlFor="rename-event-input" className="block text-sm text-text-secondary mb-1">
+                Nuovo nome
+              </label>
+              <input
+                id="rename-event-input"
+                type="text"
+                value={renameEventName}
+                onChange={e => { setRenameEventName(e.target.value); setRenameEventError(null); }}
+                className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
+                autoFocus
+                disabled={isRenamingEvent}
+              />
+              {renameEventError && (
+                <p className="text-sm text-red-400 mt-2" role="alert">{renameEventError}</p>
+              )}
+              <div className="flex justify-end gap-4 mt-6">
+                <button
+                  type="button"
+                  onClick={closeRenameModal}
+                  disabled={isRenamingEvent}
+                  className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRenamingEvent}
+                  className="bg-highlight hover:bg-highlight/80 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                >
+                  {isRenamingEvent ? 'Salvataggio...' : 'Salva'}
                 </button>
               </div>
             </form>
