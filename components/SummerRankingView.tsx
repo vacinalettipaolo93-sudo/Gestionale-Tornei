@@ -1446,7 +1446,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                               Ripristina
                             </button>
                           )}
-                          {isOrganizer && (
+                          {canEditMatchResult(match) && (
                             <button
                               onClick={() => openDeleteMatchModal(match)}
                               className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
