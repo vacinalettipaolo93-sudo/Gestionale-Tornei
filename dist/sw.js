@@ -1,9 +1,14 @@
-const CACHE_NAME = 'gestionale-tornei-shell-v2';
+const CACHE_NAME = 'gestionale-tornei-shell-v4';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/offline.html',
   '/manifest.webmanifest',
+  '/favicon.ico',
+  '/favicon.svg',
+  '/favicon-32x32.png',
+  '/favicon-16x16.png',
+  '/apple-touch-icon.png',
   '/icons/next-app-icon.svg',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
