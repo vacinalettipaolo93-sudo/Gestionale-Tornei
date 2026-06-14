@@ -52,6 +52,14 @@ type ChallengeModalState = {
   location: string;
 };
 
+type MatchResultModalState = {
+  matchId: string;
+  score1: string;
+  score2: string;
+  outcome: 'player1' | 'player2' | 'draw' | '';
+  error: string | null;
+};
+
 type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'settings' | 'availability' | 'players';
 type AvailabilityFormState = { status: SummerAvailabilityStatus | null; days: SummerAvailabilityDay[]; periods: SummerAvailabilityPeriod[] };
 type MasterScoreFormState = { matchId: string | null; score1: string; score2: string };
@@ -204,8 +212,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [activeTab, setActiveTab] = useState<RankingTab>('ranking');
   const [slotForm, setSlotForm] = useState({ start: '', location: '', field: '' });
   const [bookingForm, setBookingForm] = useState({ slotId: '', opponentId: '', player1Id: '', player2Id: '' });
-  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
-  const [scoreForm, setScoreForm] = useState({ score1: '', score2: '' });
+  const [resultModal, setResultModal] = useState<MatchResultModalState | null>(null);
+  const [isSavingMatchResult, setIsSavingMatchResult] = useState(false);
+  const [matchToDelete, setMatchToDelete] = useState<Match | null>(null);
+  const [deleteMatchError, setDeleteMatchError] = useState<string | null>(null);
+  const [isDeletingMatch, setIsDeletingMatch] = useState(false);
+  const [matchActionError, setMatchActionError] = useState<string | null>(null);
   const [rulesConfigForm, setRulesConfigForm] = useState<SummerRankingRulesConfig>(() => normalizeRulesConfig(rankingData.rulesConfig));
   const [rulesSettingsError, setRulesSettingsError] = useState<string | null>(null);
   const [rulesSettingsSuccess, setRulesSettingsSuccess] = useState<string | null>(null);
@@ -396,58 +408,144 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const openEditResult = (match: Match) => {
-    setEditingMatchId(match.id);
-    setScoreForm({
+    setMatchActionError(null);
+    setResultModal({
+      matchId: match.id,
       score1: match.score1 !== null ? String(match.score1) : '',
       score2: match.score2 !== null ? String(match.score2) : '',
+      outcome: match.score1 === null || match.score2 === null
+        ? ''
+        : match.score1 === match.score2
+          ? 'draw'
+          : match.score1 > match.score2
+            ? 'player1'
+            : 'player2',
+      error: null,
     });
   };
 
-  const handleSaveResult = async (match: Match) => {
-    const score1 = Number(scoreForm.score1);
-    const score2 = Number(scoreForm.score2);
-    if (Number.isNaN(score1) || Number.isNaN(score2) || score1 < 0 || score2 < 0) return;
+  const closeResultModal = () => {
+    if (isSavingMatchResult) return;
+    setResultModal(null);
+  };
 
-    await onSaveRankingData({
-      ...rankingData,
-      matches: rankingData.matches.map(item =>
-        item.id === match.id
-          ? {
-              ...item,
-              score1,
-              score2,
-              status: 'completed',
-              completedAt: item.completedAt ?? new Date().toISOString(),
-            }
-          : item
-      ),
-    });
-    setEditingMatchId(null);
-    setScoreForm({ score1: '', score2: '' });
+  const handleSaveResult = async () => {
+    if (!resultModal) return;
+
+    if (!resultModal.score1.trim() || !resultModal.score2.trim()) {
+      setResultModal(previous => previous ? { ...previous, error: 'Il risultato è obbligatorio.' } : previous);
+      return;
+    }
+    if (!resultModal.outcome) {
+      setResultModal(previous => previous ? { ...previous, error: 'Seleziona vincitore o pareggio.' } : previous);
+      return;
+    }
+
+    const score1 = Number(resultModal.score1);
+    const score2 = Number(resultModal.score2);
+    if (!Number.isFinite(score1) || !Number.isFinite(score2) || score1 < 0 || score2 < 0) {
+      setResultModal(previous => previous ? { ...previous, error: 'Inserisci un punteggio valido (solo numeri >= 0).' } : previous);
+      return;
+    }
+
+    if (resultModal.outcome === 'draw' && score1 !== score2) {
+      setResultModal(previous => previous ? { ...previous, error: 'Con pareggio selezionato, i due punteggi devono essere uguali.' } : previous);
+      return;
+    }
+    if (resultModal.outcome === 'player1' && score1 <= score2) {
+      setResultModal(previous => previous ? { ...previous, error: 'Il vincitore selezionato è il Giocatore 1: il suo punteggio deve essere maggiore.' } : previous);
+      return;
+    }
+    if (resultModal.outcome === 'player2' && score2 <= score1) {
+      setResultModal(previous => previous ? { ...previous, error: 'Il vincitore selezionato è il Giocatore 2: il suo punteggio deve essere maggiore.' } : previous);
+      return;
+    }
+
+    const match = rankingData.matches.find(item => item.id === resultModal.matchId);
+    if (!match) {
+      setResultModal(previous => previous ? { ...previous, error: 'Partita non trovata. Aggiorna la pagina e riprova.' } : previous);
+      return;
+    }
+
+    setIsSavingMatchResult(true);
+    setMatchActionError(null);
+    setResultModal(previous => previous ? { ...previous, error: null } : previous);
+    try {
+      await onSaveRankingData({
+        ...rankingData,
+        matches: rankingData.matches.map(item =>
+          item.id === match.id
+            ? {
+                ...item,
+                score1,
+                score2,
+                status: 'completed',
+                completedAt: item.completedAt ?? new Date().toISOString(),
+              }
+            : item
+        ),
+      });
+      setResultModal(null);
+    } catch (error) {
+      console.error('Errore salvataggio risultato partita', error);
+      setResultModal(previous => previous ? { ...previous, error: 'Salvataggio non riuscito. Riprova.' } : previous);
+    } finally {
+      setIsSavingMatchResult(false);
+    }
   };
 
   const handleResetResult = async (match: Match) => {
-    await onSaveRankingData({
-      ...rankingData,
-      matches: rankingData.matches.map(item =>
-        item.id === match.id
-          ? {
-              ...item,
-              score1: null,
-              score2: null,
-              status: item.slotId ? 'scheduled' : 'pending',
-              completedAt: undefined,
-            }
-          : item
-      ),
-    });
+    setMatchActionError(null);
+    try {
+      await onSaveRankingData({
+        ...rankingData,
+        matches: rankingData.matches.map(item =>
+          item.id === match.id
+            ? {
+                ...item,
+                score1: null,
+                score2: null,
+                status: item.slotId ? 'scheduled' : 'pending',
+                completedAt: undefined,
+              }
+            : item
+        ),
+      });
+    } catch (error) {
+      console.error('Errore ripristino risultato partita', error);
+      setMatchActionError('Ripristino non riuscito. Riprova.');
+    }
   };
 
-  const handleDeleteMatch = async (matchId: string) => {
-    await onSaveRankingData({
-      ...rankingData,
-      matches: rankingData.matches.filter(match => match.id !== matchId),
-    });
+  const openDeleteMatchModal = (match: Match) => {
+    setDeleteMatchError(null);
+    setMatchActionError(null);
+    setMatchToDelete(match);
+  };
+
+  const closeDeleteMatchModal = () => {
+    if (isDeletingMatch) return;
+    setMatchToDelete(null);
+    setDeleteMatchError(null);
+  };
+
+  const handleDeleteMatch = async () => {
+    if (!matchToDelete) return;
+    setIsDeletingMatch(true);
+    setDeleteMatchError(null);
+    setMatchActionError(null);
+    try {
+      await onSaveRankingData({
+        ...rankingData,
+        matches: rankingData.matches.filter(match => match.id !== matchToDelete.id),
+      });
+      setMatchToDelete(null);
+    } catch (error) {
+      console.error('Errore eliminazione partita', error);
+      setDeleteMatchError('Eliminazione non riuscita. Riprova.');
+    } finally {
+      setIsDeletingMatch(false);
+    }
   };
 
   const openChallengeModal = (opponentId: string, opponentName: string) => {
@@ -848,6 +946,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       masterMatches.filter(match => loggedInPlayerId === match.player1Id || loggedInPlayerId === match.player2Id),
     [masterMatches, loggedInPlayerId],
   );
+  const resultModalMatch = resultModal
+    ? rankingData.matches.find(match => match.id === resultModal.matchId) ?? null
+    : null;
 
   const resetRankingFilters = () => {
     setRankingSearchInput('');
@@ -1266,8 +1367,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       )}
 
       {activeTab === 'matches' && (
-        <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
-          <table className="w-full min-w-[920px] text-sm">
+        <>
+          <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+            <table className="w-full min-w-[920px] text-sm">
             <thead>
               <tr className="text-left border-b border-tertiary text-text-secondary">
                 <th className="py-3 pr-3">Partita</th>
@@ -1319,42 +1421,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                         ) : 'Nessuno slot'}
                       </td>
                       <td className="py-4 pr-3">
-                        {editingMatchId === match.id ? (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              value={scoreForm.score1}
-                              onChange={event => setScoreForm(prev => ({ ...prev, score1: event.target.value }))}
-                              className="w-16 bg-primary border border-tertiary rounded px-2 py-1"
-                            />
-                            <span>-</span>
-                            <input
-                              type="number"
-                              min="0"
-                              value={scoreForm.score2}
-                              onChange={event => setScoreForm(prev => ({ ...prev, score2: event.target.value }))}
-                              className="w-16 bg-primary border border-tertiary rounded px-2 py-1"
-                            />
-                            <button
-                              onClick={() => handleSaveResult(match)}
-                              className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
-                            >
-                              Salva
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="font-semibold">
-                            {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
-                          </span>
-                        )}
+                        <span className="font-semibold">
+                          {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
+                        </span>
                       </td>
                       <td className="py-4 pr-3 text-xs text-text-secondary">
                         {encounterCount}/5
                       </td>
                       <td className="py-4 pr-3">
                         <div className="flex flex-wrap gap-2">
-                          {canEditMatchResult(match) && editingMatchId !== match.id && (
+                          {canEditMatchResult(match) && (
                             <button
                               onClick={() => openEditResult(match)}
                               className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
@@ -1372,7 +1448,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                           )}
                           {isOrganizer && (
                             <button
-                              onClick={() => handleDeleteMatch(match.id)}
+                              onClick={() => openDeleteMatchModal(match)}
                               className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
                             >
                               Elimina
@@ -1391,8 +1467,14 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </tr>
               )}
             </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+          {matchActionError && (
+            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+              {matchActionError}
+            </div>
+          )}
+        </>
       )}
 
       {activeTab === 'master' && (
@@ -2074,6 +2156,148 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {resultModal && resultModalMatch && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) closeResultModal(); }}
+          >
+            <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+              <h3 className="text-xl font-bold text-accent">
+                {resultModalMatch.status === 'completed' ? 'Modifica risultato' : 'Inserisci risultato'}
+              </h3>
+              <p className="text-sm text-text-secondary">
+                <span className="font-semibold text-text-primary">{playerMap.get(resultModalMatch.player1Id)?.name ?? resultModalMatch.player1Id}</span>
+                {' '}vs{' '}
+                <span className="font-semibold text-text-primary">{playerMap.get(resultModalMatch.player2Id)?.name ?? resultModalMatch.player2Id}</span>
+              </p>
+
+              <div className="space-y-3">
+                <div className="text-xs font-semibold text-text-secondary">Esito <span className="text-red-400">*</span></div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setResultModal(previous => previous ? { ...previous, outcome: 'player1', error: null } : previous)}
+                    className={`px-3 py-2 rounded border text-xs font-semibold ${resultModal.outcome === 'player1' ? 'bg-highlight text-white border-highlight' : 'bg-primary border-tertiary text-text-primary'}`}
+                  >
+                    Vince {playerMap.get(resultModalMatch.player1Id)?.name ?? 'Giocatore 1'}
+                  </button>
+                  <button
+                    onClick={() => setResultModal(previous => previous ? { ...previous, outcome: 'draw', error: null } : previous)}
+                    className={`px-3 py-2 rounded border text-xs font-semibold ${resultModal.outcome === 'draw' ? 'bg-highlight text-white border-highlight' : 'bg-primary border-tertiary text-text-primary'}`}
+                  >
+                    Pareggio
+                  </button>
+                  <button
+                    onClick={() => setResultModal(previous => previous ? { ...previous, outcome: 'player2', error: null } : previous)}
+                    className={`px-3 py-2 rounded border text-xs font-semibold ${resultModal.outcome === 'player2' ? 'bg-highlight text-white border-highlight' : 'bg-primary border-tertiary text-text-primary'}`}
+                  >
+                    Vince {playerMap.get(resultModalMatch.player2Id)?.name ?? 'Giocatore 2'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-text-secondary">
+                    {playerMap.get(resultModalMatch.player1Id)?.name ?? 'Giocatore 1'} <span className="text-red-400">*</span>
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={resultModal.score1}
+                    onChange={event => setResultModal(previous => previous ? { ...previous, score1: event.target.value, error: null } : previous)}
+                    className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-text-secondary">
+                    {playerMap.get(resultModalMatch.player2Id)?.name ?? 'Giocatore 2'} <span className="text-red-400">*</span>
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={resultModal.score2}
+                    onChange={event => setResultModal(previous => previous ? { ...previous, score2: event.target.value, error: null } : previous)}
+                    className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  />
+                </label>
+              </div>
+
+              <div className="text-xs text-text-secondary">
+                Risultato: {(resultModal.score1 || '0')} - {(resultModal.score2 || '0')}
+              </div>
+
+              {resultModal.error && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {resultModal.error}
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  onClick={closeResultModal}
+                  disabled={isSavingMatchResult}
+                  className="px-4 py-2 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={handleSaveResult}
+                  disabled={isSavingMatchResult}
+                  className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isSavingMatchResult ? 'Salvataggio...' : 'Salva risultato'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {matchToDelete && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) closeDeleteMatchModal(); }}
+          >
+            <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+              <h3 className="text-xl font-bold text-red-400">Conferma eliminazione</h3>
+              <p className="text-sm text-text-secondary">
+                Vuoi eliminare definitivamente questa partita? L&apos;operazione rimuoverà anche i punti assegnati a questa partita.
+              </p>
+              <p className="text-sm">
+                <span className="font-semibold text-text-primary">{playerMap.get(matchToDelete.player1Id)?.name ?? matchToDelete.player1Id}</span>
+                {' '}vs{' '}
+                <span className="font-semibold text-text-primary">{playerMap.get(matchToDelete.player2Id)?.name ?? matchToDelete.player2Id}</span>
+              </p>
+
+              {deleteMatchError && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {deleteMatchError}
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  onClick={closeDeleteMatchModal}
+                  disabled={isDeletingMatch}
+                  className="px-4 py-2 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={handleDeleteMatch}
+                  disabled={isDeletingMatch}
+                  className="px-4 py-2 rounded bg-red-600 hover:bg-red-700 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isDeletingMatch ? 'Eliminazione...' : 'Conferma eliminazione'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Portal>
       )}
 
       {challengeModal && (
