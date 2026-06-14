@@ -1,6 +1,6 @@
 // App.tsx
 import React, { useState, useMemo, useEffect } from 'react';
-import { type Event, type Tournament, type User, type Player, type SummerRankingData } from './types';
+import { type Event, type Tournament, type User, type Player, type SummerRankingData, type Match, type SummerRankingMasterMatch } from './types';
 import EventView from './components/EventView';
 import TournamentView from './components/TournamentView';
 import Login from './components/Login';
@@ -65,11 +65,50 @@ const normalizeRankingData = (data?: SummerRankingData | null): SummerRankingDat
     : undefined,
 });
 
+// Strips undefined optional fields from a Match so Firebase SDK v12 does not reject them in updateDoc
+const sanitizeMatch = (match: Match): Match => {
+  const result: Match = {
+    id: match.id,
+    player1Id: match.player1Id,
+    player2Id: match.player2Id,
+    score1: match.score1,
+    score2: match.score2,
+    status: match.status,
+  };
+  if (match.scheduledTime !== undefined) result.scheduledTime = match.scheduledTime;
+  if (match.location !== undefined) result.location = match.location;
+  if (match.field !== undefined) result.field = match.field;
+  if (match.slotId !== undefined) result.slotId = match.slotId;
+  if (match.completedAt !== undefined) result.completedAt = match.completedAt;
+  return result;
+};
+
+// Strips undefined optional fields from a SummerRankingMasterMatch
+const sanitizeMasterMatch = (match: SummerRankingMasterMatch): SummerRankingMasterMatch => {
+  const result: SummerRankingMasterMatch = {
+    id: match.id,
+    round: match.round,
+    label: match.label,
+    stage: match.stage,
+    player1Id: match.player1Id,
+    player2Id: match.player2Id,
+    score1: match.score1,
+    score2: match.score2,
+    status: match.status,
+  };
+  if (match.scheduledTime !== undefined) result.scheduledTime = match.scheduledTime;
+  if (match.location !== undefined) result.location = match.location;
+  if (match.field !== undefined) result.field = match.field;
+  if (match.slotId !== undefined) result.slotId = match.slotId;
+  if (match.completedAt !== undefined) result.completedAt = match.completedAt;
+  return result;
+};
+
 // Removes undefined values that Firebase SDK v12 rejects in updateDoc
 const sanitizeRankingDataForFirestore = (data: SummerRankingData): SummerRankingData => {
   const payload: SummerRankingData = {
     slots: Array.isArray(data.slots) ? data.slots : [],
-    matches: Array.isArray(data.matches) ? data.matches : [],
+    matches: Array.isArray(data.matches) ? data.matches.map(sanitizeMatch) : [],
     participantIds: Array.isArray(data.participantIds) ? Array.from(new Set(data.participantIds)) : [],
     rules: data.rules ?? DEFAULT_SUMMER_RANKING_RULES,
     availabilities: data.availabilities ?? {},
@@ -80,7 +119,7 @@ const sanitizeRankingDataForFirestore = (data: SummerRankingData): SummerRanking
     if (Array.isArray(data.master.manualQualifiedPlayerIds)) nextMaster.manualQualifiedPlayerIds = data.master.manualQualifiedPlayerIds;
     if (Array.isArray(data.master.generatedQualifiedPlayerIds)) nextMaster.generatedQualifiedPlayerIds = data.master.generatedQualifiedPlayerIds;
     if (data.master.bracket !== undefined) nextMaster.bracket = data.master.bracket;
-    if (Array.isArray(data.master.matches)) nextMaster.matches = data.master.matches;
+    if (Array.isArray(data.master.matches)) nextMaster.matches = data.master.matches.map(sanitizeMasterMatch);
     if (data.master.generatedAt !== undefined) nextMaster.generatedAt = data.master.generatedAt;
     payload.master = nextMaster;
   }
