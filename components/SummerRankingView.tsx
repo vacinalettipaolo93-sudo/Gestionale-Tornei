@@ -1327,36 +1327,66 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               </button>
             )}
           </div>
-          <table className="w-full min-w-[520px] text-sm">
+          <table className="w-full min-w-[680px] text-sm">
             <thead>
               <tr className="text-left border-b border-tertiary text-text-secondary">
                 <th className="py-3 pr-3">Giocatore</th>
-                <th className="py-3 pr-3">Telefono</th>
                 <th className="py-3 pr-3">Punti iniziali</th>
-                {isOrganizer && <th className="py-3 pr-3">Azioni</th>}
+                {isOrganizer ? (
+                  <>
+                    <th className="py-3 pr-3">Telefono</th>
+                    <th className="py-3 pr-3">Azioni</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="py-3 pr-3">Punti attuali</th>
+                    <th className="py-3 pr-3">Azioni</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
-              {confirmedPlayers.map(player => (
-                <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
-                  <td className="py-3 pr-3 font-semibold">{player.name}</td>
-                  <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
-                  <td className="py-3 pr-3 text-text-secondary">{player.summerRankingStartPoints ?? 0}</td>
-                  {isOrganizer && (
-                    <td className="py-3 pr-3">
-                      <button
-                        onClick={() => handleRemoveParticipant(player.id)}
-                        className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
-                      >
-                        Rimuovi dal ranking
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
+              {confirmedPlayers.map(player => {
+                const rankingEntry = rankingById.get(player.id);
+                const hasPhone = !!player.phone?.trim();
+
+                return (
+                  <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
+                    <td className="py-3 pr-3 font-semibold">{player.name}</td>
+                    <td className="py-3 pr-3 text-text-secondary">{rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0}</td>
+                    {isOrganizer ? (
+                      <>
+                        <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
+                        <td className="py-3 pr-3">
+                          <button
+                            onClick={() => handleRemoveParticipant(player.id)}
+                            className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
+                          >
+                            Rimuovi dal ranking
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-3 pr-3 font-bold text-text-primary">{rankingEntry?.points ?? rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0}</td>
+                        <td className="py-3 pr-3">
+                          <button
+                            onClick={() => onPlayerContact(player)}
+                            disabled={!hasPhone}
+                            title={hasPhone ? `Contatta ${player.name}` : 'Numero non disponibile'}
+                            className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Contatta
+                          </button>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
               {confirmedPlayers.length === 0 && (
                 <tr>
-                  <td colSpan={isOrganizer ? 4 : 3} className="py-8 text-center text-text-secondary">
+                  <td colSpan={4} className="py-8 text-center text-text-secondary">
                     Nessun partecipante nel ranking.
                   </td>
                 </tr>
