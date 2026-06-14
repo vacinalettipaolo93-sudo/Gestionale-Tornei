@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   type Match,
   type Player,
@@ -27,6 +28,29 @@ import {
   removePlayerFromSummerRankingMaster,
   syncSummerRankingMasterMatches,
 } from '../utils/summerRanking';
+
+// Portal renders children directly in document.body, bypassing any ancestor CSS transforms
+// (such as animate-fadeIn) that would otherwise break position:fixed modal centering.
+const Portal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  if (!elRef.current) elRef.current = document.createElement('div');
+  useEffect(() => {
+    const el = elRef.current!;
+    document.body.appendChild(el);
+    return () => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    };
+  }, []);
+  return createPortal(children, elRef.current!);
+};
+
+type ChallengeModalState = {
+  opponentId: string;
+  opponentName: string;
+  scheduledDate: string;
+  scheduledHour: string;
+  location: string;
+};
 
 type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'settings' | 'availability' | 'players';
 type AvailabilityFormState = { status: SummerAvailabilityStatus | null; days: SummerAvailabilityDay[]; periods: SummerAvailabilityPeriod[] };
@@ -201,7 +225,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [masterBookingSlotIdByMatch, setMasterBookingSlotIdByMatch] = useState<Record<string, string>>({});
   const [editingMasterMatchId, setEditingMasterMatchId] = useState<string | null>(null);
   const [masterScoreForm, setMasterScoreForm] = useState<MasterScoreFormState>({ matchId: null, score1: '', score2: '' });
-  const [challengeModal, setChallengeModal] = useState<{ opponentId: string; opponentName: string; scheduledTime: string; location: string } | null>(null);
+  const [challengeModal, setChallengeModal] = useState<ChallengeModalState | null>(null);
   const [challengeError, setChallengeError] = useState<string | null>(null);
   const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
   const [isSavingChallenge, setIsSavingChallenge] = useState(false);
@@ -427,7 +451,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const openChallengeModal = (opponentId: string, opponentName: string) => {
-    setChallengeModal({ opponentId, opponentName, scheduledTime: '', location: 'Tennis Salò Canottieri' });
+    setChallengeModal({ opponentId, opponentName, scheduledDate: '', scheduledHour: '', location: 'Tennis Salò Canottieri' });
     setChallengeError(null);
     setChallengeSuccess(null);
   };
@@ -440,13 +464,22 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
   const handleCreateChallenge = async () => {
     if (!challengeModal || !loggedInPlayerId || !currentPlayer) return;
-    const { opponentId, scheduledTime, location } = challengeModal;
+    const { opponentId, scheduledDate, scheduledHour, location } = challengeModal;
 
-    if (!scheduledTime) {
-      setChallengeError('Seleziona una data e un orario per la sfida.');
+    if (!scheduledDate) {
+      setChallengeError('Seleziona una data per la sfida.');
+      return;
+    }
+    if (!scheduledHour) {
+      setChallengeError('Seleziona un orario per la sfida.');
+      return;
+    }
+    if (!location) {
+      setChallengeError('Seleziona un luogo per la sfida.');
       return;
     }
 
+    const scheduledTime = `${scheduledDate}T${scheduledHour}`;
     const chosenDate = new Date(scheduledTime);
     if (Number.isNaN(chosenDate.getTime())) {
       setChallengeError('Data o orario non validi.');
@@ -487,7 +520,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       }, 1500);
     } catch (err) {
       console.error('Errore creazione sfida', err);
-      setChallengeError('Salvataggio non riuscito. Riprova.');
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setChallengeError(`Salvataggio non riuscito: ${errMsg}. Riprova.`);
     } finally {
       setIsSavingChallenge(false);
     }
@@ -2043,69 +2077,81 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       )}
 
       {challengeModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) closeChallengeModal(); }}
-        >
-          <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="text-xl font-bold text-accent">Programma sfida</h3>
-            <p className="text-sm text-text-secondary">
-              Stai sfidando <span className="font-semibold text-text-primary">{challengeModal.opponentName}</span>. Scegli la data e l'orario in cui vuoi giocare.
-            </p>
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) closeChallengeModal(); }}
+          >
+            <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+              <h3 className="text-xl font-bold text-accent">Programma sfida</h3>
+              <p className="text-sm text-text-secondary">
+                Stai sfidando <span className="font-semibold text-text-primary">{challengeModal.opponentName}</span>. Scegli la data, l'orario e il luogo in cui vuoi giocare.
+              </p>
 
-            <div className="space-y-3">
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Data e orario <span className="text-red-400">*</span></span>
-                <input
-                  type="datetime-local"
-                  value={challengeModal.scheduledTime}
-                  onChange={e => setChallengeModal(prev => prev ? { ...prev, scheduledTime: e.target.value } : prev)}
-                  className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
-                />
-              </label>
+              <div className="space-y-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-text-secondary">Data <span className="text-red-400">*</span></span>
+                  <input
+                    type="date"
+                    value={challengeModal.scheduledDate}
+                    onChange={e => setChallengeModal(prev => prev ? { ...prev, scheduledDate: e.target.value } : prev)}
+                    className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  />
+                </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Luogo</span>
-                <select
-                  value={challengeModal.location}
-                  onChange={e => setChallengeModal(prev => prev ? { ...prev, location: e.target.value } : prev)}
-                  className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-text-secondary">Orario <span className="text-red-400">*</span></span>
+                  <input
+                    type="time"
+                    value={challengeModal.scheduledHour}
+                    onChange={e => setChallengeModal(prev => prev ? { ...prev, scheduledHour: e.target.value } : prev)}
+                    className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-text-secondary">Luogo <span className="text-red-400">*</span></span>
+                  <select
+                    value={challengeModal.location}
+                    onChange={e => setChallengeModal(prev => prev ? { ...prev, location: e.target.value } : prev)}
+                    className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  >
+                    <option value="Tennis Salò Canottieri">Tennis Salò Canottieri</option>
+                    <option value="Paitone Arena">Paitone Arena</option>
+                  </select>
+                </label>
+              </div>
+
+              {challengeError && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {challengeError}
+                </div>
+              )}
+              {challengeSuccess && (
+                <div className="rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm text-green-200">
+                  {challengeSuccess}
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  onClick={closeChallengeModal}
+                  disabled={isSavingChallenge}
+                  className="px-4 py-2 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <option value="Tennis Salò Canottieri">Tennis Salò Canottieri</option>
-                  <option value="Paitone Arena">Paitone Arena</option>
-                </select>
-              </label>
-            </div>
-
-            {challengeError && (
-              <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-                {challengeError}
+                  Annulla
+                </button>
+                <button
+                  onClick={handleCreateChallenge}
+                  disabled={isSavingChallenge || !challengeModal.scheduledDate || !challengeModal.scheduledHour || !challengeModal.location}
+                  className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isSavingChallenge ? 'Salvataggio...' : 'Programma sfida'}
+                </button>
               </div>
-            )}
-            {challengeSuccess && (
-              <div className="rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm text-green-200">
-                {challengeSuccess}
-              </div>
-            )}
-
-            <div className="flex gap-3 justify-end pt-2">
-              <button
-                onClick={closeChallengeModal}
-                disabled={isSavingChallenge}
-                className="px-4 py-2 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Annulla
-              </button>
-              <button
-                onClick={handleCreateChallenge}
-                disabled={isSavingChallenge || !challengeModal.scheduledTime}
-                className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isSavingChallenge ? 'Salvataggio...' : 'Programma sfida'}
-              </button>
             </div>
           </div>
-        </div>
+        </Portal>
       )}
 
     </div>

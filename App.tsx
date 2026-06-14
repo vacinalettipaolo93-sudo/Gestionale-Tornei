@@ -65,6 +65,28 @@ const normalizeRankingData = (data?: SummerRankingData | null): SummerRankingDat
     : undefined,
 });
 
+// Removes undefined values that Firebase SDK v12 rejects in updateDoc
+const sanitizeRankingDataForFirestore = (data: SummerRankingData): SummerRankingData => {
+  const payload: SummerRankingData = {
+    slots: Array.isArray(data.slots) ? data.slots : [],
+    matches: Array.isArray(data.matches) ? data.matches : [],
+    participantIds: Array.isArray(data.participantIds) ? Array.from(new Set(data.participantIds)) : [],
+    rules: data.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+    availabilities: data.availabilities ?? {},
+  };
+  if (data.rulesConfig) payload.rulesConfig = data.rulesConfig;
+  if (data.master) {
+    const nextMaster: NonNullable<SummerRankingData['master']> = {};
+    if (Array.isArray(data.master.manualQualifiedPlayerIds)) nextMaster.manualQualifiedPlayerIds = data.master.manualQualifiedPlayerIds;
+    if (Array.isArray(data.master.generatedQualifiedPlayerIds)) nextMaster.generatedQualifiedPlayerIds = data.master.generatedQualifiedPlayerIds;
+    if (data.master.bracket !== undefined) nextMaster.bracket = data.master.bracket;
+    if (Array.isArray(data.master.matches)) nextMaster.matches = data.master.matches;
+    if (data.master.generatedAt !== undefined) nextMaster.generatedAt = data.master.generatedAt;
+    payload.master = nextMaster;
+  }
+  return payload;
+};
+
 const App: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -184,9 +206,10 @@ const App: React.FC = () => {
     if (selectedEvent?.id === eventId) {
       setSelectedEvent(prev => prev ? { ...prev, eventType: 'ranking_singolare', rankingData: normalized } : prev);
     }
+    const sanitized = sanitizeRankingDataForFirestore(normalized);
     await updateDoc(doc(db, "events", eventId), {
       eventType: 'ranking_singolare',
-      rankingData: normalized,
+      rankingData: sanitized,
     });
   };
 
