@@ -1,9 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Next TS app icon">
-  <rect width="512" height="512" rx="96" fill="#0f172a"/>
-  <rect x="32" y="32" width="448" height="448" rx="84" fill="#111c31" stroke="#22d3ee" stroke-width="6"/>
-  <rect x="78" y="76" width="356" height="28" rx="10" fill="#67e8f9"/>
-  <text x="96" y="285" fill="#9B1C12" font-size="138" font-weight="700" font-family="Arial, Helvetica, sans-serif">NEXT</text>
-  <polygon points="345,205 375,222 345,239" fill="#9B1C12" />
-  <circle cx="412" cy="272" r="58" fill="none" stroke="#e2e8f0" stroke-width="10" />
-  <text x="378" y="290" fill="#e2e8f0" font-size="52" font-weight="700" font-family="Arial, Helvetica, sans-serif">TS</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Next app icon">
+  <rect width="512" height="512" fill="#ffffff"/>
+  <text
+    x="256"
+    y="256"
+    fill="#9B1C12"
+    font-size="128"
+    font-weight="700"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    font-family="Arial, Helvetica, sans-serif"
+    letter-spacing="4"
+  >
+    NEXT
+  </text>
 </svg>
