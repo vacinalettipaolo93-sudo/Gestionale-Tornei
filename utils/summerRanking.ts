@@ -410,7 +410,7 @@ export const createSummerRankingMasterGroupMatches = (
       const player2Id = group.playerIds[secondSeedIndex] ?? null;
       const previousMatch = previousMap.get(matchId);
       const samePlayers = previousMatch?.player1Id === player1Id && previousMatch?.player2Id === player2Id;
-      const isCompleted = hasValidKnockoutScore({ player1Id, player2Id, score1: previousMatch?.score1 ?? null, score2: previousMatch?.score2 ?? null });
+      const isCompleted = samePlayers && hasValidKnockoutScore({ player1Id, player2Id, score1: previousMatch?.score1 ?? null, score2: previousMatch?.score2 ?? null });
 
       return {
         id: matchId,
@@ -465,6 +465,14 @@ export const createSummerRankingMasterData = (
     generatedAt: new Date().toISOString(),
   };
 };
+
+export const resetSummerRankingMasterData = (
+  master: SummerRankingMasterData | undefined,
+  format: SummerRankingMasterFormat = 'bracket',
+): SummerRankingMasterData => ({
+  format,
+  manualQualifiedPlayerIds: master?.manualQualifiedPlayerIds,
+});
 
 export const removePlayerFromSummerRankingMaster = (
   master: SummerRankingMasterData | undefined,
