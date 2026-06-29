@@ -28,6 +28,7 @@ import {
   getSummerRankingWinPoints,
   normalizeRulesConfig,
   recomputeSummerRankingMasterBracket,
+  resetSummerRankingMasterData,
   removePlayerFromSummerRankingMaster,
   syncSummerRankingMasterMatches,
 } from '../utils/summerRanking';
@@ -686,7 +687,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     const nextMaster = createSummerRankingMasterData(
       masterQualifiedDraft,
       manualQualifiedPlayerIds,
-      rankingData.master?.matches ?? [],
+      [],
       masterFormatDraft,
     );
 
@@ -694,6 +695,18 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       ...rankingData,
       master: nextMaster,
     });
+  };
+
+  const handleResetMaster = async () => {
+    if (!isOrganizer || !isMasterGenerated) return;
+
+    await onSaveRankingData({
+      ...rankingData,
+      master: resetSummerRankingMasterData(rankingData.master, masterFormat),
+    });
+
+    setEditingMasterMatchId(null);
+    setMasterScoreForm({ matchId: null, score1: '', score2: '' });
   };
 
   const canManageMasterMatch = (match: SummerRankingMasterMatch) =>
@@ -1727,6 +1740,14 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 >
                   {isMasterGenerated ? 'Rigenera Master' : 'Genera Master'}
                 </button>
+                {isMasterGenerated && (
+                  <button
+                    onClick={handleResetMaster}
+                    className="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700"
+                  >
+                    {masterFormat === 'bracket' ? 'Annulla tabellone' : 'Annulla gironi'}
+                  </button>
+                )}
               </div>
             </div>
           )}
