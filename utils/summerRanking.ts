@@ -545,7 +545,14 @@ export const calculateSummerRanking = (
   const cfg = config ?? DEFAULT_RULES_CONFIG;
   const confirmedPlayers = players.filter(player => player.status === 'confirmed');
   const completedMatches = matches
-    .filter(match => match.status === 'completed' && match.score1 !== null && match.score2 !== null)
+    .filter(match =>
+      match.score1 !== null &&
+      match.score2 !== null &&
+      (
+        match.status === 'completed' ||
+        Boolean(match.completedAt)
+      )
+    )
     .slice()
     .sort((a, b) => {
       const aTime = toTimestamp(getMatchPlayedAt(a));
