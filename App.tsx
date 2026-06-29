@@ -13,8 +13,12 @@ import { BackArrowIcon, NextTsBrandIcon, PencilIcon, PlusIcon, TrashIcon, UserCi
 
 import { db } from "./firebase";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDoc } from "firebase/firestore";
-import { DEFAULT_SUMMER_RANKING_RULES } from './utils/summerRanking';
-import { calculateSummerRanking } from './utils/summerRanking';
+import {
+  DEFAULT_SUMMER_RANKING_RULES,
+  calculateSummerRanking,
+  generateRulesText,
+  normalizeRulesConfig,
+} from './utils/summerRanking';
 import { isEventConcluded } from './utils/eventStatus';
 
 type View = 'dashboard' | 'event' | 'tournament' | 'playersAdmin';
@@ -51,7 +55,7 @@ const normalizeRankingData = (data?: SummerRankingData | null): SummerRankingDat
   slots: Array.isArray(data?.slots) ? data.slots : [],
   matches: Array.isArray(data?.matches) ? data.matches : [],
   participantIds: Array.isArray(data?.participantIds) ? data.participantIds : [],
-  rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+  rules: data?.rules ?? generateRulesText(normalizeRulesConfig(data?.rulesConfig)),
   rulesConfig: data?.rulesConfig,
   availabilities: data?.availabilities ?? {},
   master: data?.master
@@ -113,7 +117,7 @@ const sanitizeRankingDataForFirestore = (data: SummerRankingData): SummerRanking
     slots: Array.isArray(data.slots) ? data.slots : [],
     matches: Array.isArray(data.matches) ? data.matches.map(sanitizeMatch) : [],
     participantIds: Array.isArray(data.participantIds) ? Array.from(new Set(data.participantIds)) : [],
-    rules: data.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+    rules: data.rules ?? generateRulesText(normalizeRulesConfig(data.rulesConfig)),
     availabilities: data.availabilities ?? {},
   };
   if (data.rulesConfig) payload.rulesConfig = data.rulesConfig;

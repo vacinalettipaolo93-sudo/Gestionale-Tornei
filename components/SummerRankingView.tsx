@@ -92,6 +92,14 @@ const normalizeAvailability = (availability?: SummerPlayerAvailability): Availab
 const toggleArrayValue = <T,>(items: T[], value: T) =>
   items.includes(value) ? items.filter(item => item !== value) : [...items, value];
 
+const getRankingRulesText = (
+  manualRules: string | undefined,
+  rulesConfig: SummerRankingRulesConfig | undefined,
+) => {
+  if (typeof manualRules === 'string' && manualRules.trim().length > 0) return manualRules;
+  return generateRulesText(normalizeRulesConfig(rulesConfig));
+};
+
 const getAvailabilitySummary = (availability?: SummerPlayerAvailability) => {
   if (!availability) {
     return {
@@ -226,6 +234,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [rulesSettingsError, setRulesSettingsError] = useState<string | null>(null);
   const [rulesSettingsSuccess, setRulesSettingsSuccess] = useState<string | null>(null);
   const [isSavingRulesSettings, setIsSavingRulesSettings] = useState(false);
+  const [rulesForm, setRulesForm] = useState(() => getRankingRulesText(rankingData.rules, rankingData.rulesConfig));
+  const [rulesError, setRulesError] = useState<string | null>(null);
+  const [rulesSuccess, setRulesSuccess] = useState<string | null>(null);
+  const [isSavingRules, setIsSavingRules] = useState(false);
   const [startPointsDrafts, setStartPointsDrafts] = useState<Record<string, string>>({});
   const [busyPlayerId, setBusyPlayerId] = useState<string | null>(null);
   const [rankingSearchInput, setRankingSearchInput] = useState('');
@@ -250,6 +262,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   useEffect(() => {
     setRulesConfigForm(normalizeRulesConfig(rankingData.rulesConfig));
   }, [rankingData.rulesConfig]);
+  useEffect(() => {
+    setRulesForm(getRankingRulesText(rankingData.rules, rankingData.rulesConfig));
+  }, [rankingData.rules, rankingData.rulesConfig]);
 
   const rankingParticipantIds = useMemo(
     () => (Array.isArray(rankingData.participantIds) ? rankingData.participantIds : []),
@@ -818,6 +833,14 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => JSON.stringify(rulesConfigForm) !== JSON.stringify(effectiveConfig),
     [rulesConfigForm, effectiveConfig],
   );
+  const effectiveRulesText = useMemo(
+    () => getRankingRulesText(rankingData.rules, rankingData.rulesConfig),
+    [rankingData.rules, rankingData.rulesConfig],
+  );
+  const hasRulesChanges = useMemo(
+    () => rulesForm !== effectiveRulesText,
+    [rulesForm, effectiveRulesText],
+  );
 
   const updateRulesConfig = (key: keyof SummerRankingRulesConfig, rawValue: string) => {
     const parsed = Number(rawValue);
@@ -834,6 +857,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     setRulesSettingsSuccess(null);
   };
 
+  const resetRules = () => {
+    setRulesForm(effectiveRulesText);
+    setRulesError(null);
+    setRulesSuccess(null);
+  };
+
   const handleSaveRulesSettings = async () => {
     setIsSavingRulesSettings(true);
     setRulesSettingsError(null);
@@ -842,14 +871,32 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       await onSaveRankingData({
         ...rankingData,
         rulesConfig: rulesConfigForm,
-        rules: generateRulesText(rulesConfigForm),
       });
-      setRulesSettingsSuccess('Impostazioni salvate con successo. La classifica e il regolamento sono stati aggiornati.');
+      setRulesSettingsSuccess('Impostazioni salvate con successo. La classifica è stata aggiornata.');
     } catch (error) {
       console.error('Errore salvataggio impostazioni', error);
       setRulesSettingsError('Salvataggio non riuscito. Riprova.');
     } finally {
       setIsSavingRulesSettings(false);
+    }
+  };
+
+  const handleSaveRules = async () => {
+    if (!isOrganizer) return;
+    setIsSavingRules(true);
+    setRulesError(null);
+    setRulesSuccess(null);
+    try {
+      await onSaveRankingData({
+        ...rankingData,
+        rules: rulesForm,
+      });
+      setRulesSuccess('Regolamento salvato con successo.');
+    } catch (error) {
+      console.error('Errore salvataggio regolamento', error);
+      setRulesError('Salvataggio non riuscito. Riprova.');
+    } finally {
+      setIsSavingRules(false);
     }
   };
 
@@ -2104,9 +2151,53 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           <div className="flex items-center justify-between gap-4 mb-4">
             <h3 className="text-xl font-bold text-accent">Regolamento ufficiale</h3>
           </div>
-          <div className="bg-primary rounded-lg p-4 whitespace-pre-line border border-tertiary">
-            {generateRulesText(effectiveConfig)}
-          </div>
+          {isOrganizer ? (
+            <div className="space-y-4">
+              <p className="text-sm text-text-secondary">
+                Inserisci o modifica manualmente il regolamento del ranking.
+              </p>
+              <textarea
+                value={rulesForm}
+                onChange={event => {
+                  setRulesForm(event.target.value);
+                  setRulesError(null);
+                  setRulesSuccess(null);
+                }}
+                rows={16}
+                className="w-full bg-primary rounded-lg p-4 whitespace-pre-wrap border border-tertiary text-text-primary"
+              />
+              {rulesError && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {rulesError}
+                </div>
+              )}
+              {rulesSuccess && (
+                <div className="rounded-lg border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm text-green-200">
+                  {rulesSuccess}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleSaveRules}
+                  disabled={isSavingRules || !hasRulesChanges}
+                  className="px-4 py-2 rounded bg-highlight text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isSavingRules ? 'Salvataggio...' : 'Salva regolamento'}
+                </button>
+                <button
+                  onClick={resetRules}
+                  disabled={isSavingRules || !hasRulesChanges}
+                  className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Ripristina
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-primary rounded-lg p-4 whitespace-pre-line border border-tertiary">
+              {effectiveRulesText}
+            </div>
+          )}
         </div>
       )}
 
@@ -2115,7 +2206,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           <div>
             <h3 className="text-xl font-bold text-accent">Impostazioni ranking</h3>
             <p className="text-sm text-text-secondary mt-1">
-              Modifica i valori numerici delle regole. Premendo Salva la classifica si ricalcola e il Regolamento si aggiorna automaticamente.
+              Modifica i valori numerici delle regole usate per il calcolo classifica.
             </p>
           </div>
 

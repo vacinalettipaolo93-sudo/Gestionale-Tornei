@@ -2,8 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, addDoc, deleteDoc, doc, getDocs, query, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { type Event, type Player, type SummerRankingData } from '../types';
-import { DEFAULT_SUMMER_RANKING_RULES } from '../utils/summerRanking';
-import { removePlayerFromSummerRankingMaster } from '../utils/summerRanking';
+import {
+  generateRulesText,
+  normalizeRulesConfig,
+  removePlayerFromSummerRankingMaster,
+} from '../utils/summerRanking';
 
 interface AdminPlayersViewProps {
   players: Player[];
@@ -24,7 +27,7 @@ const normalizeEventRankingData = (data?: SummerRankingData): SummerRankingData 
   slots: Array.isArray(data?.slots) ? data.slots : [],
   matches: Array.isArray(data?.matches) ? data.matches : [],
   participantIds: Array.isArray(data?.participantIds) ? data.participantIds : [],
-  rules: data?.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+  rules: data?.rules ?? generateRulesText(normalizeRulesConfig(data?.rulesConfig)),
   rulesConfig: data?.rulesConfig,
   availabilities: data?.availabilities ?? {},
   master: data?.master,
@@ -35,7 +38,7 @@ const sanitizeRankingDataForFirestore = (data: SummerRankingData): SummerRanking
     slots: Array.isArray(data.slots) ? data.slots : [],
     matches: Array.isArray(data.matches) ? data.matches : [],
     participantIds: Array.isArray(data.participantIds) ? Array.from(new Set(data.participantIds)) : [],
-    rules: data.rules ?? DEFAULT_SUMMER_RANKING_RULES,
+    rules: data.rules ?? generateRulesText(normalizeRulesConfig(data.rulesConfig)),
     availabilities: data.availabilities ?? {},
   };
 
