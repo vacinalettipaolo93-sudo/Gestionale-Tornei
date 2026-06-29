@@ -4,6 +4,8 @@ import {
   type PlayoffBracket,
   type PlayoffMatch,
   type SummerRankingMasterData,
+  type SummerRankingMasterFormat,
+  type SummerRankingMasterGroup,
   type SummerRankingMasterMatch,
   type SummerRankingRulesConfig,
 } from '../types';
@@ -105,6 +107,20 @@ const MASTER_SEED_PAIRINGS: Array<[number, number]> = [
   [3, 4],
 ];
 
+const MASTER_GROUP_CONFIGS: Array<{ id: string; name: string; seeds: number[] }> = [
+  { id: 'master-group-a', name: 'Girone A', seeds: [0, 3, 4, 7] },
+  { id: 'master-group-b', name: 'Girone B', seeds: [1, 2, 5, 6] },
+];
+
+const MASTER_GROUP_PAIRINGS: Array<[number, number]> = [
+  [0, 1],
+  [2, 3],
+  [0, 2],
+  [1, 3],
+  [0, 3],
+  [1, 2],
+];
+
 const MASTER_MATCH_METADATA = {
   'master-qf-1': { label: 'Quarto 1', stage: 'quarterfinal' },
   'master-qf-2': { label: 'Quarto 2', stage: 'quarterfinal' },
@@ -194,6 +210,9 @@ export const getSummerRankingMasterQualifiedPlayerIds = (
     ? manualQualified
     : getSummerRankingAutoQualifiedPlayerIds(ranking, cfg);
 };
+
+export const getSummerRankingMasterFormat = (master?: SummerRankingMasterData): SummerRankingMasterFormat =>
+  master?.format === 'groups' || (Array.isArray(master?.groups) && master.groups.length > 0) ? 'groups' : 'bracket';
 
 export const createSummerRankingMasterBracket = (qualifiedPlayerIds: string[]): PlayoffBracket => {
   const matches: PlayoffMatch[] = [
@@ -370,13 +389,75 @@ export const syncSummerRankingMasterMatches = (
     });
 };
 
+export const createSummerRankingMasterGroups = (qualifiedPlayerIds: string[]): SummerRankingMasterGroup[] =>
+  MASTER_GROUP_CONFIGS.map(group => ({
+    id: group.id,
+    name: group.name,
+    playerIds: group.seeds.map(seedIndex => qualifiedPlayerIds[seedIndex]).filter((playerId): playerId is string => Boolean(playerId)),
+  }));
+
+export const createSummerRankingMasterGroupMatches = (
+  groups: SummerRankingMasterGroup[],
+  previousMatches: SummerRankingMasterMatch[] = [],
+  completedAtFallback = new Date().toISOString(),
+): SummerRankingMasterMatch[] => {
+  const previousMap = new Map(previousMatches.map(match => [match.id, match]));
+
+  return groups.flatMap((group, groupIndex) =>
+    MASTER_GROUP_PAIRINGS.map(([firstSeedIndex, secondSeedIndex], matchIndex) => {
+      const matchId = `${group.id}-match-${matchIndex + 1}`;
+      const player1Id = group.playerIds[firstSeedIndex] ?? null;
+      const player2Id = group.playerIds[secondSeedIndex] ?? null;
+      const previousMatch = previousMap.get(matchId);
+      const samePlayers = previousMatch?.player1Id === player1Id && previousMatch?.player2Id === player2Id;
+      const isCompleted = hasValidKnockoutScore({ player1Id, player2Id, score1: previousMatch?.score1 ?? null, score2: previousMatch?.score2 ?? null });
+
+      return {
+        id: matchId,
+        round: groupIndex + 1,
+        label: `${group.name} • Match ${matchIndex + 1}`,
+        stage: 'group',
+        groupId: group.id,
+        player1Id,
+        player2Id,
+        score1: isCompleted ? previousMatch?.score1 ?? null : null,
+        score2: isCompleted ? previousMatch?.score2 ?? null : null,
+        status: isCompleted
+          ? 'completed'
+          : samePlayers && previousMatch?.slotId && player1Id && player2Id
+            ? 'scheduled'
+            : 'pending',
+        scheduledTime: samePlayers ? previousMatch?.scheduledTime : undefined,
+        location: samePlayers ? previousMatch?.location : undefined,
+        field: samePlayers ? previousMatch?.field : undefined,
+        slotId: samePlayers ? previousMatch?.slotId : undefined,
+        completedAt: isCompleted ? previousMatch?.completedAt ?? completedAtFallback : undefined,
+      } as SummerRankingMasterMatch;
+    }),
+  );
+};
+
 export const createSummerRankingMasterData = (
   qualifiedPlayerIds: string[],
   manualQualifiedPlayerIds?: string[],
   previousMatches: SummerRankingMasterMatch[] = [],
+  format: SummerRankingMasterFormat = 'bracket',
 ): SummerRankingMasterData => {
+  if (format === 'groups') {
+    const groups = createSummerRankingMasterGroups(qualifiedPlayerIds);
+    return {
+      format,
+      manualQualifiedPlayerIds,
+      generatedQualifiedPlayerIds: qualifiedPlayerIds,
+      groups,
+      matches: createSummerRankingMasterGroupMatches(groups, previousMatches),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   const bracket = createSummerRankingMasterBracket(qualifiedPlayerIds);
   return {
+    format: 'bracket',
     manualQualifiedPlayerIds,
     generatedQualifiedPlayerIds: qualifiedPlayerIds,
     bracket,

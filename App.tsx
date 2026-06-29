@@ -56,9 +56,11 @@ const normalizeRankingData = (data?: SummerRankingData | null): SummerRankingDat
   availabilities: data?.availabilities ?? {},
   master: data?.master
     ? {
+      format: data.master.format === 'groups' || (Array.isArray(data.master.groups) && data.master.groups.length > 0) ? 'groups' : 'bracket',
       manualQualifiedPlayerIds: Array.isArray(data.master.manualQualifiedPlayerIds) ? data.master.manualQualifiedPlayerIds : undefined,
       generatedQualifiedPlayerIds: Array.isArray(data.master.generatedQualifiedPlayerIds) ? data.master.generatedQualifiedPlayerIds : undefined,
       bracket: data.master.bracket ?? undefined,
+      groups: Array.isArray(data.master.groups) ? data.master.groups : [],
       matches: Array.isArray(data.master.matches) ? data.master.matches : [],
       generatedAt: data.master.generatedAt,
     }
@@ -96,6 +98,7 @@ const sanitizeMasterMatch = (match: SummerRankingMasterMatch): SummerRankingMast
     score2: match.score2,
     status: match.status,
   };
+  if (match.groupId !== undefined) result.groupId = match.groupId;
   if (match.scheduledTime !== undefined) result.scheduledTime = match.scheduledTime;
   if (match.location !== undefined) result.location = match.location;
   if (match.field !== undefined) result.field = match.field;
@@ -116,9 +119,11 @@ const sanitizeRankingDataForFirestore = (data: SummerRankingData): SummerRanking
   if (data.rulesConfig) payload.rulesConfig = data.rulesConfig;
   if (data.master) {
     const nextMaster: NonNullable<SummerRankingData['master']> = {};
+    nextMaster.format = data.master.format === 'groups' ? 'groups' : 'bracket';
     if (Array.isArray(data.master.manualQualifiedPlayerIds)) nextMaster.manualQualifiedPlayerIds = data.master.manualQualifiedPlayerIds;
     if (Array.isArray(data.master.generatedQualifiedPlayerIds)) nextMaster.generatedQualifiedPlayerIds = data.master.generatedQualifiedPlayerIds;
     if (data.master.bracket !== undefined) nextMaster.bracket = data.master.bracket;
+    if (Array.isArray(data.master.groups)) nextMaster.groups = data.master.groups;
     if (Array.isArray(data.master.matches)) nextMaster.matches = data.master.matches.map(sanitizeMasterMatch);
     if (data.master.generatedAt !== undefined) nextMaster.generatedAt = data.master.generatedAt;
     payload.master = nextMaster;
