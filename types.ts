@@ -140,13 +140,21 @@ export interface SummerPlayerAvailability {
   updatedAt?: string;
 }
 
-export type SummerRankingMasterStage = 'quarterfinal' | 'semifinal' | 'final' | 'thirdPlace';
+export type SummerRankingMasterFormat = 'bracket' | 'groups';
+export type SummerRankingMasterStage = 'quarterfinal' | 'semifinal' | 'final' | 'thirdPlace' | 'group';
+
+export interface SummerRankingMasterGroup {
+  id: string;
+  name: string;
+  playerIds: string[];
+}
 
 export interface SummerRankingMasterMatch {
   id: string;
   round: number;
   label: string;
   stage: SummerRankingMasterStage;
+  groupId?: string;
   player1Id: string | null;
   player2Id: string | null;
   score1: number | null;
@@ -160,9 +168,11 @@ export interface SummerRankingMasterMatch {
 }
 
 export interface SummerRankingMasterData {
+  format?: SummerRankingMasterFormat;
   manualQualifiedPlayerIds?: string[];
   generatedQualifiedPlayerIds?: string[];
   bracket?: PlayoffBracket | null;
+  groups?: SummerRankingMasterGroup[];
   matches?: SummerRankingMasterMatch[];
   generatedAt?: string;
 }

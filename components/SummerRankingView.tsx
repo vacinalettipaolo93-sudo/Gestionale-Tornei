@@ -8,6 +8,8 @@ import {
   type SummerAvailabilityPeriod,
   type SummerPlayerAvailability,
   type SummerRankingData,
+  type SummerRankingMasterFormat,
+  type SummerRankingMasterGroup,
   type SummerRankingMasterMatch,
   type SummerRankingRulesConfig,
   type TimeSlot,
@@ -16,11 +18,12 @@ import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon } from './Icons';
 import {
   SUMMER_RANKING_NAME,
   calculateSummerRanking,
-  createSummerRankingMasterBracket,
+  createSummerRankingMasterData,
   generateRulesText,
   getSummerRankingAutoQualifiedPlayerIds,
   getEligibleOpponents,
   getHeadToHeadCount,
+  getSummerRankingMasterFormat,
   getSummerRankingMasterQualifiedPlayerIds,
   getSummerRankingWinPoints,
   normalizeRulesConfig,
@@ -188,6 +191,7 @@ const rebuildMasterState = (
 ) => {
   const nextBracket = recomputeSummerRankingMasterBracket(bracket);
   return {
+    format: 'bracket' as const,
     manualQualifiedPlayerIds,
     generatedQualifiedPlayerIds,
     bracket: nextBracket,
@@ -234,6 +238,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     normalizeAvailability(loggedInPlayerId ? rankingData.availabilities?.[loggedInPlayerId] : undefined)
   );
   const [masterQualifiedDraft, setMasterQualifiedDraft] = useState<string[]>([]);
+  const [masterFormatDraft, setMasterFormatDraft] = useState<SummerRankingMasterFormat>('bracket');
   const [masterBookingSlotIdByMatch, setMasterBookingSlotIdByMatch] = useState<Record<string, string>>({});
   const [editingMasterMatchId, setEditingMasterMatchId] = useState<string | null>(null);
   const [masterScoreForm, setMasterScoreForm] = useState<MasterScoreFormState>({ matchId: null, score1: '', score2: '' });
@@ -289,15 +294,26 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => new Map(players.map(player => [player.id, player])),
     [players],
   );
+  const masterFormat = useMemo(
+    () => getSummerRankingMasterFormat(rankingData.master),
+    [rankingData.master],
+  );
+  const masterGroups = useMemo<SummerRankingMasterGroup[]>(
+    () => Array.isArray(rankingData.master?.groups) ? rankingData.master.groups : [],
+    [rankingData.master?.groups],
+  );
   const masterBracket = rankingData.master?.bracket;
   const masterMatches = useMemo(
     () => {
       if (Array.isArray(rankingData.master?.matches) && rankingData.master.matches.length > 0) {
         return rankingData.master.matches;
       }
-      return masterBracket ? syncSummerRankingMasterMatches(masterBracket) : [];
+      if (masterFormat === 'bracket' && masterBracket) {
+        return syncSummerRankingMasterMatches(masterBracket);
+      }
+      return [];
     },
-    [rankingData.master?.matches, masterBracket],
+    [rankingData.master?.matches, masterBracket, masterFormat],
   );
   const bookedSlotIds = useMemo(
     () => new Set(
@@ -341,6 +357,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   useEffect(() => {
     setMasterQualifiedDraft(currentMasterQualifiedPlayerIds);
   }, [currentMasterQualifiedPlayerIds]);
+
+  useEffect(() => {
+    setMasterFormatDraft(masterFormat);
+  }, [masterFormat]);
 
   useEffect(() => {
     setMasterBookingSlotIdByMatch(previous => {
@@ -648,17 +668,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     const manualQualifiedPlayerIds = arraysEqual(masterQualifiedDraft, autoQualifiedPlayerIds)
       ? undefined
       : masterQualifiedDraft;
-    const nextBracket = createSummerRankingMasterBracket(masterQualifiedDraft);
+    const nextMaster = createSummerRankingMasterData(
+      masterQualifiedDraft,
+      manualQualifiedPlayerIds,
+      rankingData.master?.matches ?? [],
+      masterFormatDraft,
+    );
 
     await onSaveRankingData({
       ...rankingData,
-      master: {
-        manualQualifiedPlayerIds,
-        generatedQualifiedPlayerIds: masterQualifiedDraft,
-        bracket: nextBracket,
-        matches: syncSummerRankingMasterMatches(nextBracket, rankingData.master?.matches ?? []),
-        generatedAt: new Date().toISOString(),
-      },
+      master: nextMaster,
     });
   };
 
@@ -693,7 +712,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const handleSaveMasterResult = async (match: SummerRankingMasterMatch) => {
-    if (!rankingData.master?.bracket || !rankingData.master.matches || !canManageMasterMatch(match)) return;
+    if (!rankingData.master?.matches || !canManageMasterMatch(match)) return;
 
     const score1 = Number(masterScoreForm.score1);
     const score2 = Number(masterScoreForm.score2);
@@ -707,30 +726,37 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       return;
     }
 
-    const nextBracket: PlayoffBracket = JSON.parse(JSON.stringify(rankingData.master.bracket));
-    const bracketMatch = nextBracket.matches.find(item => item.id === match.id);
-    if (!bracketMatch) return;
-
-    bracketMatch.score1 = score1;
-    bracketMatch.score2 = score2;
-
-    const nextMaster = rebuildMasterState(
-      nextBracket,
-      rankingData.master.matches.map(item =>
-        item.id === match.id
-          ? {
-              ...item,
-              score1,
-              score2,
-              status: 'completed',
-              completedAt: item.completedAt ?? new Date().toISOString(),
-            }
-          : item
-      ),
-      rankingData.master.generatedQualifiedPlayerIds ?? [],
-      rankingData.master.manualQualifiedPlayerIds,
-      rankingData.master.generatedAt,
+    const nextMatches = rankingData.master.matches.map(item =>
+      item.id === match.id
+        ? {
+            ...item,
+            score1,
+            score2,
+            status: 'completed',
+            completedAt: item.completedAt ?? new Date().toISOString(),
+          }
+        : item
     );
+
+    const nextMaster = masterFormat === 'bracket' && rankingData.master.bracket
+      ? (() => {
+          const nextBracket: PlayoffBracket = JSON.parse(JSON.stringify(rankingData.master!.bracket));
+          const bracketMatch = nextBracket.matches.find(item => item.id === match.id);
+          if (!bracketMatch) return rankingData.master;
+          bracketMatch.score1 = score1;
+          bracketMatch.score2 = score2;
+          return rebuildMasterState(
+            nextBracket,
+            nextMatches,
+            rankingData.master?.generatedQualifiedPlayerIds ?? [],
+            rankingData.master?.manualQualifiedPlayerIds,
+            rankingData.master?.generatedAt,
+          );
+        })()
+      : {
+          ...rankingData.master,
+          matches: nextMatches,
+        };
 
     await onSaveRankingData({
       ...rankingData,
@@ -742,33 +768,40 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const handleResetMasterResult = async (match: SummerRankingMasterMatch) => {
-    if (!rankingData.master?.bracket || !rankingData.master.matches || !canManageMasterMatch(match)) return;
+    if (!rankingData.master?.matches || !canManageMasterMatch(match)) return;
 
-    const nextBracket: PlayoffBracket = JSON.parse(JSON.stringify(rankingData.master.bracket));
-    const bracketMatch = nextBracket.matches.find(item => item.id === match.id);
-    if (!bracketMatch) return;
-
-    bracketMatch.score1 = null;
-    bracketMatch.score2 = null;
-    bracketMatch.winnerId = null;
-
-    const nextMaster = rebuildMasterState(
-      nextBracket,
-      rankingData.master.matches.map(item =>
-        item.id === match.id
-          ? {
-              ...item,
-              score1: null,
-              score2: null,
-              status: item.slotId ? 'scheduled' : 'pending',
-              completedAt: undefined,
-            }
-          : item
-      ),
-      rankingData.master.generatedQualifiedPlayerIds ?? [],
-      rankingData.master.manualQualifiedPlayerIds,
-      rankingData.master.generatedAt,
+    const nextMatches = rankingData.master.matches.map(item =>
+      item.id === match.id
+        ? {
+            ...item,
+            score1: null,
+            score2: null,
+            status: item.slotId ? 'scheduled' : 'pending',
+            completedAt: undefined,
+          }
+        : item
     );
+
+    const nextMaster = masterFormat === 'bracket' && rankingData.master.bracket
+      ? (() => {
+          const nextBracket: PlayoffBracket = JSON.parse(JSON.stringify(rankingData.master!.bracket));
+          const bracketMatch = nextBracket.matches.find(item => item.id === match.id);
+          if (!bracketMatch) return rankingData.master;
+          bracketMatch.score1 = null;
+          bracketMatch.score2 = null;
+          bracketMatch.winnerId = null;
+          return rebuildMasterState(
+            nextBracket,
+            nextMatches,
+            rankingData.master?.generatedQualifiedPlayerIds ?? [],
+            rankingData.master?.manualQualifiedPlayerIds,
+            rankingData.master?.generatedAt,
+          );
+        })()
+      : {
+          ...rankingData.master,
+          matches: nextMatches,
+        };
 
     await onSaveRankingData({
       ...rankingData,
@@ -933,13 +966,27 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     [normalizedMasterQualifiedDraft, effectiveConfig.masterSize],
   );
   const generatedMasterQualifiedPlayerIds = rankingData.master?.generatedQualifiedPlayerIds ?? [];
-  const masterNeedsRegeneration = !!masterBracket?.isGenerated && !arraysEqual(currentMasterQualifiedPlayerIds, generatedMasterQualifiedPlayerIds);
+  const isMasterGenerated = masterFormat === 'bracket'
+    ? !!masterBracket?.isGenerated
+    : Array.isArray(rankingData.master?.matches) && rankingData.master.matches.length > 0;
+  const masterNeedsRegeneration = isMasterGenerated && (
+    !arraysEqual(currentMasterQualifiedPlayerIds, generatedMasterQualifiedPlayerIds) ||
+    masterFormat !== masterFormatDraft
+  );
   const visibleMasterMatches = useMemo(
     () =>
       masterMatches
         .slice()
         .sort((a, b) => a.round - b.round || a.label.localeCompare(b.label)),
     [masterMatches],
+  );
+  const masterMatchesByGroup = useMemo(
+    () =>
+      masterGroups.map(group => ({
+        ...group,
+        matches: visibleMasterMatches.filter(match => match.groupId === group.id),
+      })),
+    [masterGroups, visibleMasterMatches],
   );
   const currentPlayerMasterMatches = useMemo(
     () =>
@@ -1542,6 +1589,24 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </p>
               </div>
 
+              <div className="bg-primary rounded-lg border border-tertiary p-4">
+                <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide">Formato Master finale</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {([
+                    ['bracket', 'Tabellone'],
+                    ['groups', 'Gironi'],
+                  ] as Array<[SummerRankingMasterFormat, string]>).map(([format, label]) => (
+                    <button
+                      key={format}
+                      onClick={() => setMasterFormatDraft(format)}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold ${masterFormatDraft === format ? 'bg-accent text-white' : 'bg-secondary border border-tertiary text-text-primary'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {Array.from({ length: effectiveConfig.masterSize }).map((_, index) => {
                   const selectedId = masterQualifiedDraft[index] ?? '';
@@ -1590,7 +1655,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
               {masterNeedsRegeneration && (
                 <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 p-4 text-sm text-orange-200">
-                  I qualificati salvati non coincidono più con il tabellone generato: rigenera il Master per evitare dati incoerenti.
+                  I qualificati o il formato selezionato non coincidono più con il Master generato: rigenera il Master per evitare dati incoerenti.
                 </div>
               )}
 
@@ -1613,50 +1678,102 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   disabled={!hasValidMasterDraft}
                   className="px-4 py-2 rounded bg-accent text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {masterBracket?.isGenerated ? 'Rigenera Master' : 'Genera Master'}
+                  {isMasterGenerated ? 'Rigenera Master' : 'Genera Master'}
                 </button>
               </div>
             </div>
           )}
 
-          {!masterBracket?.isGenerated && (
+          {!isMasterGenerated && (
             <div className="bg-secondary rounded-xl shadow-lg p-6">
               <h3 className="text-xl font-bold text-accent">Master non ancora generato</h3>
               <p className="text-text-secondary mt-2">
-                Una volta confermati i qualificati, genera il tabellone per ottenere quarti, semifinali, finale e finale 3°/4° posto.
+                {masterFormatDraft === 'groups'
+                  ? 'Una volta confermati i qualificati, genera due gironi del Master finale con partite automatiche.'
+                  : 'Una volta confermati i qualificati, genera il tabellone per ottenere quarti, semifinali, finale e finale 3°/4° posto.'}
               </p>
             </div>
           )}
 
-          {masterBracket?.isGenerated && (
+          {isMasterGenerated && (
             <>
-              <div className="bg-secondary rounded-xl shadow-lg p-6">
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold text-accent">Tabellone Master finale</h3>
-                    <p className="text-sm text-text-secondary mt-1">
-                      Accoppiamenti iniziali 1vs8, 2vs7, 3vs6, 4vs5 con avanzamento automatico del vincitore e finalina 3°/4° posto.
-                    </p>
-                  </div>
-                  {rankingData.master?.generatedAt && (
-                    <div className="text-xs text-text-secondary">
-                      Generato il {formatDateTime(rankingData.master.generatedAt)}
+              {masterFormat === 'bracket' && (
+                <div className="bg-secondary rounded-xl shadow-lg p-6">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-accent">Tabellone Master finale</h3>
+                      <p className="text-sm text-text-secondary mt-1">
+                        Accoppiamenti iniziali 1vs8, 2vs7, 3vs6, 4vs5 con avanzamento automatico del vincitore e finalina 3°/4° posto.
+                      </p>
                     </div>
-                  )}
-                </div>
+                    {rankingData.master?.generatedAt && (
+                      <div className="text-xs text-text-secondary">
+                        Generato il {formatDateTime(rankingData.master.generatedAt)}
+                      </div>
+                    )}
+                  </div>
 
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-4 gap-4">
-                  {[
-                    ['quarterfinal', 'Quarti di finale'],
-                    ['semifinal', 'Semifinali'],
-                    ['final', 'Finale'],
-                    ['thirdPlace', 'Finale 3°/4°'],
-                  ].map(([stage, label]) => (
-                    <div key={stage} className="bg-primary rounded-xl border border-tertiary p-4 space-y-3">
-                      <h4 className="font-bold text-accent">{label}</h4>
-                      {visibleMasterMatches
-                        .filter(match => match.stage === stage)
-                        .map(match => (
+                  <div className="mt-6 grid grid-cols-1 xl:grid-cols-4 gap-4">
+                    {[
+                      ['quarterfinal', 'Quarti di finale'],
+                      ['semifinal', 'Semifinali'],
+                      ['final', 'Finale'],
+                      ['thirdPlace', 'Finale 3°/4°'],
+                    ].map(([stage, label]) => (
+                      <div key={stage} className="bg-primary rounded-xl border border-tertiary p-4 space-y-3">
+                        <h4 className="font-bold text-accent">{label}</h4>
+                        {visibleMasterMatches
+                          .filter(match => match.stage === stage)
+                          .map(match => (
+                            <div key={match.id} className="rounded-lg border border-tertiary bg-secondary/60 p-3">
+                              <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide">{match.label}</div>
+                              <div className="mt-2 space-y-2 text-sm">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span>{playerMap.get(match.player1Id ?? '')?.name ?? 'Da definire'}</span>
+                                  <span className="font-bold">{match.score1 ?? '—'}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span>{playerMap.get(match.player2Id ?? '')?.name ?? 'Da definire'}</span>
+                                  <span className="font-bold">{match.score2 ?? '—'}</span>
+                                </div>
+                              </div>
+                              <div className="mt-3">
+                                <span className={`inline-flex rounded px-2 py-1 text-[11px] font-semibold ${getMasterMatchStatusTone(match)}`}>
+                                  {getMasterMatchStatusLabel(match)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {masterFormat === 'groups' && (
+                <div className="bg-secondary rounded-xl shadow-lg p-6">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-accent">Master finale a gironi</h3>
+                      <p className="text-sm text-text-secondary mt-1">
+                        Due gironi bilanciati e partite generate automaticamente.
+                      </p>
+                    </div>
+                    {rankingData.master?.generatedAt && (
+                      <div className="text-xs text-text-secondary">
+                        Generato il {formatDateTime(rankingData.master.generatedAt)}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {masterMatchesByGroup.map(group => (
+                      <div key={group.id} className="bg-primary rounded-xl border border-tertiary p-4 space-y-3">
+                        <h4 className="font-bold text-accent">{group.name}</h4>
+                        <div className="text-xs text-text-secondary">
+                          {group.playerIds.map(playerId => playerMap.get(playerId)?.name ?? 'Da definire').join(' • ')}
+                        </div>
+                        {group.matches.map(match => (
                           <div key={match.id} className="rounded-lg border border-tertiary bg-secondary/60 p-3">
                             <div className="text-xs font-semibold text-text-secondary uppercase tracking-wide">{match.label}</div>
                             <div className="mt-2 space-y-2 text-sm">
@@ -1676,10 +1793,11 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             </div>
                           </div>
                         ))}
-                    </div>
-                  ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-4">

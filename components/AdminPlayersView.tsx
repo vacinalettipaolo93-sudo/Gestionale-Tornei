@@ -42,9 +42,11 @@ const sanitizeRankingDataForFirestore = (data: SummerRankingData): SummerRanking
   if (data.rulesConfig) payload.rulesConfig = data.rulesConfig;
   if (data.master) {
     const nextMaster: NonNullable<SummerRankingData['master']> = {};
+    nextMaster.format = data.master.format === 'groups' || (Array.isArray(data.master.groups) && data.master.groups.length > 0) ? 'groups' : 'bracket';
     if (Array.isArray(data.master.manualQualifiedPlayerIds)) nextMaster.manualQualifiedPlayerIds = data.master.manualQualifiedPlayerIds;
     if (Array.isArray(data.master.generatedQualifiedPlayerIds)) nextMaster.generatedQualifiedPlayerIds = data.master.generatedQualifiedPlayerIds;
     if (data.master.bracket !== undefined) nextMaster.bracket = data.master.bracket;
+    if (Array.isArray(data.master.groups)) nextMaster.groups = data.master.groups;
     if (Array.isArray(data.master.matches)) nextMaster.matches = data.master.matches;
     if (data.master.generatedAt !== undefined) nextMaster.generatedAt = data.master.generatedAt;
     payload.master = nextMaster;
