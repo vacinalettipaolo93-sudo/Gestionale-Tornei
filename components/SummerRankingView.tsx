@@ -1143,6 +1143,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     setRulesSettingsSuccess(null);
   };
 
+  const toggleRulesConfigFlag = (key: 'participationBonusEnabled' | 'gameDiffBonusEnabled' | 'inactivityMalusEnabled') => {
+    setRulesConfigForm(prev => ({ ...prev, [key]: !prev[key] }));
+    setRulesSettingsError(null);
+    setRulesSettingsSuccess(null);
+  };
+
   const resetRulesSettings = () => {
     setRulesConfigForm(normalizeRulesConfig(rankingData.rulesConfig));
     setRulesSettingsError(null);
@@ -2930,53 +2936,75 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
           {/* Bonus partecipazione */}
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus partecipazione</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus partecipazione</h4>
+              <button
+                type="button"
+                onClick={() => toggleRulesConfigFlag('participationBonusEnabled')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${rulesConfigForm.participationBonusEnabled ? 'bg-accent' : 'bg-tertiary'}`}
+                aria-label="Attiva/disattiva bonus partecipazione"
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${rulesConfigForm.participationBonusEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div className={`grid grid-cols-1 gap-3 transition-opacity ${rulesConfigForm.participationBonusEnabled ? '' : 'opacity-40 pointer-events-none'}`}>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-text-secondary">Bonus base per partita (+)</span>
-                <input type="number" value={rulesConfigForm.participationBase} onChange={e => updateRulesConfig('participationBase', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Bonus settimanale per partita (+)</span>
-                <input type="number" value={rulesConfigForm.participationWeeklyBonus} onChange={e => updateRulesConfig('participationWeeklyBonus', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Min. partite/settimana per bonus</span>
-                <input type="number" min="1" value={rulesConfigForm.participationWeeklyMinMatches} onChange={e => updateRulesConfig('participationWeeklyMinMatches', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+                <input type="number" value={rulesConfigForm.participationBase} onChange={e => updateRulesConfig('participationBase', e.target.value)} disabled={!rulesConfigForm.participationBonusEnabled} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary disabled:opacity-40" />
               </label>
             </div>
           </div>
 
           {/* Bonus differenza game */}
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus differenza game (vincitore)</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus differenza game (vincitore)</h4>
+              <button
+                type="button"
+                onClick={() => toggleRulesConfigFlag('gameDiffBonusEnabled')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${rulesConfigForm.gameDiffBonusEnabled ? 'bg-accent' : 'bg-tertiary'}`}
+                aria-label="Attiva/disattiva bonus differenza game"
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${rulesConfigForm.gameDiffBonusEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div className={`grid grid-cols-1 md:grid-cols-3 gap-3 transition-opacity ${rulesConfigForm.gameDiffBonusEnabled ? '' : 'opacity-40 pointer-events-none'}`}>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-text-secondary">Scarto 2 game (+)</span>
-                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus2} onChange={e => updateRulesConfig('gameDiffBonus2', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus2} onChange={e => updateRulesConfig('gameDiffBonus2', e.target.value)} disabled={!rulesConfigForm.gameDiffBonusEnabled} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary disabled:opacity-40" />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-text-secondary">Scarto 3 game (+)</span>
-                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus3} onChange={e => updateRulesConfig('gameDiffBonus3', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus3} onChange={e => updateRulesConfig('gameDiffBonus3', e.target.value)} disabled={!rulesConfigForm.gameDiffBonusEnabled} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary disabled:opacity-40" />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-text-secondary">Scarto 4+ game (+)</span>
-                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus4plus} onChange={e => updateRulesConfig('gameDiffBonus4plus', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+                <input type="number" min="0" value={rulesConfigForm.gameDiffBonus4plus} onChange={e => updateRulesConfig('gameDiffBonus4plus', e.target.value)} disabled={!rulesConfigForm.gameDiffBonusEnabled} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary disabled:opacity-40" />
               </label>
             </div>
           </div>
 
           {/* Malus inattività */}
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Malus inattività</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Malus inattività</h4>
+              <button
+                type="button"
+                onClick={() => toggleRulesConfigFlag('inactivityMalusEnabled')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${rulesConfigForm.inactivityMalusEnabled ? 'bg-accent' : 'bg-tertiary'}`}
+                aria-label="Attiva/disattiva malus inattività"
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${rulesConfigForm.inactivityMalusEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 transition-opacity ${rulesConfigForm.inactivityMalusEnabled ? '' : 'opacity-40 pointer-events-none'}`}>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-text-secondary">Punti malus per periodo (-)</span>
-                <input type="number" min="0" value={rulesConfigForm.inactivityMalusPoints} onChange={e => updateRulesConfig('inactivityMalusPoints', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+                <input type="number" min="0" value={rulesConfigForm.inactivityMalusPoints} onChange={e => updateRulesConfig('inactivityMalusPoints', e.target.value)} disabled={!rulesConfigForm.inactivityMalusEnabled} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary disabled:opacity-40" />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-xs font-semibold text-text-secondary">Giorni senza partite per periodo</span>
-                <input type="number" min="1" value={rulesConfigForm.inactivityMalusDays} onChange={e => updateRulesConfig('inactivityMalusDays', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
+                <input type="number" min="1" value={rulesConfigForm.inactivityMalusDays} onChange={e => updateRulesConfig('inactivityMalusDays', e.target.value)} disabled={!rulesConfigForm.inactivityMalusEnabled} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary disabled:opacity-40" />
               </label>
             </div>
           </div>
