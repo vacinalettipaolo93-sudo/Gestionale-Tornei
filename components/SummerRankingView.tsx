@@ -65,7 +65,7 @@ type MatchResultModalState = {
 };
 
 type RankingTab = 'ranking' | 'matches' | 'master' | 'rules' | 'settings' | 'availability' | 'players';
-type AvailabilityFormState = { status: SummerAvailabilityStatus | null; days: SummerAvailabilityDay[]; periods: SummerAvailabilityPeriod[] };
+type AvailabilityFormState = { daySchedule: Record<SummerAvailabilityDay, SummerAvailabilityPeriod[]> | null };
 type MasterScoreFormState = { matchId: string | null; score1: string; score2: string };
 
 const AVAILABILITY_DAYS: Array<{ value: SummerAvailabilityDay; label: string; shortLabel: string }> = [
@@ -78,17 +78,33 @@ const AVAILABILITY_DAYS: Array<{ value: SummerAvailabilityDay; label: string; sh
   { value: 'sunday', label: 'Domenica', shortLabel: 'Dom' },
 ];
 
-const AVAILABILITY_PERIODS: Array<{ value: SummerAvailabilityPeriod; label: string }> = [
-  { value: 'morning', label: 'Mattina' },
-  { value: 'afternoon', label: 'Pomeriggio' },
-  { value: 'evening', label: 'Sera' },
+const AVAILABILITY_PERIODS: Array<{ value: SummerAvailabilityPeriod; label: string; shortLabel: string }> = [
+  { value: 'morning', label: 'Mattina', shortLabel: 'Mat' },
+  { value: 'afternoon', label: 'Pomeriggio', shortLabel: 'Pom' },
+  { value: 'evening', label: 'Sera', shortLabel: 'Ser' },
 ];
 
-const normalizeAvailability = (availability?: SummerPlayerAvailability): AvailabilityFormState => ({
-  status: availability?.status ?? null,
-  days: availability?.status === 'available' ? availability.days ?? [] : [],
-  periods: availability?.status === 'available' ? availability.periods ?? [] : [],
-});
+const EMPTY_DAY_SCHEDULE: Record<SummerAvailabilityDay, SummerAvailabilityPeriod[]> = {
+  monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [],
+};
+
+const normalizeAvailability = (availability?: SummerPlayerAvailability): AvailabilityFormState => {
+  if (!availability) return { daySchedule: null };
+  // New format: daySchedule present
+  if (availability.daySchedule) {
+    return { daySchedule: { ...EMPTY_DAY_SCHEDULE, ...availability.daySchedule } };
+  }
+  // Legacy conversion: status + days + periods
+  if (availability.status === 'available' && availability.days.length > 0 && availability.periods.length > 0) {
+    const daySchedule = { ...EMPTY_DAY_SCHEDULE };
+    for (const day of availability.days) {
+      daySchedule[day] = [...availability.periods];
+    }
+    return { daySchedule };
+  }
+  // Legacy "unavailable" or incomplete available → all days empty
+  return { daySchedule: { ...EMPTY_DAY_SCHEDULE } };
+};
 
 const toggleArrayValue = <T,>(items: T[], value: T) =>
   items.includes(value) ? items.filter(item => item !== value) : [...items, value];
@@ -103,33 +119,43 @@ const getRankingRulesText = (
 
 const getAvailabilitySummary = (availability?: SummerPlayerAvailability) => {
   if (!availability) {
-    return {
-      status: 'Non dichiarata',
-      details: null as string | null,
-    };
-  }
-  if (availability.status !== 'available') {
-    return {
-      status: 'Non disponibile',
-      details: null as string | null,
-    };
+    return { status: 'Non dichiarata', details: null as string | null };
   }
 
-  const days = availability.days.length > 0
-    ? availability.days
-        .map(day => AVAILABILITY_DAYS.find(option => option.value === day)?.shortLabel ?? day)
-        .join(', ')
-    : 'Giorni da definire';
-  const periods = availability.periods.length > 0
-    ? availability.periods
-        .map(period => AVAILABILITY_PERIODS.find(option => option.value === period)?.label ?? period)
-        .join(', ')
-    : 'Fasce da definire';
+  let effectiveDaySchedule: Record<SummerAvailabilityDay, SummerAvailabilityPeriod[]>;
 
-  return {
-    status: 'Disponibile',
-    details: `${days} • ${periods}`,
-  };
+  if (availability.daySchedule) {
+    effectiveDaySchedule = { ...EMPTY_DAY_SCHEDULE, ...availability.daySchedule };
+  } else if (availability.status === 'available' && availability.days.length > 0 && availability.periods.length > 0) {
+    // Legacy conversion
+    effectiveDaySchedule = { ...EMPTY_DAY_SCHEDULE };
+    for (const day of availability.days) {
+      effectiveDaySchedule[day] = [...availability.periods];
+    }
+  } else {
+    return { status: 'Non disponibile', details: null as string | null };
+  }
+
+  const hasAnyAvailDay = AVAILABILITY_DAYS.some(d => (effectiveDaySchedule[d.value] ?? []).length > 0);
+  if (!hasAnyAvailDay) {
+    return { status: 'Non disponibile', details: null as string | null };
+  }
+
+  // Group days by same period combination for a compact summary
+  const groups = new Map<string, { days: string[]; periods: SummerAvailabilityPeriod[] }>();
+  for (const d of AVAILABILITY_DAYS) {
+    const periods = effectiveDaySchedule[d.value] ?? [];
+    if (periods.length === 0) continue;
+    const key = [...periods].sort().join(',');
+    if (!groups.has(key)) groups.set(key, { days: [], periods: [...periods] });
+    groups.get(key)!.days.push(d.shortLabel);
+  }
+
+  const details = Array.from(groups.values())
+    .map(g => `${g.days.join(', ')}: ${g.periods.map(p => AVAILABILITY_PERIODS.find(o => o.value === p)?.shortLabel ?? p).join(', ')}`)
+    .join(' | ');
+
+  return { status: 'Disponibile', details };
 };
 
 interface SummerRankingViewProps {
@@ -973,10 +999,17 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     isOrganizer || loggedInPlayerId === match.player1Id || loggedInPlayerId === match.player2Id;
 
   const handleSaveAvailability = async () => {
-    if (!currentPlayer) return;
-    if (availabilityForm.status === null) return;
-    if (availabilityForm.status === 'available' && (availabilityForm.days.length === 0 || availabilityForm.periods.length === 0)) {
-      return;
+    if (!currentPlayer || availabilityForm.daySchedule === null) return;
+
+    // Compute legacy fields for backward compatibility
+    const availDays = AVAILABILITY_DAYS
+      .filter(d => (availabilityForm.daySchedule![d.value] ?? []).length > 0)
+      .map(d => d.value);
+    const allPeriodsSet = new Set<SummerAvailabilityPeriod>();
+    for (const day of availDays) {
+      for (const period of availabilityForm.daySchedule![day] ?? []) {
+        allPeriodsSet.add(period);
+      }
     }
 
     await onSaveRankingData({
@@ -984,9 +1017,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       availabilities: {
         ...(rankingData.availabilities ?? {}),
         [currentPlayer.id]: {
-          status: availabilityForm.status,
-          days: availabilityForm.status === 'available' ? availabilityForm.days : [],
-          periods: availabilityForm.status === 'available' ? availabilityForm.periods : [],
+          status: availDays.length > 0 ? 'available' : 'unavailable',
+          days: availDays,
+          periods: Array.from(allPeriodsSet),
+          daySchedule: availabilityForm.daySchedule,
           updatedAt: new Date().toISOString(),
         },
       },
@@ -1039,9 +1073,25 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
         if (entry.points < rankingRangeMin || entry.points > effectiveRangeMax) return false;
         if (filterAvailDays.length > 0 || filterAvailPeriods.length > 0) {
           const avail = rankingData.availabilities?.[entry.player.id];
-          if (!avail || avail.status !== 'available') return false;
-          if (filterAvailDays.length > 0 && !filterAvailDays.some(day => avail.days.includes(day))) return false;
-          if (filterAvailPeriods.length > 0 && !filterAvailPeriods.some(period => avail.periods.includes(period))) return false;
+          if (!avail) return false;
+          // Build effective per-day schedule (handles both new and legacy formats)
+          let effectiveSched: Record<SummerAvailabilityDay, SummerAvailabilityPeriod[]>;
+          if (avail.daySchedule) {
+            effectiveSched = { ...EMPTY_DAY_SCHEDULE, ...avail.daySchedule };
+          } else if (avail.status === 'available' && avail.days.length > 0) {
+            effectiveSched = { ...EMPTY_DAY_SCHEDULE };
+            for (const day of avail.days) effectiveSched[day] = [...(avail.periods ?? [])];
+          } else {
+            return false;
+          }
+          const daysToCheck = filterAvailDays.length > 0 ? filterAvailDays : AVAILABILITY_DAYS.map(d => d.value);
+          const matches = daysToCheck.some(day => {
+            const dayPeriods = effectiveSched[day] ?? [];
+            if (dayPeriods.length === 0) return false;
+            if (filterAvailPeriods.length === 0) return true;
+            return filterAvailPeriods.some(p => dayPeriods.includes(p));
+          });
+          if (!matches) return false;
         }
         return true;
       }),
@@ -2129,118 +2179,103 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             {currentPlayer ? (
               <div className="mt-6 space-y-6">
                 <div>
-                  <div className="text-sm font-semibold mb-3">Stato disponibilità</div>
-              {availabilityForm.status === null && (
-                <p className="text-xs text-text-secondary mb-2">Nessuna disponibilità dichiarata. Scegli un'opzione per procedere.</p>
-              )}
-              <div className="flex flex-wrap gap-3">
-                {([['available', 'Disponibile'], ['unavailable', 'Non disponibile']] as const).map(([status, label]) => (
+                  <div className="text-sm font-semibold mb-1">Disponibilità per giorno</div>
+                  <p className="text-xs text-text-secondary mb-4">
+                    Seleziona le fasce orarie per ogni giorno. Se non selezioni nulla per un giorno, sarà considerato non disponibile.
+                  </p>
+
+                  {availabilityForm.daySchedule === null && (
+                    <div className="rounded-lg border border-dashed border-tertiary bg-primary p-4 text-center mb-4">
+                      <p className="text-text-secondary text-sm">Nessuna disponibilità dichiarata.</p>
                       <button
-                        key={status}
-                        onClick={() => setAvailabilityForm(prev => ({
-                          ...prev,
-                      status,
-                          days: status === 'available' ? prev.days : [],
-                          periods: status === 'available' ? prev.periods : [],
-                        }))}
-                        className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
-                          availabilityForm.status === status
-                            ? 'bg-accent text-white border-accent'
-                            : 'bg-primary border-tertiary text-text-primary'
-                        }`}
+                        onClick={() => setAvailabilityForm({ daySchedule: { ...EMPTY_DAY_SCHEDULE } })}
+                        className="mt-3 px-4 py-2 rounded bg-accent text-white text-sm font-semibold"
                       >
-                        {label}
+                        Inizia a configurare
                       </button>
-                    ))}
-                  </div>
-                </div>
+                    </div>
+                  )}
 
-                {availabilityForm.status === 'available' && (
-                  <>
-                    <div>
-                      <div className="text-sm font-semibold mb-3">Giorni disponibili</div>
-                      <div className="flex flex-wrap gap-2">
-                        {AVAILABILITY_DAYS.map(day => (
-                          <button
+                  {availabilityForm.daySchedule !== null && (
+                    <div className="space-y-2">
+                      {AVAILABILITY_DAYS.map(day => {
+                        const selectedPeriods = availabilityForm.daySchedule![day.value] ?? [];
+                        const togglePeriod = (period: SummerAvailabilityPeriod) => {
+                          setAvailabilityForm(prev => {
+                            const current = prev.daySchedule![day.value] ?? [];
+                            return {
+                              daySchedule: {
+                                ...prev.daySchedule!,
+                                [day.value]: current.includes(period)
+                                  ? current.filter(p => p !== period)
+                                  : [...current, period],
+                              },
+                            };
+                          });
+                        };
+                        return (
+                          <div
                             key={day.value}
-                            onClick={() => setAvailabilityForm(prev => ({
-                              ...prev,
-                              days: toggleArrayValue(prev.days, day.value),
-                            }))}
-                            className={`px-3 py-2 rounded-lg border text-sm ${
-                              availabilityForm.days.includes(day.value)
-                                ? 'bg-highlight text-white border-highlight'
-                                : 'bg-primary border-tertiary text-text-primary'
-                            }`}
+                            className="flex flex-wrap items-center gap-3 rounded-lg border border-tertiary bg-primary px-4 py-3"
                           >
-                            {day.label}
-                          </button>
-                        ))}
-                      </div>
+                            <div className="w-24 shrink-0 text-sm font-semibold text-text-primary">{day.label}</div>
+                            <div className="flex flex-wrap gap-2 flex-1">
+                              {AVAILABILITY_PERIODS.map(period => (
+                                <button
+                                  key={period.value}
+                                  onClick={() => togglePeriod(period.value)}
+                                  className={`px-3 py-1 rounded-lg border text-xs font-semibold transition-colors ${
+                                    selectedPeriods.includes(period.value)
+                                      ? 'bg-highlight text-white border-highlight'
+                                      : 'bg-secondary border-tertiary text-text-primary'
+                                  }`}
+                                >
+                                  {period.label}
+                                </button>
+                              ))}
+                            </div>
+                            {selectedPeriods.length === 0 && (
+                              <div className="text-xs text-text-secondary italic shrink-0">Non disponibile</div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-
-                    <div>
-                      <div className="text-sm font-semibold mb-3">Fasce orarie</div>
-                      <div className="flex flex-wrap gap-2">
-                        {AVAILABILITY_PERIODS.map(period => (
-                          <button
-                            key={period.value}
-                            onClick={() => setAvailabilityForm(prev => ({
-                              ...prev,
-                              periods: toggleArrayValue(prev.periods, period.value),
-                            }))}
-                            className={`px-3 py-2 rounded-lg border text-sm ${
-                              availabilityForm.periods.includes(period.value)
-                                ? 'bg-highlight text-white border-highlight'
-                                : 'bg-primary border-tertiary text-text-primary'
-                            }`}
-                          >
-                            {period.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
+                  )}
+                </div>
 
                 <div className="rounded-lg border border-tertiary bg-primary p-4 text-sm text-text-secondary">
                   <div className="font-semibold text-text-primary">Riepilogo tabella</div>
-                  {availabilityForm.status === null ? (
+                  {availabilityForm.daySchedule === null ? (
                     <div className="mt-1 text-text-secondary">Non dichiarata</div>
                   ) : (() => {
                     const summary = getAvailabilitySummary({
-                      status: availabilityForm.status,
-                      days: availabilityForm.days,
-                      periods: availabilityForm.periods,
+                      status: 'available',
+                      days: [],
+                      periods: [],
+                      daySchedule: availabilityForm.daySchedule,
                     });
                     return (
                       <>
-                        <div className="mt-1">{summary.status}</div>
-                        {summary.details && <div className="mt-1">{summary.details}</div>}
+                        <div className={`mt-1 font-semibold ${summary.status === 'Disponibile' ? 'text-green-400' : summary.status === 'Non disponibile' ? 'text-red-400' : 'text-text-secondary'}`}>
+                          {summary.status}
+                        </div>
+                        {summary.details && <div className="mt-1 leading-relaxed">{summary.details}</div>}
                       </>
                     );
                   })()}
                 </div>
 
-                {availabilityForm.status === 'available' && (availabilityForm.days.length === 0 || availabilityForm.periods.length === 0) && (
-                  <div className="text-sm text-yellow-300">
-                    Se sei disponibile, seleziona almeno un giorno e una fascia oraria.
-                  </div>
-                )}
-
                 <div className="flex flex-wrap gap-3">
                   <button
                     onClick={handleSaveAvailability}
-                    disabled={
-                      availabilityForm.status === null ||
-                      (availabilityForm.status === 'available' && (availabilityForm.days.length === 0 || availabilityForm.periods.length === 0))
-                    }
+                    disabled={availabilityForm.daySchedule === null}
                     className="px-4 py-2 rounded bg-highlight text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Salva disponibilità
                   </button>
                   <button
-                    onClick={() => setAvailabilityForm(normalizeAvailability(currentPlayerAvailability))}
+                    onClick={() => setAvailabilityForm({ daySchedule: null })}
                     className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold"
                   >
                     Ripristina

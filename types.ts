@@ -137,6 +137,10 @@ export interface SummerPlayerAvailability {
   status: SummerAvailabilityStatus;
   days: SummerAvailabilityDay[];
   periods: SummerAvailabilityPeriod[];
+  /** Per-day schedule: maps each day to the list of available periods.
+   *  An empty array means the player is unavailable on that day.
+   *  When present, this takes precedence over the legacy status/days/periods fields. */
+  daySchedule?: Partial<Record<SummerAvailabilityDay, SummerAvailabilityPeriod[]>>;
   updatedAt?: string;
 }
 
