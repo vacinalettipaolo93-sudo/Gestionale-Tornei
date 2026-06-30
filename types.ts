@@ -134,11 +134,19 @@ export type SummerAvailabilityDay =
 export type SummerAvailabilityPeriod = 'morning' | 'afternoon' | 'evening';
 export type SummerAvailabilityByDay = Partial<Record<SummerAvailabilityDay, SummerAvailabilityPeriod[]>>;
 
+export interface SummerPlayerAvailabilityEntry {
+  id?: string;
+  status: SummerAvailabilityStatus;
+  days: SummerAvailabilityDay[];
+  periods?: SummerAvailabilityPeriod[];
+}
+
 export interface SummerPlayerAvailability {
   status?: SummerAvailabilityStatus;
   days?: SummerAvailabilityDay[];
   periods?: SummerAvailabilityPeriod[];
   dayPeriods?: SummerAvailabilityByDay;
+  entries?: SummerPlayerAvailabilityEntry[];
   updatedAt?: string;
 }
 
