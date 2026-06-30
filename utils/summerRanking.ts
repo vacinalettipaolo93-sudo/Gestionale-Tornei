@@ -15,8 +15,8 @@ export const SUMMER_RANKING_MASTER_SIZE = 8;
 export const SUMMER_RANKING_MASTER_MIN_MATCHES = 5;
 
 export const DEFAULT_RULES_CONFIG: SummerRankingRulesConfig = {
-  diffBandLowMax: 100,
-  diffBandMediumMax: 200,
+  diffBandLowMax: 99,
+  diffBandMediumMax: 199,
 
   favoriteWinLow: 20,
   favoriteLossLow: -20,
@@ -31,6 +31,10 @@ export const DEFAULT_RULES_CONFIG: SummerRankingRulesConfig = {
   underdogLossMedium: -10,
   underdogWinHigh: 40,
   underdogLossHigh: -5,
+
+  drawMode: 'percentage',
+  drawPercentage: 50,
+  drawFixed: 10,
 
   participationBase: 5,
   participationWeeklyBonus: 10,
@@ -52,20 +56,25 @@ export const DEFAULT_RULES_CONFIG: SummerRankingRulesConfig = {
 export const normalizeRulesConfig = (config?: Partial<SummerRankingRulesConfig> | null): SummerRankingRulesConfig => ({
   ...DEFAULT_RULES_CONFIG,
   ...config,
+  drawMode: (config?.drawMode === 'percentage' || config?.drawMode === 'fixed') ? config.drawMode : DEFAULT_RULES_CONFIG.drawMode,
 });
 
 export const generateRulesText = (config: SummerRankingRulesConfig): string => {
   const lo = config.diffBandLowMax;
   const med = config.diffBandMediumMax;
+  const drawDesc = config.drawMode === 'fixed'
+    ? `valore fisso ${config.drawFixed} punti`
+    : `${config.drawPercentage}% dei punti che si sarebbero vinti`;
   return [
     SUMMER_RANKING_NAME,
     '',
     '• Ranking globale unico con tutti i giocatori iscritti.',
     '• Il punteggio iniziale viene impostato manualmente dall\u2019amministratore.',
-    `• Fasce differenza punti: 0-${lo} bassa, ${lo + 1}-${med} media, ${med + 1}+ alta.`,
-    `• Se vince il favorito: +${config.favoriteWinLow}/${config.favoriteLossLow}, +${config.favoriteWinMedium}/${config.favoriteLossMedium}, +${config.favoriteWinHigh}/${config.favoriteLossHigh}.`,
-    `• Se vince lo sfavorito: +${config.underdogWinLow}/${config.underdogLossLow}, +${config.underdogWinMedium}/${config.underdogLossMedium}, +${config.underdogWinHigh}/${config.underdogLossHigh}.`,
-    '• Pareggio: ogni giocatore riceve il 50% dei punti che prenderebbe vincendo.',
+    `• Fasce differenza punti (differenza assoluta): 0-${lo} = Pari livello, ${lo + 1}-${med} = Medio livello, ${med + 1}+ = Alto livello.`,
+    `• Se il favorito vince (pari/medio/alto): +${config.favoriteWinLow}/+${config.favoriteWinMedium}/+${config.favoriteWinHigh} pt; se perde: ${config.favoriteLossLow}/${config.favoriteLossMedium}/${config.favoriteLossHigh} pt.`,
+    `• Se lo sfavorito vince (pari/medio/alto): +${config.underdogWinLow}/+${config.underdogWinMedium}/+${config.underdogWinHigh} pt; se perde: ${config.underdogLossLow}/${config.underdogLossMedium}/${config.underdogLossHigh} pt.`,
+    `• Pareggio: ${drawDesc}. Ai game fatti in partita si aggiungono al punteggio base.`,
+    `• Punteggio finale: al vincitore si sommano i game fatti; allo sconfitto si sottraggono i game fatti dalla penalità (min. 0).`,
     `• Bonus partecipazione: +${config.participationBase} a partita, oppure +${config.participationWeeklyBonus} a partita se il giocatore disputa almeno ${config.participationWeeklyMinMatches} match nella stessa settimana.`,
     `• Bonus differenza game al vincitore: +${config.gameDiffBonus2} con 2 game di scarto, +${config.gameDiffBonus3} con 3, +${config.gameDiffBonus4plus} con 4 o più.`,
     `• Malus inattività: -${config.inactivityMalusPoints} punti ogni ${config.inactivityMalusDays} giorni consecutivi senza partite.`,
@@ -654,8 +663,17 @@ export const calculateSummerRanking = (
     if (match.score1 === match.score2) {
       const favWin = band === 'low' ? cfg.favoriteWinLow : band === 'medium' ? cfg.favoriteWinMedium : cfg.favoriteWinHigh;
       const undWin = band === 'low' ? cfg.underdogWinLow : band === 'medium' ? cfg.underdogWinMedium : cfg.underdogWinHigh;
-      const player1DrawPoints = (isPlayer1Favorite ? favWin : undWin) / 2;
-      const player2DrawPoints = (!isPlayer1Favorite ? favWin : undWin) / 2;
+      const player1BaseWin = isPlayer1Favorite ? favWin : undWin;
+      const player2BaseWin = !isPlayer1Favorite ? favWin : undWin;
+      let player1DrawPoints: number;
+      let player2DrawPoints: number;
+      if (cfg.drawMode === 'fixed') {
+        player1DrawPoints = cfg.drawFixed;
+        player2DrawPoints = cfg.drawFixed;
+      } else {
+        player1DrawPoints = player1BaseWin * (cfg.drawPercentage / 100);
+        player2DrawPoints = player2BaseWin * (cfg.drawPercentage / 100);
+      }
 
       player1Stats.points += player1DrawPoints;
       player2Stats.points += player2DrawPoints;
@@ -671,6 +689,8 @@ export const calculateSummerRanking = (
     const player1Won = (match.score1 ?? 0) > (match.score2 ?? 0);
     const winnerStats = player1Won ? player1Stats : player2Stats;
     const loserStats = player1Won ? player2Stats : player1Stats;
+    const winnerScore = player1Won ? (match.score1 ?? 0) : (match.score2 ?? 0);
+    const loserScore = player1Won ? (match.score2 ?? 0) : (match.score1 ?? 0);
     const winnerWasFavorite = player1Won ? isPlayer1Favorite : !isPlayer1Favorite;
     const winnerResult = winnerWasFavorite
       ? (band === 'low' ? cfg.favoriteWinLow : band === 'medium' ? cfg.favoriteWinMedium : cfg.favoriteWinHigh)
@@ -680,8 +700,13 @@ export const calculateSummerRanking = (
       : (band === 'low' ? cfg.underdogLossLow : band === 'medium' ? cfg.underdogLossMedium : cfg.underdogLossHigh);
     const gameDiffBonus = getGameDiffBonus(scoreDiff, cfg);
 
-    winnerStats.points += winnerResult + gameDiffBonus;
-    loserStats.points += loserResult;
+    // Winner gains base result + game score made in match + game diff bonus
+    const winnerTotalResult = winnerResult + winnerScore + gameDiffBonus;
+    // Loser penalty reduced by their game score (minimum penalty is 0, i.e. cannot gain from a loss)
+    const loserPenalty = -Math.max(0, Math.abs(loserResult) - loserScore);
+
+    winnerStats.points += winnerTotalResult;
+    loserStats.points += loserPenalty;
     winnerStats.resultPoints += winnerResult;
     loserStats.resultPoints += loserResult;
     winnerStats.gameDiffBonus += gameDiffBonus;

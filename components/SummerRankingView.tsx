@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   type SummerAvailabilityByDay,
   type SummerAvailabilityStatus,
+  type DrawMode,
   type Match,
   type Player,
   type PlayoffBracket,
@@ -1127,9 +1128,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   );
 
   const updateRulesConfig = (key: keyof SummerRankingRulesConfig, rawValue: string) => {
-    const parsed = Number(rawValue);
-    if (!Number.isNaN(parsed)) {
-      setRulesConfigForm(prev => ({ ...prev, [key]: parsed }));
+    if (key === 'drawMode') {
+      const mode = rawValue as DrawMode;
+      if (mode === 'percentage' || mode === 'fixed') {
+        setRulesConfigForm(prev => ({ ...prev, drawMode: mode }));
+      }
+    } else {
+      const parsed = Number(rawValue);
+      if (!Number.isNaN(parsed)) {
+        setRulesConfigForm(prev => ({ ...prev, [key]: parsed }));
+      }
     }
     setRulesSettingsError(null);
     setRulesSettingsSuccess(null);
@@ -1592,15 +1600,15 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 <span className="font-semibold">Fascia avversario:</span>
                 <span className="flex items-center gap-1.5">
                   <span className={`inline-block h-3 w-3 rounded-sm ${OPPONENT_BAND_STYLES.low.legend}`} />
-                  Pari livello / fascia bassa (diff ≤ {effectiveConfig.diffBandLowMax} pt)
+                  Pari livello (0–{effectiveConfig.diffBandLowMax} pt di differenza)
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className={`inline-block h-3 w-3 rounded-sm ${OPPONENT_BAND_STYLES.medium.legend}`} />
-                  Fascia media (diff ≤ {effectiveConfig.diffBandMediumMax} pt)
+                  Medio livello ({effectiveConfig.diffBandLowMax + 1}–{effectiveConfig.diffBandMediumMax} pt di differenza)
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className={`inline-block h-3 w-3 rounded-sm ${OPPONENT_BAND_STYLES.high.legend}`} />
-                  Fascia alta (diff &gt; {effectiveConfig.diffBandMediumMax} pt)
+                  Alto livello ({effectiveConfig.diffBandMediumMax + 1}+ pt di differenza)
                 </span>
               </div>
             )}
@@ -1610,7 +1618,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   <th className="py-3 pr-3">Rank</th>
                   <th className="py-3 pr-3">Giocatore</th>
                   <th className="py-3 pr-3">Punti</th>
-                  {showChallengePointsColumn && <th className="py-3 pr-3">Punti sfida</th>}
+                  {showChallengePointsColumn && <th className="py-3 pr-3">Punti sfida (base)</th>}
                   <th className="py-3 pr-3">Serie</th>
                   <th className="py-3 pr-3">Partite</th>
                   <th className="py-3 pr-3">Bonus/Malus</th>
@@ -2784,45 +2792,46 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           {/* Fasce differenza punti */}
           <div className="space-y-3">
             <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Fasce differenza punti</h4>
+            <p className="text-xs text-text-secondary">La differenza punti è sempre calcolata in valore assoluto (uguale per favorito e sfavorito).</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Max punti fascia bassa (0 – N)</span>
+                <span className="text-xs font-semibold text-text-secondary">Pari livello: differenza massima (0 – N)</span>
                 <input type="number" value={rulesConfigForm.diffBandLowMax} onChange={e => updateRulesConfig('diffBandLowMax', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Max punti fascia media (N+1 – M)</span>
+                <span className="text-xs font-semibold text-text-secondary">Medio livello: differenza massima (N+1 – M)</span>
                 <input type="number" value={rulesConfigForm.diffBandMediumMax} onChange={e => updateRulesConfig('diffBandMediumMax', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
             </div>
-            <p className="text-xs text-text-secondary">La fascia alta inizia da (fascia media + 1) in su.</p>
+            <p className="text-xs text-text-secondary">Alto livello: da (M+1) in su. Esempio con default: 0–99 = Pari, 100–199 = Medio, 200+ = Alto.</p>
           </div>
 
           {/* Vittoria favorito */}
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Se vince il favorito</h4>
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Se vince il favorito (giocatore con più punti)</h4>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia bassa</span>
+                <span className="text-xs font-semibold text-text-secondary">Vince contro pari livello: +X punti</span>
                 <input type="number" value={rulesConfigForm.favoriteWinLow} onChange={e => updateRulesConfig('favoriteWinLow', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia bassa</span>
+                <span className="text-xs font-semibold text-text-secondary">Perde contro pari livello: −Y punti</span>
                 <input type="number" value={rulesConfigForm.favoriteLossLow} onChange={e => updateRulesConfig('favoriteLossLow', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia media</span>
+                <span className="text-xs font-semibold text-text-secondary">Vince contro medio livello: +X punti</span>
                 <input type="number" value={rulesConfigForm.favoriteWinMedium} onChange={e => updateRulesConfig('favoriteWinMedium', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia media</span>
+                <span className="text-xs font-semibold text-text-secondary">Perde contro medio livello: −Y punti</span>
                 <input type="number" value={rulesConfigForm.favoriteLossMedium} onChange={e => updateRulesConfig('favoriteLossMedium', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia alta</span>
+                <span className="text-xs font-semibold text-text-secondary">Vince contro alto livello: +X punti</span>
                 <input type="number" value={rulesConfigForm.favoriteWinHigh} onChange={e => updateRulesConfig('favoriteWinHigh', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia alta</span>
+                <span className="text-xs font-semibold text-text-secondary">Perde contro alto livello: −Y punti</span>
                 <input type="number" value={rulesConfigForm.favoriteLossHigh} onChange={e => updateRulesConfig('favoriteLossHigh', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
             </div>
@@ -2830,32 +2839,92 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
           {/* Vittoria sfavorito */}
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Se vince lo sfavorito</h4>
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Se vince lo sfavorito (giocatore con meno punti)</h4>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia bassa</span>
+                <span className="text-xs font-semibold text-text-secondary">Vince contro pari livello: +X punti</span>
                 <input type="number" value={rulesConfigForm.underdogWinLow} onChange={e => updateRulesConfig('underdogWinLow', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia bassa</span>
+                <span className="text-xs font-semibold text-text-secondary">Perde contro pari livello: −Y punti</span>
                 <input type="number" value={rulesConfigForm.underdogLossLow} onChange={e => updateRulesConfig('underdogLossLow', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia media</span>
+                <span className="text-xs font-semibold text-text-secondary">Vince contro medio livello: +X punti</span>
                 <input type="number" value={rulesConfigForm.underdogWinMedium} onChange={e => updateRulesConfig('underdogWinMedium', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia media</span>
+                <span className="text-xs font-semibold text-text-secondary">Perde contro medio livello: −Y punti</span>
                 <input type="number" value={rulesConfigForm.underdogLossMedium} onChange={e => updateRulesConfig('underdogLossMedium', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Vincitore – fascia alta</span>
+                <span className="text-xs font-semibold text-text-secondary">Vince contro alto livello: +X punti</span>
                 <input type="number" value={rulesConfigForm.underdogWinHigh} onChange={e => updateRulesConfig('underdogWinHigh', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Perdente – fascia alta</span>
+                <span className="text-xs font-semibold text-text-secondary">Perde contro alto livello: −Y punti</span>
                 <input type="number" value={rulesConfigForm.underdogLossHigh} onChange={e => updateRulesConfig('underdogLossHigh', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
+            </div>
+          </div>
+
+          {/* Pareggio */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Pareggio</h4>
+            <p className="text-xs text-text-secondary">Scegli come calcolare i punti in caso di pareggio.</p>
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="drawMode"
+                    value="percentage"
+                    checked={rulesConfigForm.drawMode === 'percentage'}
+                    onChange={() => updateRulesConfig('drawMode', 'percentage')}
+                    className="accent-accent"
+                  />
+                  <span className="text-sm text-text-primary">Percentuale dei punti vittoria</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="drawMode"
+                    value="fixed"
+                    checked={rulesConfigForm.drawMode === 'fixed'}
+                    onChange={() => updateRulesConfig('drawMode', 'fixed')}
+                    className="accent-accent"
+                  />
+                  <span className="text-sm text-text-primary">Valore fisso</span>
+                </label>
+              </div>
+              {rulesConfigForm.drawMode === 'percentage' ? (
+                <label className="flex flex-col gap-1 max-w-xs">
+                  <span className="text-xs font-semibold text-text-secondary">
+                    Percentuale dei punti vittoria (es. 50 = metà dei punti che si vincerebbero)
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={rulesConfigForm.drawPercentage}
+                    onChange={e => updateRulesConfig('drawPercentage', e.target.value)}
+                    className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  />
+                </label>
+              ) : (
+                <label className="flex flex-col gap-1 max-w-xs">
+                  <span className="text-xs font-semibold text-text-secondary">
+                    Punti fissi per ogni giocatore in caso di pareggio
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={rulesConfigForm.drawFixed}
+                    onChange={e => updateRulesConfig('drawFixed', e.target.value)}
+                    className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  />
+                </label>
+              )}
             </div>
           </div>
 
