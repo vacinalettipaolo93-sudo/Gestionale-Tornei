@@ -1448,7 +1448,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Master finale</div>
               <div className="text-xl font-bold mt-2">{topEightQualified.length}/{effectiveConfig.masterSize} qualificati</div>
-              <div className="text-text-secondary mt-1">Servono almeno {effectiveConfig.masterMinMatches} partite giocate.</div>
+              <div className="text-text-secondary mt-1">Di default seguono sempre i primi {effectiveConfig.masterSize} della classifica.</div>
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Partite in programma</div>
@@ -2033,7 +2033,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Qualificati automatici</div>
               <div className="text-xl font-bold mt-2">{autoQualifiedPlayerIds.length}/{effectiveConfig.masterSize}</div>
-              <div className="text-text-secondary mt-1">Top {effectiveConfig.masterSize} con almeno {effectiveConfig.masterMinMatches} partite.</div>
+              <div className="text-text-secondary mt-1">Top {effectiveConfig.masterSize} della classifica, aggiornati in tempo reale.</div>
             </div>
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Selezione attuale</div>
@@ -3017,10 +3017,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 <span className="text-xs font-semibold text-text-secondary">Top N qualificati</span>
                 <input type="number" min="2" value={rulesConfigForm.masterSize} onChange={e => updateRulesConfig('masterSize', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-text-secondary">Min. partite giocate per qualificarsi</span>
-                <input type="number" min="1" value={rulesConfigForm.masterMinMatches} onChange={e => updateRulesConfig('masterMinMatches', e.target.value)} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary" />
-              </label>
+              <div className="flex flex-col gap-1 rounded-lg border border-tertiary bg-primary px-3 py-2">
+                <span className="text-xs font-semibold text-text-secondary">Qualificazione automatica</span>
+                <span className="text-sm text-text-primary">I primi {rulesConfigForm.masterSize} della classifica sono qualificati in tempo reale fino a eventuale override manuale.</span>
+              </div>
             </div>
           </div>
 

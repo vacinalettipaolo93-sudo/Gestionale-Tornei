@@ -92,7 +92,7 @@ export const generateRulesText = (config: SummerRankingRulesConfig): string => {
     lines.push(`• Malus inattività: -${config.inactivityMalusPoints} punti ogni ${config.inactivityMalusDays} giorni consecutivi senza partite.`);
   }
   lines.push(
-    `• Master finale: top ${config.masterSize} con almeno ${config.masterMinMatches} partite giocate.`,
+    `• Master finale: top ${config.masterSize} della classifica qualificati automaticamente, con aggiornamento in tempo reale fino a eventuale override manuale.`,
     `• Limite massimo: ${config.headToHeadLimit} scontri contro lo stesso avversario.`,
   );
   return lines.join('\n');
@@ -231,7 +231,6 @@ const setParticipants = (
 export const getSummerRankingAutoQualifiedPlayerIds = (ranking: SummerRankingEntry[], config?: SummerRankingRulesConfig) => {
   const cfg = config ?? DEFAULT_RULES_CONFIG;
   return ranking
-    .filter(entry => entry.qualifiedForMaster)
     .slice(0, cfg.masterSize)
     .map(entry => entry.player.id);
 };
@@ -772,12 +771,9 @@ export const calculateSummerRanking = (
     )
     .map((entry, index) => ({ ...entry, rank: index + 1 }));
 
-  ranking
-    .filter(entry => entry.matchesPlayed >= cfg.masterMinMatches)
-    .slice(0, cfg.masterSize)
-    .forEach(entry => {
-      entry.qualifiedForMaster = true;
-    });
+  ranking.slice(0, cfg.masterSize).forEach(entry => {
+    entry.qualifiedForMaster = true;
+  });
 
   return ranking;
 };
