@@ -187,6 +187,8 @@ export interface SummerRankingMasterData {
   generatedAt?: string;
 }
 
+export type DrawMode = 'percentage' | 'fixed';
+
 export interface SummerRankingRulesConfig {
   diffBandLowMax: number;
   diffBandMediumMax: number;
@@ -204,6 +206,10 @@ export interface SummerRankingRulesConfig {
   underdogLossMedium: number;
   underdogWinHigh: number;
   underdogLossHigh: number;
+
+  drawMode: DrawMode;
+  drawPercentage: number;
+  drawFixed: number;
 
   participationBase: number;
   participationWeeklyBonus: number;
