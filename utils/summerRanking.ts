@@ -150,6 +150,22 @@ export const getSummerRankingWinPoints = (winnerPoints: number, loserPoints: num
   return band === 'low' ? cfg.underdogWinLow : band === 'medium' ? cfg.underdogWinMedium : cfg.underdogWinHigh;
 };
 
+/**
+ * Returns the (negative) points the current player would lose if they lose against an opponent.
+ * currentPlayerPoints: points of the logged-in player
+ * opponentPoints: points of the opponent
+ */
+export const getSummerRankingLossPoints = (currentPlayerPoints: number, opponentPoints: number, config?: SummerRankingRulesConfig) => {
+  const cfg = config ?? DEFAULT_RULES_CONFIG;
+  const diff = Math.abs(currentPlayerPoints - opponentPoints);
+  const band = getSummerRankingDiffBand(diff, cfg);
+  const currentPlayerIsFavorite = currentPlayerPoints >= opponentPoints;
+  if (currentPlayerIsFavorite) {
+    return band === 'low' ? cfg.favoriteLossLow : band === 'medium' ? cfg.favoriteLossMedium : cfg.favoriteLossHigh;
+  }
+  return band === 'low' ? cfg.underdogLossLow : band === 'medium' ? cfg.underdogLossMedium : cfg.underdogLossHigh;
+};
+
 const hasValidKnockoutScore = (match: Pick<PlayoffMatch, 'player1Id' | 'player2Id' | 'score1' | 'score2'>) =>
   !!match.player1Id &&
   !!match.player2Id &&
