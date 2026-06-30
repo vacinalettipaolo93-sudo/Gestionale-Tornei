@@ -161,6 +161,43 @@ const formatDateTime = (value?: string) => {
   });
 };
 
+const formatDateOnly = (value?: string) => {
+  if (!value) return 'Data da definire';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('it-IT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+const formatTimeOnly = (value?: string) => {
+  if (!value) return 'Orario da definire';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--:--';
+  return date.toLocaleTimeString('it-IT', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const normalizeWhatsAppPhone = (phone?: string) => phone?.replace(/[^0-9]/g, '') ?? '';
+
+const buildWhatsAppReminderMessage = (
+  opponentName: string,
+  scheduledTime?: string,
+  location?: string,
+  field?: string,
+) => [
+  `Ciao ${opponentName}, ti ricordo la partita prenotata nel ranking.`,
+  `Avversario: ${opponentName}`,
+  `Data: ${formatDateOnly(scheduledTime)}`,
+  `Ora: ${formatTimeOnly(scheduledTime)}`,
+  `Luogo: ${location?.trim() || 'Da definire'}`,
+  field?.trim() ? `Campo: ${field.trim()}` : null,
+].filter(Boolean).join('\n');
+
 const getChallengeBadgeTone = (pointsToWin: number) => {
   if (pointsToWin >= 40) return 'bg-red-500/20 text-red-300 border-red-400/40';
   if (pointsToWin >= 30) return 'bg-orange-500/20 text-orange-300 border-orange-400/40';
@@ -584,8 +621,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     }
   };
 
-  const openChallengeModal = (opponentId: string, opponentName: string) => {
-    setChallengeModal({ opponentId, opponentName, scheduledDate: '', scheduledHour: '', location: 'Tennis Salò Canottieri' });
+  const openChallengeModal = (opponentId?: string, opponentName?: string) => {
+    const initialOpponentId = opponentId ?? eligibleOpponents[0]?.id ?? '';
+    const initialOpponentName = opponentName
+      ?? eligibleOpponents.find(player => player.id === initialOpponentId)?.name
+      ?? '';
+    setChallengeModal({ opponentId: initialOpponentId, opponentName: initialOpponentName, scheduledDate: '', scheduledHour: '', location: 'Tennis Salò Canottieri' });
     setChallengeError(null);
     setChallengeSuccess(null);
   };
@@ -600,16 +641,20 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     if (!challengeModal || !loggedInPlayerId || !currentPlayer) return;
     const { opponentId, scheduledDate, scheduledHour, location } = challengeModal;
 
+    if (!opponentId) {
+      setChallengeError('Seleziona un avversario per prenotare la partita.');
+      return;
+    }
     if (!scheduledDate) {
-      setChallengeError('Seleziona una data per la sfida.');
+      setChallengeError('Seleziona una data per la partita.');
       return;
     }
     if (!scheduledHour) {
-      setChallengeError('Seleziona un orario per la sfida.');
+      setChallengeError('Seleziona un orario per la partita.');
       return;
     }
     if (!location) {
-      setChallengeError('Seleziona un luogo per la sfida.');
+      setChallengeError('Seleziona un luogo per la partita.');
       return;
     }
 
@@ -621,7 +666,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     }
 
     if (opponentId === loggedInPlayerId) {
-      setChallengeError('Non puoi sfidare te stesso.');
+      setChallengeError('Non puoi prenotare una partita contro te stesso.');
       return;
     }
 
@@ -631,7 +676,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     }
 
     const nextMatch: Match = {
-      id: generateId('srn-challenge'),
+      id: generateId('srn-booking'),
       player1Id: loggedInPlayerId,
       player2Id: opponentId,
       score1: null,
@@ -648,12 +693,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
         ...rankingData,
         matches: [...rankingData.matches, nextMatch],
       });
-      setChallengeSuccess('Sfida programmata con successo! La partita è ora visibile nel tab Partite.');
+      setChallengeSuccess('Partita prenotata con successo! La partita è ora visibile nel tab Partite.');
       setTimeout(() => {
         closeChallengeModal();
       }, 1500);
     } catch (err) {
-      console.error('Errore creazione sfida', err);
+      console.error('Errore prenotazione partita', err);
       const errMsg = err instanceof Error ? err.message : String(err);
       setChallengeError(`Salvataggio non riuscito: ${errMsg}. Riprova.`);
     } finally {
@@ -1396,9 +1441,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
                             disabled={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit}
                             className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit ? `Limite di ${effectiveConfig.headToHeadLimit} scontri raggiunto` : `Sfida ${entry.player.name}`}
+                            title={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit ? `Limite di ${effectiveConfig.headToHeadLimit} scontri raggiunto` : `Prenota partita con ${entry.player.name}`}
                           >
-                            Sfida
+                            Prenota partita
                           </button>
                         )}
                       </div>
@@ -1506,6 +1551,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       {activeTab === 'matches' && (
         <>
           <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+            <div className="mb-4 flex items-center justify-end">
+              <button
+                onClick={() => openChallengeModal()}
+                disabled={!canBookAsParticipant || eligibleOpponents.length === 0}
+                title={!canBookAsParticipant ? 'Accedi come giocatore per prenotare una partita' : (eligibleOpponents.length === 0 ? 'Nessun avversario disponibile per una nuova prenotazione' : 'Prenota una nuova partita')}
+                className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Prenota partita
+              </button>
+            </div>
             <table className="w-full min-w-[920px] text-sm">
             <thead>
               <tr className="text-left border-b border-tertiary text-text-secondary">
@@ -1553,7 +1608,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                           <>
                             <div>{formatDateTime(match.scheduledTime)}</div>
                             {match.location && <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>}
-                            <div className="text-text-secondary italic">Sfida diretta</div>
+                            <div className="text-text-secondary italic">Prenotazione diretta</div>
                           </>
                         ) : 'Nessuno slot'}
                       </td>
@@ -1591,6 +1646,40 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                               Elimina
                             </button>
                           )}
+                          {match.status === 'scheduled' && (() => {
+                            const isParticipantMatch = !!(loggedInPlayerId && (match.player1Id === loggedInPlayerId || match.player2Id === loggedInPlayerId));
+                            const opponentId = loggedInPlayerId === match.player1Id ? match.player2Id : match.player1Id;
+                            const opponent = playerMap.get(opponentId);
+                            const opponentPhone = normalizeWhatsAppPhone(opponent?.phone);
+                            const reminderMessage = encodeURIComponent(
+                              buildWhatsAppReminderMessage(opponent?.name ?? 'avversario', match.scheduledTime, match.location, match.field)
+                            );
+                            const whatsappReminderLink = opponentPhone ? `https://wa.me/${opponentPhone}?text=${reminderMessage}` : null;
+                            const reminderDisabledReason = !isParticipantMatch
+                              ? 'Puoi inviare promemoria solo per le tue partite prenotate.'
+                              : !opponentPhone
+                                ? 'Numero WhatsApp avversario non disponibile.'
+                                : '';
+
+                            return whatsappReminderLink && isParticipantMatch ? (
+                              <a
+                                href={whatsappReminderLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
+                              >
+                                Promemoria WhatsApp
+                              </a>
+                            ) : (
+                              <button
+                                disabled
+                                title={reminderDisabledReason}
+                                className="px-3 py-1 rounded bg-green-600 text-white text-xs font-semibold opacity-50 cursor-not-allowed"
+                              >
+                                Promemoria WhatsApp
+                              </button>
+                            );
+                          })()}
                         </div>
                       </td>
                     </tr>
@@ -2567,12 +2656,32 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             onClick={(e) => { if (e.target === e.currentTarget) closeChallengeModal(); }}
           >
             <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-              <h3 className="text-xl font-bold text-accent">Programma sfida</h3>
+              <h3 className="text-xl font-bold text-accent">Prenota partita</h3>
               <p className="text-sm text-text-secondary">
-                Stai sfidando <span className="font-semibold text-text-primary">{challengeModal.opponentName}</span>. Scegli la data, l'orario e il luogo in cui vuoi giocare.
+                Seleziona avversario, data, orario e luogo per completare la prenotazione della partita.
               </p>
 
               <div className="space-y-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-text-secondary">Avversario <span className="text-red-400">*</span></span>
+                  <select
+                    value={challengeModal.opponentId}
+                    onChange={e => setChallengeModal(prev => prev ? {
+                      ...prev,
+                      opponentId: e.target.value,
+                      opponentName: playerMap.get(e.target.value)?.name ?? '',
+                    } : prev)}
+                    className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                  >
+                    <option value="">Seleziona avversario</option>
+                    {eligibleOpponents.map(player => (
+                      <option key={player.id} value={player.id}>
+                        {player.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 <label className="flex flex-col gap-1">
                   <span className="text-xs font-semibold text-text-secondary">Data <span className="text-red-400">*</span></span>
                   <input
@@ -2627,10 +2736,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </button>
                 <button
                   onClick={handleCreateChallenge}
-                  disabled={isSavingChallenge || !challengeModal.scheduledDate || !challengeModal.scheduledHour || !challengeModal.location}
+                  disabled={isSavingChallenge || !challengeModal.opponentId || !challengeModal.scheduledDate || !challengeModal.scheduledHour || !challengeModal.location}
                   className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isSavingChallenge ? 'Salvataggio...' : 'Programma sfida'}
+                  {isSavingChallenge ? 'Salvataggio...' : 'Conferma prenotazione'}
                 </button>
               </div>
             </div>
