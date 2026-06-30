@@ -36,14 +36,17 @@ export const DEFAULT_RULES_CONFIG: SummerRankingRulesConfig = {
   drawPercentage: 50,
   drawFixed: 10,
 
+  participationBonusEnabled: true,
   participationBase: 5,
   participationWeeklyBonus: 10,
   participationWeeklyMinMatches: 2,
 
+  gameDiffBonusEnabled: true,
   gameDiffBonus2: 1,
   gameDiffBonus3: 2,
   gameDiffBonus4plus: 3,
 
+  inactivityMalusEnabled: true,
   inactivityMalusPoints: 5,
   inactivityMalusDays: 10,
 
@@ -57,6 +60,9 @@ export const normalizeRulesConfig = (config?: Partial<SummerRankingRulesConfig> 
   ...DEFAULT_RULES_CONFIG,
   ...config,
   drawMode: (config?.drawMode === 'percentage' || config?.drawMode === 'fixed') ? config.drawMode : DEFAULT_RULES_CONFIG.drawMode,
+  participationBonusEnabled: config?.participationBonusEnabled ?? DEFAULT_RULES_CONFIG.participationBonusEnabled,
+  gameDiffBonusEnabled: config?.gameDiffBonusEnabled ?? DEFAULT_RULES_CONFIG.gameDiffBonusEnabled,
+  inactivityMalusEnabled: config?.inactivityMalusEnabled ?? DEFAULT_RULES_CONFIG.inactivityMalusEnabled,
 });
 
 export const generateRulesText = (config: SummerRankingRulesConfig): string => {
@@ -65,7 +71,7 @@ export const generateRulesText = (config: SummerRankingRulesConfig): string => {
   const drawDesc = config.drawMode === 'fixed'
     ? `valore fisso ${config.drawFixed} punti`
     : `${config.drawPercentage}% dei punti che si sarebbero vinti`;
-  return [
+  const lines = [
     SUMMER_RANKING_NAME,
     '',
     '• Ranking globale unico con tutti i giocatori iscritti.',
@@ -75,12 +81,21 @@ export const generateRulesText = (config: SummerRankingRulesConfig): string => {
     `• Se lo sfavorito vince (pari/medio/alto): +${config.underdogWinLow}/+${config.underdogWinMedium}/+${config.underdogWinHigh} pt; se perde: ${config.underdogLossLow}/${config.underdogLossMedium}/${config.underdogLossHigh} pt.`,
     `• Pareggio: ${drawDesc}. Ai game fatti in partita si aggiungono al punteggio base.`,
     `• Punteggio finale: al vincitore si sommano i game fatti; allo sconfitto si sottraggono i game fatti dalla penalità (min. 0).`,
-    `• Bonus partecipazione: +${config.participationBase} a partita, oppure +${config.participationWeeklyBonus} a partita se il giocatore disputa almeno ${config.participationWeeklyMinMatches} match nella stessa settimana.`,
-    `• Bonus differenza game al vincitore: +${config.gameDiffBonus2} con 2 game di scarto, +${config.gameDiffBonus3} con 3, +${config.gameDiffBonus4plus} con 4 o più.`,
-    `• Malus inattività: -${config.inactivityMalusPoints} punti ogni ${config.inactivityMalusDays} giorni consecutivi senza partite.`,
+  ];
+  if (config.participationBonusEnabled) {
+    lines.push(`• Bonus partecipazione: +${config.participationBase} punti a partita.`);
+  }
+  if (config.gameDiffBonusEnabled) {
+    lines.push(`• Bonus differenza game al vincitore: +${config.gameDiffBonus2} con 2 game di scarto, +${config.gameDiffBonus3} con 3, +${config.gameDiffBonus4plus} con 4 o più.`);
+  }
+  if (config.inactivityMalusEnabled) {
+    lines.push(`• Malus inattività: -${config.inactivityMalusPoints} punti ogni ${config.inactivityMalusDays} giorni consecutivi senza partite.`);
+  }
+  lines.push(
     `• Master finale: top ${config.masterSize} con almeno ${config.masterMinMatches} partite giocate.`,
     `• Limite massimo: ${config.headToHeadLimit} scontri contro lo stesso avversario.`,
-  ].join('\n');
+  );
+  return lines.join('\n');
 };
 
 export const DEFAULT_SUMMER_RANKING_RULES = generateRulesText(DEFAULT_RULES_CONFIG);
@@ -526,25 +541,15 @@ const toTimestamp = (value?: string) => {
   return Number.isNaN(time) ? Number.NaN : time;
 };
 
-const getWeekKey = (date: Date) => {
-  const utcDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = utcDate.getUTCDay() || 7;
-  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
-  const week = Math.ceil((((utcDate.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return `${utcDate.getUTCFullYear()}-${String(week).padStart(2, '0')}`;
-};
-
 const getMatchPlayedAt = (match: Match) => match.completedAt ?? match.scheduledTime;
 
-const getParticipationBonus = (playerId: string, matchDate: Date, weeklyMatchCounts: Map<string, number>, config: SummerRankingRulesConfig) => {
-  const key = `${playerId}:${getWeekKey(matchDate)}`;
-  return (weeklyMatchCounts.get(key) ?? 0) >= config.participationWeeklyMinMatches
-    ? config.participationWeeklyBonus
-    : config.participationBase;
+const getParticipationBonus = (config: SummerRankingRulesConfig) => {
+  if (!config.participationBonusEnabled) return 0;
+  return config.participationBase;
 };
 
 const getGameDiffBonus = (scoreDiff: number, config: SummerRankingRulesConfig) => {
+  if (!config.gameDiffBonusEnabled) return 0;
   if (scoreDiff >= 4) return config.gameDiffBonus4plus;
   if (scoreDiff === 3) return config.gameDiffBonus3;
   if (scoreDiff === 2) return config.gameDiffBonus2;
@@ -596,17 +601,6 @@ export const calculateSummerRanking = (
       return aTime - bTime;
     });
 
-  const weeklyMatchCounts = new Map<string, number>();
-  completedMatches.forEach(match => {
-    const playedAt = toTimestamp(getMatchPlayedAt(match));
-    if (Number.isNaN(playedAt)) return;
-    const date = new Date(playedAt);
-    [match.player1Id, match.player2Id].forEach(playerId => {
-      const key = `${playerId}:${getWeekKey(date)}`;
-      weeklyMatchCounts.set(key, (weeklyMatchCounts.get(key) ?? 0) + 1);
-    });
-  });
-
   const stats = new Map<string, Omit<SummerRankingEntry, 'player' | 'rank' | 'qualifiedForMaster'>>();
   const playedDatesByPlayer = new Map<string, number[]>();
   confirmedPlayers.forEach(player => {
@@ -647,8 +641,8 @@ export const calculateSummerRanking = (
       playedDatesByPlayer.get(match.player1Id)?.push(playedDate);
       playedDatesByPlayer.get(match.player2Id)?.push(playedDate);
     }
-    const participation1 = Number.isNaN(playedDate) ? cfg.participationBase : getParticipationBonus(match.player1Id, new Date(playedDate), weeklyMatchCounts, cfg);
-    const participation2 = Number.isNaN(playedDate) ? cfg.participationBase : getParticipationBonus(match.player2Id, new Date(playedDate), weeklyMatchCounts, cfg);
+    const participation1 = getParticipationBonus(cfg);
+    const participation2 = getParticipationBonus(cfg);
     const scoreDiff = Math.abs((match.score1 ?? 0) - (match.score2 ?? 0));
 
     player1Stats.matchesPlayed += 1;
@@ -724,7 +718,7 @@ export const calculateSummerRanking = (
     const joinedAt = toTimestamp(player.summerRankingJoinedAt);
     if (!Number.isNaN(joinedAt)) referenceDates.push(joinedAt);
     referenceDates.push(...playedDates);
-    if (referenceDates.length > 0) {
+    if (referenceDates.length > 0 && cfg.inactivityMalusEnabled) {
       let inactivityPenalty = 0;
       for (let index = 1; index < referenceDates.length; index += 1) {
         const gap = Math.floor((referenceDates[index] - referenceDates[index - 1]) / 86400000);

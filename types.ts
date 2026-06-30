@@ -211,14 +211,17 @@ export interface SummerRankingRulesConfig {
   drawPercentage: number;
   drawFixed: number;
 
+  participationBonusEnabled: boolean;
   participationBase: number;
   participationWeeklyBonus: number;
   participationWeeklyMinMatches: number;
 
+  gameDiffBonusEnabled: boolean;
   gameDiffBonus2: number;
   gameDiffBonus3: number;
   gameDiffBonus4plus: number;
 
+  inactivityMalusEnabled: boolean;
   inactivityMalusPoints: number;
   inactivityMalusDays: number;
 
