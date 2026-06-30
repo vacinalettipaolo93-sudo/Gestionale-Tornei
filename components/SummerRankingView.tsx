@@ -24,8 +24,10 @@ import {
   getSummerRankingAutoQualifiedPlayerIds,
   getEligibleOpponents,
   getHeadToHeadCount,
+  getSummerRankingDiffBand,
   getSummerRankingMasterFormat,
   getSummerRankingMasterQualifiedPlayerIds,
+  getSummerRankingLossPoints,
   getSummerRankingWinPoints,
   normalizeRulesConfig,
   recomputeSummerRankingMasterBracket,
@@ -283,6 +285,15 @@ const getChallengeBadgeTone = (pointsToWin: number) => {
   if (pointsToWin >= 40) return 'bg-red-500/20 text-red-300 border-red-400/40';
   if (pointsToWin >= 30) return 'bg-orange-500/20 text-orange-300 border-orange-400/40';
   return 'bg-green-500/20 text-green-300 border-green-400/40';
+};
+
+/** Returns a subtle row background class based on the point-difference band between
+ *  the logged-in player and an opponent. Three distinct colours so the user can
+ *  immediately spot opponents at the same level, medium distance, or far away. */
+const getOpponentBandRowClass = (band: 'low' | 'medium' | 'high') => {
+  if (band === 'low') return 'bg-yellow-500/8';
+  if (band === 'medium') return 'bg-orange-500/8';
+  return 'bg-purple-500/8';
 };
 
 const arraysEqual = (left: string[], right: string[]) =>
@@ -1409,6 +1420,23 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           )}
 
           <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+            {showChallengePointsColumn && (
+              <div className="flex flex-wrap items-center gap-3 mb-4 text-xs text-text-secondary">
+                <span className="font-semibold">Fascia avversario:</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-yellow-500/40" />
+                  Pari livello (diff ≤ {effectiveConfig.diffBandLowMax} pt)
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-orange-500/40" />
+                  Media (diff ≤ {effectiveConfig.diffBandMediumMax} pt)
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-purple-500/40" />
+                  Alta (diff &gt; {effectiveConfig.diffBandMediumMax} pt)
+                </span>
+              </div>
+            )}
             <table className="w-full min-w-[1120px] text-sm">
               <thead>
                 <tr className="text-left border-b border-tertiary text-text-secondary">
@@ -1431,9 +1459,15 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   const pointsToWin = currentPlayerRankingEntry
                     ? getSummerRankingWinPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
                     : 0;
+                  const pointsToLose = currentPlayerRankingEntry
+                    ? getSummerRankingLossPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
+                    : 0;
+                  const opponentBand = (currentPlayerRankingEntry && !isCurrentPlayerRow)
+                    ? getSummerRankingDiffBand(Math.abs(currentPlayerRankingEntry.points - entry.points), effectiveConfig)
+                    : null;
 
                   return (
-                  <tr key={entry.player.id} className={`border-b border-tertiary/40 last:border-b-0 align-top ${isCurrentPlayerRow ? 'bg-accent/10 ring-1 ring-inset ring-accent/60' : ''}`}>
+                  <tr key={entry.player.id} className={`border-b border-tertiary/40 last:border-b-0 align-top ${isCurrentPlayerRow ? 'bg-accent/10 ring-1 ring-inset ring-accent/60' : opponentBand ? getOpponentBandRowClass(opponentBand) : ''}`}>
                     <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
                     <td className="py-4 pr-3">
                       <div className="font-semibold flex items-center gap-2">
@@ -1487,9 +1521,14 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             Tu
                           </span>
                         ) : (
-                          <span className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-bold ${getChallengeBadgeTone(pointsToWin)}`}>
-                            +{pointsToWin} pt
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className="inline-flex items-center rounded-md border border-green-400/40 bg-green-500/15 px-2 py-0.5 text-xs font-bold text-green-400">
+                              +{pointsToWin} pt
+                            </span>
+                            <span className="inline-flex items-center rounded-md border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-400">
+                              {pointsToLose} pt
+                            </span>
+                          </div>
                         )}
                       </td>
                     )}
