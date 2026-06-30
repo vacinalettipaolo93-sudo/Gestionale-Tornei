@@ -401,13 +401,25 @@ const getChallengeBadgeTone = (pointsToWin: number) => {
   return 'bg-green-500/20 text-green-300 border-green-400/40';
 };
 
-/** Returns a subtle row background class based on the point-difference band between
- *  the logged-in player and an opponent. Three distinct colours so the user can
- *  immediately spot opponents at the same level, medium distance, or far away. */
+const OPPONENT_BAND_STYLES = {
+  low: {
+    legend: 'bg-yellow-500/40',
+    row: 'bg-yellow-500/18 border-l-4 border-yellow-400/70',
+  },
+  medium: {
+    legend: 'bg-orange-500/40',
+    row: 'bg-orange-500/18 border-l-4 border-orange-400/70',
+  },
+  high: {
+    legend: 'bg-purple-500/40',
+    row: 'bg-purple-500/18 border-l-4 border-purple-400/70',
+  },
+} as const;
+
+/** Returns an evident row style based on the point-difference band between
+ *  the logged-in player and an opponent. */
 const getOpponentBandRowClass = (band: 'low' | 'medium' | 'high') => {
-  if (band === 'low') return 'bg-yellow-500/8';
-  if (band === 'medium') return 'bg-orange-500/8';
-  return 'bg-purple-500/8';
+  return OPPONENT_BAND_STYLES[band].row;
 };
 
 const arraysEqual = (left: string[], right: string[]) =>
@@ -1579,16 +1591,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               <div className="flex flex-wrap items-center gap-3 mb-4 text-xs text-text-secondary">
                 <span className="font-semibold">Fascia avversario:</span>
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm bg-yellow-500/40" />
-                  Pari livello (diff ≤ {effectiveConfig.diffBandLowMax} pt)
+                  <span className={`inline-block h-3 w-3 rounded-sm ${OPPONENT_BAND_STYLES.low.legend}`} />
+                  Pari livello / fascia bassa (diff ≤ {effectiveConfig.diffBandLowMax} pt)
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm bg-orange-500/40" />
-                  Media (diff ≤ {effectiveConfig.diffBandMediumMax} pt)
+                  <span className={`inline-block h-3 w-3 rounded-sm ${OPPONENT_BAND_STYLES.medium.legend}`} />
+                  Fascia media (diff ≤ {effectiveConfig.diffBandMediumMax} pt)
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm bg-purple-500/40" />
-                  Alta (diff &gt; {effectiveConfig.diffBandMediumMax} pt)
+                  <span className={`inline-block h-3 w-3 rounded-sm ${OPPONENT_BAND_STYLES.high.legend}`} />
+                  Fascia alta (diff &gt; {effectiveConfig.diffBandMediumMax} pt)
                 </span>
               </div>
             )}
@@ -1622,7 +1634,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                     : null;
 
                   return (
-                  <tr key={entry.player.id} className={`border-b border-tertiary/40 last:border-b-0 align-top ${isCurrentPlayerRow ? 'bg-accent/10 ring-1 ring-inset ring-accent/60' : opponentBand ? getOpponentBandRowClass(opponentBand) : ''}`}>
+                  <tr
+                    key={entry.player.id}
+                    className={`border-b border-tertiary/40 last:border-b-0 align-top transition-colors ${isCurrentPlayerRow ? 'bg-accent/20 ring-2 ring-inset ring-accent/70 border-l-4 border-accent' : opponentBand ? getOpponentBandRowClass(opponentBand) : ''}`}
+                  >
                     <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
                     <td className="py-4 pr-3">
                       <div className="font-semibold flex items-center gap-2">
@@ -1633,8 +1648,11 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                           </span>
                         )}
                         {masterQualifiedIdSet.has(entry.player.id) && (
-                          <span className="px-2 py-0.5 rounded bg-green-600 text-white text-xs font-semibold">
-                            Master
+                          <span
+                            className="px-2 py-0.5 rounded bg-green-600 text-white text-xs font-semibold"
+                            title="Giocatore qualificato al Master finale"
+                          >
+                            Qualificato Master
                           </span>
                         )}
 
