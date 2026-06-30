@@ -185,13 +185,13 @@ const formatTimeOnly = (value?: string) => {
 const normalizeWhatsAppPhone = (phone?: string) => phone?.replace(/[^0-9]/g, '') ?? '';
 
 const buildWhatsAppReminderMessage = (
-  opponentName: string,
+  senderName: string,
   scheduledTime?: string,
   location?: string,
   field?: string,
 ) => [
-  `Ciao ${opponentName}, ti ricordo la partita prenotata nel ranking.`,
-  `Avversario: ${opponentName}`,
+  `Ciao sono ${senderName},`,
+  'ti ricordo la partita prenotata nel ranking.',
   `Data: ${formatDateOnly(scheduledTime)}`,
   `Ora: ${formatTimeOnly(scheduledTime)}`,
   `Luogo: ${location?.trim() || 'Da definire'}`,
@@ -1652,7 +1652,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             const opponent = playerMap.get(opponentId);
                             const opponentPhone = normalizeWhatsAppPhone(opponent?.phone);
                             const reminderMessage = encodeURIComponent(
-                              buildWhatsAppReminderMessage(opponent?.name ?? 'avversario', match.scheduledTime, match.location, match.field)
+                              buildWhatsAppReminderMessage(currentPlayer?.name ?? 'il giocatore', match.scheduledTime, match.location, match.field)
                             );
                             const whatsappReminderLink = opponentPhone ? `https://wa.me/${opponentPhone}?text=${reminderMessage}` : null;
                             const reminderDisabledReason = !isParticipantMatch
