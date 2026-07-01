@@ -522,16 +522,6 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const currentPlayerRowRef = useRef<HTMLTableRowElement | null>(null);
 
   useEffect(() => {
-    if (activeTab !== 'ranking' || !loggedInPlayerId || !currentPlayerVisibleInFilteredRanking) return;
-    const el = currentPlayerRowRef.current;
-    if (!el) return;
-    const frame = requestAnimationFrame(() => {
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [activeTab, loggedInPlayerId, currentPlayerVisibleInFilteredRanking, filteredRanking]);
-
-  useEffect(() => {
     setRulesConfigForm(normalizeRulesConfig(rankingData.rulesConfig));
   }, [rankingData.rulesConfig]);
   useEffect(() => {
@@ -1367,6 +1357,13 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => !!(loggedInPlayerId && filteredRanking.some(entry => entry.player.id === loggedInPlayerId)),
     [filteredRanking, loggedInPlayerId],
   );
+  useEffect(() => {
+    if (activeTab !== 'ranking' || !loggedInPlayerId || !currentPlayerVisibleInFilteredRanking) return;
+    const frame = requestAnimationFrame(() => {
+      currentPlayerRowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeTab, loggedInPlayerId, currentPlayerVisibleInFilteredRanking, filteredRanking.length]);
   const masterCandidatePlayers = useMemo(
     () => ranking.map(entry => entry.player),
     [ranking],
@@ -1675,7 +1672,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   return (
                   <tr
                     key={entry.player.id}
-                    ref={isCurrentPlayerRow ? currentPlayerRowRef : undefined}
+                    ref={node => {
+                      if (isCurrentPlayerRow) currentPlayerRowRef.current = node;
+                    }}
                     className={`border-b border-tertiary/40 last:border-b-0 align-top transition-colors ${isCurrentPlayerRow ? 'bg-accent/20 ring-2 ring-inset ring-accent/70 border-l-4 border-accent' : opponentBand ? getOpponentBandRowClass(opponentBand) : ''}`}
                   >
                     <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
