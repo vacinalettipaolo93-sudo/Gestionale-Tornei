@@ -519,6 +519,18 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
   const [isSavingChallenge, setIsSavingChallenge] = useState(false);
 
+  const currentPlayerRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== 'ranking' || !loggedInPlayerId || !currentPlayerVisibleInFilteredRanking) return;
+    const el = currentPlayerRowRef.current;
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeTab, loggedInPlayerId, currentPlayerVisibleInFilteredRanking, filteredRanking]);
+
   useEffect(() => {
     setRulesConfigForm(normalizeRulesConfig(rankingData.rulesConfig));
   }, [rankingData.rulesConfig]);
@@ -1663,6 +1675,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   return (
                   <tr
                     key={entry.player.id}
+                    ref={isCurrentPlayerRow ? currentPlayerRowRef : undefined}
                     className={`border-b border-tertiary/40 last:border-b-0 align-top transition-colors ${isCurrentPlayerRow ? 'bg-accent/20 ring-2 ring-inset ring-accent/70 border-l-4 border-accent' : opponentBand ? getOpponentBandRowClass(opponentBand) : ''}`}
                   >
                     <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
