@@ -404,16 +404,16 @@ const getChallengeBadgeTone = (pointsToWin: number) => {
 
 const OPPONENT_BAND_STYLES = {
   low: {
-    legend: 'bg-yellow-500/40',
-    row: 'bg-yellow-500/18 border-l-4 border-yellow-400/70',
+    legend: 'bg-yellow-500/60',
+    row: 'bg-yellow-500/30 border-l-4 border-yellow-400',
   },
   medium: {
-    legend: 'bg-orange-500/40',
-    row: 'bg-orange-500/18 border-l-4 border-orange-400/70',
+    legend: 'bg-orange-500/60',
+    row: 'bg-orange-500/30 border-l-4 border-orange-400',
   },
   high: {
-    legend: 'bg-purple-500/40',
-    row: 'bg-purple-500/18 border-l-4 border-purple-400/70',
+    legend: 'bg-purple-500/60',
+    row: 'bg-purple-500/30 border-l-4 border-purple-400',
   },
 } as const;
 
