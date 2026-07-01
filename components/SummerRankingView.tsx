@@ -1755,9 +1755,18 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                     </td>
                     <td className="py-4 pr-3 text-xs text-text-secondary">
                       <div>Risultati: {entry.resultPoints}</div>
-                      <div>Partecipazione: {entry.participationBonus}</div>
-                      <div>Game diff: {entry.gameDiffBonus}</div>
-                      <div>Inattività: -{entry.inactivityMalus}</div>
+                      {effectiveConfig.wonGamesBonusEnabled && (
+                        <div>Game vinti: +{entry.wonGamesBonus}</div>
+                      )}
+                      {effectiveConfig.gameDiffBonusEnabled && (
+                        <div>Game diff: +{entry.gameDiffBonus}</div>
+                      )}
+                      {effectiveConfig.participationBonusEnabled && (
+                        <div>Partecipazione: +{entry.participationBonus}</div>
+                      )}
+                      {effectiveConfig.inactivityMalusEnabled && (
+                        <div>Inattività: -{entry.inactivityMalus}</div>
+                      )}
                     </td>
                     <td className="py-4 pr-3 text-xs text-text-secondary">
                       <div>{entry.upcomingMatches} prenotazioni attive</div>

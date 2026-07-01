@@ -121,6 +121,7 @@ export interface SummerRankingEntry {
   matchesPlayed: number;
   resultPoints: number;
   participationBonus: number;
+  wonGamesBonus: number;
   gameDiffBonus: number;
   inactivityMalus: number;
   recentForm: Array<'W' | 'D' | 'L'>;
@@ -620,6 +621,7 @@ export const calculateSummerRanking = (
       matchesPlayed: 0,
       resultPoints: 0,
       participationBonus: 0,
+      wonGamesBonus: 0,
       gameDiffBonus: 0,
       inactivityMalus: 0,
       recentForm: [],
@@ -712,6 +714,7 @@ export const calculateSummerRanking = (
     loserStats.points += loserPenalty;
     winnerStats.resultPoints += winnerResult;
     loserStats.resultPoints += loserResult;
+    winnerStats.wonGamesBonus += wonGamesBonus;
     winnerStats.gameDiffBonus += gameDiffBonus;
     winnerStats.wins += 1;
     loserStats.losses += 1;
@@ -765,6 +768,7 @@ export const calculateSummerRanking = (
         matchesPlayed: 0,
         resultPoints: 0,
         participationBonus: 0,
+        wonGamesBonus: 0,
         gameDiffBonus: 0,
         inactivityMalus: 0,
         recentForm: [],
