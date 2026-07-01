@@ -221,6 +221,9 @@ export interface SummerRankingRulesConfig {
   gameDiffBonus3: number;
   gameDiffBonus4plus: number;
 
+  wonGamesBonusEnabled: boolean;
+  wonGamesMultiplier: number;
+
   inactivityMalusEnabled: boolean;
   inactivityMalusPoints: number;
   inactivityMalusDays: number;
