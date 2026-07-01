@@ -1655,6 +1655,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   const opponentBand = (currentPlayerRankingEntry && !isCurrentPlayerRow)
                     ? getSummerRankingDiffBand(Math.abs(currentPlayerRankingEntry.points - entry.points), effectiveConfig)
                     : null;
+                  const headToHeadCount = (!isCurrentPlayerRow && loggedInPlayerId)
+                    ? getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id)
+                    : 0;
+                  const remainingHeadToHead = Math.max(0, effectiveConfig.headToHeadLimit - headToHeadCount);
 
                   return (
                   <tr
@@ -1770,14 +1774,25 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                           Contatta
                         </button>
                         {!isCurrentPlayerRow && currentPlayer && loggedInPlayerId && (
-                          <button
-                            onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
-                            disabled={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit}
-                            className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit ? `Limite di ${effectiveConfig.headToHeadLimit} scontri raggiunto` : `Crea partita con ${entry.player.name}`}
-                          >
-                            Crea partita
-                          </button>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-text-secondary">
+                              Scontri: {headToHeadCount}/{effectiveConfig.headToHeadLimit}
+                              {remainingHeadToHead > 0 ? ` · Restano: ${remainingHeadToHead}` : ''}
+                            </span>
+                            {remainingHeadToHead > 0 ? (
+                              <button
+                                onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
+                                className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold"
+                                title={`Crea partita con ${entry.player.name}`}
+                              >
+                                Crea partita
+                              </button>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 text-xs font-semibold border border-red-500/30">
+                                Limite raggiunto
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
