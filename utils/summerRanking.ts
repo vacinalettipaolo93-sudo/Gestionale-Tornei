@@ -46,6 +46,9 @@ export const DEFAULT_RULES_CONFIG: SummerRankingRulesConfig = {
   gameDiffBonus3: 2,
   gameDiffBonus4plus: 3,
 
+  wonGamesBonusEnabled: true,
+  wonGamesMultiplier: 1,
+
   inactivityMalusEnabled: true,
   inactivityMalusPoints: 5,
   inactivityMalusDays: 10,
@@ -62,6 +65,8 @@ export const normalizeRulesConfig = (config?: Partial<SummerRankingRulesConfig> 
   drawMode: (config?.drawMode === 'percentage' || config?.drawMode === 'fixed') ? config.drawMode : DEFAULT_RULES_CONFIG.drawMode,
   participationBonusEnabled: config?.participationBonusEnabled ?? DEFAULT_RULES_CONFIG.participationBonusEnabled,
   gameDiffBonusEnabled: config?.gameDiffBonusEnabled ?? DEFAULT_RULES_CONFIG.gameDiffBonusEnabled,
+  wonGamesBonusEnabled: config?.wonGamesBonusEnabled ?? DEFAULT_RULES_CONFIG.wonGamesBonusEnabled,
+  wonGamesMultiplier: (config?.wonGamesMultiplier === 1 || config?.wonGamesMultiplier === 2) ? config.wonGamesMultiplier : DEFAULT_RULES_CONFIG.wonGamesMultiplier,
   inactivityMalusEnabled: config?.inactivityMalusEnabled ?? DEFAULT_RULES_CONFIG.inactivityMalusEnabled,
 });
 
@@ -80,8 +85,11 @@ export const generateRulesText = (config: SummerRankingRulesConfig): string => {
     `• Se il favorito vince (pari/medio/alto): +${config.favoriteWinLow}/+${config.favoriteWinMedium}/+${config.favoriteWinHigh} pt; se perde: ${config.favoriteLossLow}/${config.favoriteLossMedium}/${config.favoriteLossHigh} pt.`,
     `• Se lo sfavorito vince (pari/medio/alto): +${config.underdogWinLow}/+${config.underdogWinMedium}/+${config.underdogWinHigh} pt; se perde: ${config.underdogLossLow}/${config.underdogLossMedium}/${config.underdogLossHigh} pt.`,
     `• Pareggio: ${drawDesc}. Ai game fatti in partita si aggiungono al punteggio base.`,
-    `• Punteggio finale: al vincitore si sommano i game fatti; allo sconfitto si sottraggono i game fatti dalla penalità (min. 0).`,
   ];
+  if (config.wonGamesBonusEnabled) {
+    const mult = config.wonGamesMultiplier === 2 ? 'doppi (×2)' : 'normali (×1)';
+    lines.push(`• Bonus game vinti: i game fatti dal vincitore si sommano ai punti vittoria (${mult}); i game dello sconfitto riducono la penalità dello stesso importo (min. 0 perdita).`);
+  }
   if (config.participationBonusEnabled) {
     lines.push(`• Bonus partecipazione: +${config.participationBase} punti a partita.`);
   }
@@ -693,10 +701,12 @@ export const calculateSummerRanking = (
       : (band === 'low' ? cfg.underdogLossLow : band === 'medium' ? cfg.underdogLossMedium : cfg.underdogLossHigh);
     const gameDiffBonus = getGameDiffBonus(scoreDiff, cfg);
 
-    // Winner gains base result + game score made in match + game diff bonus
-    const winnerTotalResult = winnerResult + winnerScore + gameDiffBonus;
+    // Winner gains base result + won games bonus (if enabled) + game diff bonus
+    const wonGamesBonus = cfg.wonGamesBonusEnabled ? winnerScore * cfg.wonGamesMultiplier : 0;
+    const loserGamesReduction = cfg.wonGamesBonusEnabled ? loserScore * cfg.wonGamesMultiplier : 0;
+    const winnerTotalResult = winnerResult + wonGamesBonus + gameDiffBonus;
     // Loser penalty reduced by their game score (minimum penalty is 0, i.e. cannot gain from a loss)
-    const loserPenalty = -Math.max(0, Math.abs(loserResult) - loserScore);
+    const loserPenalty = -Math.max(0, Math.abs(loserResult) - loserGamesReduction);
 
     winnerStats.points += winnerTotalResult;
     loserStats.points += loserPenalty;

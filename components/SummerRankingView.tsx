@@ -1143,7 +1143,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     setRulesSettingsSuccess(null);
   };
 
-  const toggleRulesConfigFlag = (key: 'participationBonusEnabled' | 'gameDiffBonusEnabled' | 'inactivityMalusEnabled') => {
+  const toggleRulesConfigFlag = (key: 'participationBonusEnabled' | 'gameDiffBonusEnabled' | 'wonGamesBonusEnabled' | 'inactivityMalusEnabled') => {
     setRulesConfigForm(prev => ({ ...prev, [key]: !prev[key] }));
     setRulesSettingsError(null);
     setRulesSettingsSuccess(null);
@@ -2981,6 +2981,50 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 <span className="text-xs font-semibold text-text-secondary">Scarto 4+ game (+)</span>
                 <input type="number" min="0" value={rulesConfigForm.gameDiffBonus4plus} onChange={e => updateRulesConfig('gameDiffBonus4plus', e.target.value)} disabled={!rulesConfigForm.gameDiffBonusEnabled} className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary disabled:opacity-40" />
               </label>
+            </div>
+          </div>
+
+          {/* Bonus game vinti */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus game vinti</h4>
+              <button
+                type="button"
+                onClick={() => toggleRulesConfigFlag('wonGamesBonusEnabled')}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${rulesConfigForm.wonGamesBonusEnabled ? 'bg-accent' : 'bg-tertiary'}`}
+                aria-label="Attiva/disattiva bonus game vinti"
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${rulesConfigForm.wonGamesBonusEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div className={`flex flex-col gap-2 transition-opacity ${rulesConfigForm.wonGamesBonusEnabled ? '' : 'opacity-40 pointer-events-none'}`}>
+              <span className="text-xs font-semibold text-text-secondary">Moltiplicatore game (1x = normale, 2x = doppio)</span>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="wonGamesMultiplier"
+                    value="1"
+                    checked={rulesConfigForm.wonGamesMultiplier === 1}
+                    onChange={() => updateRulesConfig('wonGamesMultiplier', '1')}
+                    disabled={!rulesConfigForm.wonGamesBonusEnabled}
+                    className="accent-accent"
+                  />
+                  <span className="text-sm text-text-primary">×1 — normale (6 game = +6 pt)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="wonGamesMultiplier"
+                    value="2"
+                    checked={rulesConfigForm.wonGamesMultiplier === 2}
+                    onChange={() => updateRulesConfig('wonGamesMultiplier', '2')}
+                    disabled={!rulesConfigForm.wonGamesBonusEnabled}
+                    className="accent-accent"
+                  />
+                  <span className="text-sm text-text-primary">×2 — doppio (6 game = +12 pt)</span>
+                </label>
+              </div>
             </div>
           </div>
 
