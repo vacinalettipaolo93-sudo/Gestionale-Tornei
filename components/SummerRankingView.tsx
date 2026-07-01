@@ -1765,9 +1765,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
                             disabled={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit}
                             className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit ? `Limite di ${effectiveConfig.headToHeadLimit} scontri raggiunto` : `Prenota partita con ${entry.player.name}`}
+                            title={getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id) >= effectiveConfig.headToHeadLimit ? `Limite di ${effectiveConfig.headToHeadLimit} scontri raggiunto` : `Crea partita con ${entry.player.name}`}
                           >
-                            Prenota partita
+                            Crea partita
                           </button>
                         )}
                       </div>
@@ -1879,10 +1879,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               <button
                 onClick={() => openChallengeModal()}
                 disabled={!canBookAsParticipant || eligibleOpponents.length === 0}
-                title={!canBookAsParticipant ? 'Accedi come giocatore per prenotare una partita' : (eligibleOpponents.length === 0 ? 'Nessun avversario disponibile per una nuova prenotazione' : 'Prenota una nuova partita')}
+                title={!canBookAsParticipant ? 'Accedi come giocatore per creare una partita' : (eligibleOpponents.length === 0 ? 'Nessun avversario disponibile per una nuova prenotazione' : 'Crea una nuova partita')}
                 className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Prenota partita
+                Crea partita
               </button>
             </div>
             <table className="w-full min-w-[920px] text-sm">
@@ -3214,7 +3214,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             onClick={(e) => { if (e.target === e.currentTarget) closeChallengeModal(); }}
           >
             <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-              <h3 className="text-xl font-bold text-accent">Prenota partita</h3>
+              <h3 className="text-xl font-bold text-accent">Crea partita</h3>
               <p className="text-sm text-text-secondary">
                 Seleziona avversario, data, orario e luogo per completare la prenotazione della partita.
               </p>
