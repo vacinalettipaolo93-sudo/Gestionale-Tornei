@@ -271,6 +271,29 @@ const App: React.FC = () => {
     setPlayers(prevPlayers => prevPlayers.map(player =>
       player.id === playerId ? { ...player, ...payload } : player
     ));
+
+    // Also update event.players so SummerRankingView (which receives currentEventState.players) reflects the change immediately
+    const eventsToPersist = events
+      .filter(event => event.players.some(eventPlayer => eventPlayer.id === playerId))
+      .map(event => ({
+        id: event.id,
+        players: event.players.map(eventPlayer =>
+          eventPlayer.id === playerId
+            ? { ...eventPlayer, summerRankingStartPoints: points }
+            : eventPlayer,
+        ),
+      }));
+
+    if (eventsToPersist.length > 0) {
+      setEvents(prev =>
+        prev.map(event => {
+          const update = eventsToPersist.find(item => item.id === event.id);
+          return update ? { ...event, players: update.players } : event;
+        }),
+      );
+      await Promise.all(eventsToPersist.map(event => updateDoc(doc(db, 'events', event.id), { players: event.players })));
+    }
+
     await updateDoc(doc(db, "players", playerId), payload);
   };
 
@@ -456,6 +479,7 @@ const App: React.FC = () => {
                             player => player.status === 'confirmed' && (rankingData.participantIds ?? []).includes(player.id),
                           ),
                           rankingData.matches ?? [],
+                          normalizeRulesConfig(rankingData.rulesConfig),
                         ).slice(0, 8)
                         : [];
                       const { totalMatches, completedMatches, completionPercentage } = (() => {
@@ -575,6 +599,7 @@ const App: React.FC = () => {
                             player => player.status === 'confirmed' && (rankingData.participantIds ?? []).includes(player.id),
                           ),
                           rankingData.matches ?? [],
+                          normalizeRulesConfig(rankingData.rulesConfig),
                         ).slice(0, 8)
                         : [];
                       const { totalMatches, completedMatches } = (() => {
