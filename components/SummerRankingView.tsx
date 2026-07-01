@@ -497,6 +497,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [isSavingRules, setIsSavingRules] = useState(false);
   const [startPointsDrafts, setStartPointsDrafts] = useState<Record<string, string>>({});
   const [busyPlayerId, setBusyPlayerId] = useState<string | null>(null);
+  const [pendingStartPointsConfirm, setPendingStartPointsConfirm] = useState<{ playerId: string; playerName: string; nextPoints: number } | null>(null);
   const [rankingSearchInput, setRankingSearchInput] = useState('');
   const [rankingSearch, setRankingSearch] = useState('');
   const [rankingRangeMin, setRankingRangeMin] = useState(0);
@@ -1198,9 +1199,17 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     }
   };
 
-  const saveStartPoints = async (playerId: string) => {
+  const requestStartPointsSave = (playerId: string) => {
     const nextPoints = Number(startPointsDrafts[playerId] ?? 0);
     if (Number.isNaN(nextPoints)) return;
+    const player = confirmedPlayers.find(p => p.id === playerId);
+    setPendingStartPointsConfirm({ playerId, playerName: player?.name ?? playerId, nextPoints });
+  };
+
+  const confirmStartPointsSave = async () => {
+    if (!pendingStartPointsConfirm) return;
+    const { playerId, nextPoints } = pendingStartPointsConfirm;
+    setPendingStartPointsConfirm(null);
     setBusyPlayerId(playerId);
     try {
       await onUpdatePlayerStartPoints(playerId, nextPoints);
@@ -1682,7 +1691,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                               className="w-20 bg-primary border border-tertiary rounded px-2 py-1 text-text-primary"
                             />
                             <button
-                              onClick={() => saveStartPoints(entry.player.id)}
+                              onClick={() => requestStartPointsSave(entry.player.id)}
                               disabled={busyPlayerId === entry.player.id}
                               className="px-2 py-1 rounded bg-highlight text-white text-xs font-semibold"
                             >
@@ -3342,6 +3351,40 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isSavingChallenge ? 'Salvataggio...' : 'Conferma prenotazione'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {pendingStartPointsConfirm && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setPendingStartPointsConfirm(null); }}
+          >
+            <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+              <h3 className="text-xl font-bold text-accent">Conferma modifica punti base</h3>
+              <p className="text-sm text-text-secondary">
+                Stai per impostare i punti base di{' '}
+                <span className="font-semibold text-text-primary">{pendingStartPointsConfirm.playerName}</span>
+                {' '}a{' '}
+                <span className="font-semibold text-text-primary">{pendingStartPointsConfirm.nextPoints}</span>
+                {' '}pt. Confermi il cambiamento?
+              </p>
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  onClick={() => setPendingStartPointsConfirm(null)}
+                  className="px-4 py-2 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary font-semibold text-sm"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={confirmStartPointsSave}
+                  className="px-4 py-2 rounded bg-highlight hover:bg-highlight/90 text-white font-semibold text-sm"
+                >
+                  Conferma
                 </button>
               </div>
             </div>
