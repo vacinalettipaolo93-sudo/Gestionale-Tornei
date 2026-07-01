@@ -658,6 +658,12 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     });
   }, [masterMatches]);
 
+  useEffect(() => {
+    if (activeTab === 'master' && !isOrganizer && !isMasterGenerated) {
+      setActiveTab('ranking');
+    }
+  }, [activeTab, isOrganizer, isMasterGenerated]);
+
   const handleAddSlot = async () => {
     if (!slotForm.start || !slotForm.location.trim()) return;
     const nextSlot: TimeSlot = {
@@ -1438,7 +1444,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           {([
             ['ranking', 'Ranking'],
             ['matches', 'Partite'],
-            ['master', 'Master finale'],
+            ...(isOrganizer || isMasterGenerated ? [['master', 'Master finale'] as [RankingTab, string]] : []),
             ['availability', 'Disponibilità'],
             ['rules', 'Regolamento'],
             ...(isOrganizer ? [['settings', 'Impostazioni'] as [RankingTab, string]] : []),
