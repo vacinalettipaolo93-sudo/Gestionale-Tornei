@@ -1382,6 +1382,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const isMasterGenerated = masterFormat === 'bracket'
     ? !!masterBracket?.isGenerated
     : Array.isArray(rankingData.master?.matches) && rankingData.master.matches.length > 0;
+  const canViewMasterTab = isOrganizer || isMasterGenerated;
   const masterNeedsRegeneration = isMasterGenerated && (
     !arraysEqual(currentMasterQualifiedPlayerIds, generatedMasterQualifiedPlayerIds) ||
     masterFormat !== masterFormatDraft
@@ -1406,6 +1407,23 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       masterMatches.filter(match => loggedInPlayerId === match.player1Id || loggedInPlayerId === match.player2Id),
     [masterMatches, loggedInPlayerId],
   );
+  const visibleTabs = useMemo(
+    () =>
+      [
+        ['ranking', 'Ranking'],
+        ['matches', 'Partite'],
+        ...(canViewMasterTab ? [['master', 'Master finale'] as [RankingTab, string]] : []),
+        ['availability', 'Disponibilità'],
+        ['rules', 'Regolamento'],
+        ...(isOrganizer ? [['settings', 'Impostazioni'] as [RankingTab, string]] : []),
+        ['players', 'Giocatori'],
+      ] as Array<[RankingTab, string]>,
+    [canViewMasterTab, isOrganizer],
+  );
+  useEffect(() => {
+    if (visibleTabs.some(([tab]) => tab === activeTab)) return;
+    setActiveTab(visibleTabs[0]?.[0] ?? 'ranking');
+  }, [activeTab, visibleTabs]);
   const resultModalMatch = resultModal
     ? rankingData.matches.find(match => match.id === resultModal.matchId) ?? null
     : null;
@@ -1435,15 +1453,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
         </div>
 
         <nav className="mt-6 bg-primary/60 rounded-lg p-3 flex flex-wrap gap-2" aria-label="Menu Summer Ranking Next">
-          {([
-            ['ranking', 'Ranking'],
-            ['matches', 'Partite'],
-            ['master', 'Master finale'],
-            ['availability', 'Disponibilità'],
-            ['rules', 'Regolamento'],
-            ...(isOrganizer ? [['settings', 'Impostazioni'] as [RankingTab, string]] : []),
-            ['players', 'Giocatori'],
-          ] as Array<[RankingTab, string]>).map(([tab, label]) => (
+          {visibleTabs.map(([tab, label]) => (
             <button
               key={tab}
               className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${activeTab === tab ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90 text-text-primary'}`}
