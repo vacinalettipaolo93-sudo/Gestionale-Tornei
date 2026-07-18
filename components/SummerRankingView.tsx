@@ -18,7 +18,7 @@ import {
   type SummerRankingRulesConfig,
   type TimeSlot,
 } from '../types';
-import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon } from './Icons';
+import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon, WhatsAppIcon } from './Icons';
 import {
   SUMMER_RANKING_NAME,
   calculateSummerRanking,
@@ -381,6 +381,9 @@ const formatTimeOnly = (value?: string) => {
 };
 
 const normalizeWhatsAppPhone = (phone?: string) => phone?.replace(/[^0-9]/g, '') ?? '';
+
+const CIRCOLO_WHATSAPP_PHONE = '393397957909';
+const CIRCOLO_WHATSAPP_LINK = `https://wa.me/${CIRCOLO_WHATSAPP_PHONE}?text=${encodeURIComponent('Salve, vi contatto per chiedere disponibilità per prenotare la partita per la summer Ranking per il giorno ')}`;
 
 const buildWhatsAppReminderMessage = (
   senderName: string,
@@ -1475,6 +1478,18 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </div>
           </div>
 
+          <div className="flex justify-end">
+            <a
+              href={CIRCOLO_WHATSAPP_LINK}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+            >
+              <WhatsAppIcon className="w-5 h-5" />
+              Contatta circolo
+            </a>
+          </div>
+
           <div className="bg-secondary rounded-xl shadow-lg p-5 space-y-4">
             <div className="flex flex-col gap-1">
               <h3 className="text-lg font-bold text-accent">Ricerca e filtri ranking</h3>
@@ -1920,7 +1935,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       {activeTab === 'matches' && (
         <>
           <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
-            <div className="mb-4 flex items-center justify-end">
+            <div className="mb-4 flex items-center justify-end gap-2">
+              <a
+                href={CIRCOLO_WHATSAPP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded transition-colors"
+              >
+                <WhatsAppIcon className="w-4 h-4" />
+                Contatta circolo
+              </a>
               <button
                 onClick={() => openChallengeModal()}
                 disabled={!canBookAsParticipant || eligibleOpponents.length === 0}
