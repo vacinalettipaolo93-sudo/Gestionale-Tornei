@@ -131,6 +131,24 @@ export interface SummerRankingEntry {
   upcomingMatches: number;
 }
 
+export interface SummerRankingMatchPlayerBreakdown {
+  playerId: string;
+  outcome: 'win' | 'loss' | 'draw';
+  resultPoints: number;
+  gameFatti: number;
+  gameFattiPoints: number;
+  participationPoints: number;
+  gameDiffPoints: number;
+  rulesAdjustmentPoints: number;
+  totalPoints: number;
+}
+
+export interface SummerRankingMatchBreakdown {
+  matchId: string;
+  player1: SummerRankingMatchPlayerBreakdown;
+  player2: SummerRankingMatchPlayerBreakdown;
+}
+
 const getStartingPoints = (player: Player) => Number(player.summerRankingStartPoints ?? 0);
 
 const MASTER_SEED_PAIRINGS: Array<[number, number]> = [
@@ -569,6 +587,108 @@ const getGameDiffBonus = (scoreDiff: number, config: SummerRankingRulesConfig) =
   return 0;
 };
 
+const getSummerRankingMatchBreakdown = (
+  match: Match,
+  player1PointsBefore: number,
+  player2PointsBefore: number,
+  config: SummerRankingRulesConfig,
+): SummerRankingMatchBreakdown | null => {
+  if (match.score1 === null || match.score2 === null) return null;
+
+  const diff = Math.abs(player1PointsBefore - player2PointsBefore);
+  const band = getSummerRankingDiffBand(diff, config);
+  const isPlayer1Favorite = player1PointsBefore >= player2PointsBefore;
+  const participationPoints = getParticipationBonus(config);
+
+  if (match.score1 === match.score2) {
+    const favWin = band === 'low' ? config.favoriteWinLow : band === 'medium' ? config.favoriteWinMedium : config.favoriteWinHigh;
+    const undWin = band === 'low' ? config.underdogWinLow : band === 'medium' ? config.underdogWinMedium : config.underdogWinHigh;
+    const player1BaseWin = isPlayer1Favorite ? favWin : undWin;
+    const player2BaseWin = !isPlayer1Favorite ? favWin : undWin;
+    const player1ResultPoints = config.drawMode === 'fixed'
+      ? config.drawFixed
+      : player1BaseWin * (config.drawPercentage / 100);
+    const player2ResultPoints = config.drawMode === 'fixed'
+      ? config.drawFixed
+      : player2BaseWin * (config.drawPercentage / 100);
+    const player1GameFattiPoints = getWonGamesBonus(match.score1, config);
+    const player2GameFattiPoints = getWonGamesBonus(match.score2, config);
+
+    return {
+      matchId: match.id,
+      player1: {
+        playerId: match.player1Id,
+        outcome: 'draw',
+        resultPoints: player1ResultPoints,
+        gameFatti: match.score1,
+        gameFattiPoints: player1GameFattiPoints,
+        participationPoints,
+        gameDiffPoints: 0,
+        rulesAdjustmentPoints: 0,
+        totalPoints: player1ResultPoints + player1GameFattiPoints + participationPoints,
+      },
+      player2: {
+        playerId: match.player2Id,
+        outcome: 'draw',
+        resultPoints: player2ResultPoints,
+        gameFatti: match.score2,
+        gameFattiPoints: player2GameFattiPoints,
+        participationPoints,
+        gameDiffPoints: 0,
+        rulesAdjustmentPoints: 0,
+        totalPoints: player2ResultPoints + player2GameFattiPoints + participationPoints,
+      },
+    };
+  }
+
+  const player1Won = match.score1 > match.score2;
+  const winnerWasFavorite = player1Won ? isPlayer1Favorite : !isPlayer1Favorite;
+  const winnerResult = winnerWasFavorite
+    ? (band === 'low' ? config.favoriteWinLow : band === 'medium' ? config.favoriteWinMedium : config.favoriteWinHigh)
+    : (band === 'low' ? config.underdogWinLow : band === 'medium' ? config.underdogWinMedium : config.underdogWinHigh);
+  const loserResult = winnerWasFavorite
+    ? (band === 'low' ? config.favoriteLossLow : band === 'medium' ? config.favoriteLossMedium : config.favoriteLossHigh)
+    : (band === 'low' ? config.underdogLossLow : band === 'medium' ? config.underdogLossMedium : config.underdogLossHigh);
+  const scoreDiff = Math.abs(match.score1 - match.score2);
+  const gameDiffPoints = getGameDiffBonus(scoreDiff, config);
+  const winnerGameFatti = player1Won ? match.score1 : match.score2;
+  const loserGameFatti = player1Won ? match.score2 : match.score1;
+  const winnerGameFattiPoints = getWonGamesBonus(winnerGameFatti, config);
+  const loserGameFattiPoints = getWonGamesBonus(loserGameFatti, config);
+  const loserEffectiveReduction = Math.min(Math.abs(loserResult), loserGameFattiPoints);
+  const loserRulesAdjustmentPoints = loserEffectiveReduction - loserGameFattiPoints;
+
+  const winnerBreakdown: SummerRankingMatchPlayerBreakdown = {
+    playerId: player1Won ? match.player1Id : match.player2Id,
+    outcome: 'win',
+    resultPoints: winnerResult,
+    gameFatti: winnerGameFatti,
+    gameFattiPoints: winnerGameFattiPoints,
+    participationPoints,
+    gameDiffPoints,
+    rulesAdjustmentPoints: 0,
+    totalPoints: winnerResult + winnerGameFattiPoints + gameDiffPoints + participationPoints,
+  };
+
+  const loserBreakdown: SummerRankingMatchPlayerBreakdown = {
+    playerId: player1Won ? match.player2Id : match.player1Id,
+    outcome: 'loss',
+    resultPoints: loserResult,
+    gameFatti: loserGameFatti,
+    gameFattiPoints: loserGameFattiPoints,
+    participationPoints,
+    gameDiffPoints: 0,
+    rulesAdjustmentPoints: loserRulesAdjustmentPoints,
+    totalPoints: loserResult + loserGameFattiPoints + loserRulesAdjustmentPoints + participationPoints,
+  };
+
+  return {
+    matchId: match.id,
+    player1: player1Won ? winnerBreakdown : loserBreakdown,
+    player2: player1Won ? loserBreakdown : winnerBreakdown,
+  };
+};
+
 const countEncounterMatches = (matches: Match[], player1Id: string, player2Id: string) =>
   matches.filter(match => {
     const pair = [match.player1Id, match.player2Id].sort().join(':');
@@ -585,6 +705,52 @@ export const getEligibleOpponents = (players: Player[], matches: Match[], player
     player.status === 'confirmed' &&
     countEncounterMatches(matches, playerId, player.id) < limit
   );
+};
+
+export const calculateSummerRankingMatchBreakdowns = (
+  players: Player[],
+  matches: Match[],
+  config?: SummerRankingRulesConfig,
+) => {
+  const cfg = config ?? DEFAULT_RULES_CONFIG;
+  const confirmedPlayers = players.filter(player => player.status === 'confirmed');
+  const pointsByPlayer = new Map(
+    confirmedPlayers.map(player => [player.id, getStartingPoints(player)])
+  );
+  const matchBreakdowns = new Map<string, SummerRankingMatchBreakdown>();
+
+  matches
+    .filter(match =>
+      match.score1 !== null &&
+      match.score2 !== null &&
+      (
+        match.status === 'completed' ||
+        Boolean(match.completedAt)
+      )
+    )
+    .slice()
+    .sort((a, b) => {
+      const aTime = toTimestamp(getMatchPlayedAt(a));
+      const bTime = toTimestamp(getMatchPlayedAt(b));
+      if (Number.isNaN(aTime) && Number.isNaN(bTime)) return a.id.localeCompare(b.id);
+      if (Number.isNaN(aTime)) return 1;
+      if (Number.isNaN(bTime)) return -1;
+      return aTime - bTime;
+    })
+    .forEach(match => {
+      const player1PointsBefore = pointsByPlayer.get(match.player1Id);
+      const player2PointsBefore = pointsByPlayer.get(match.player2Id);
+      if (player1PointsBefore === undefined || player2PointsBefore === undefined) return;
+
+      const breakdown = getSummerRankingMatchBreakdown(match, player1PointsBefore, player2PointsBefore, cfg);
+      if (!breakdown) return;
+
+      matchBreakdowns.set(match.id, breakdown);
+      pointsByPlayer.set(match.player1Id, player1PointsBefore + breakdown.player1.totalPoints);
+      pointsByPlayer.set(match.player2Id, player2PointsBefore + breakdown.player2.totalPoints);
+    });
+
+  return matchBreakdowns;
 };
 
 export const calculateSummerRanking = (

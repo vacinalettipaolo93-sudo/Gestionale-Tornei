@@ -22,6 +22,7 @@ import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon, WhatsAppIcon } from '.
 import {
   SUMMER_RANKING_NAME,
   calculateSummerRanking,
+  calculateSummerRankingMatchBreakdowns,
   createSummerRankingMasterData,
   generateRulesText,
   getSummerRankingAutoQualifiedPlayerIds,
@@ -53,6 +54,14 @@ const Portal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, []);
   return createPortal(children, elRef.current!);
 };
+
+const formatSignedPoints = (value: number) => {
+  const normalized = Math.round(value * 10) / 10;
+  return `${normalized > 0 ? '+' : ''}${normalized} pt`;
+};
+
+const getMatchOutcomeLabel = (outcome: 'win' | 'loss' | 'draw') =>
+  outcome === 'win' ? 'Vittoria' : outcome === 'loss' ? 'Sconfitta' : 'Pareggio';
 
 type ChallengeModalState = {
   opponentId: string;
@@ -560,6 +569,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   );
   const ranking = useMemo(
     () => calculateSummerRanking(confirmedPlayers, rankingData.matches, effectiveConfig),
+    [confirmedPlayers, rankingData.matches, effectiveConfig],
+  );
+  const matchBreakdowns = useMemo(
+    () => calculateSummerRankingMatchBreakdowns(confirmedPlayers, rankingData.matches, effectiveConfig),
     [confirmedPlayers, rankingData.matches, effectiveConfig],
   );
   const autoQualifiedPlayerIds = useMemo(
@@ -1977,6 +1990,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   const player1 = playerMap.get(match.player1Id);
                   const player2 = playerMap.get(match.player2Id);
                   const encounterCount = getHeadToHeadCount(rankingData.matches, match.player1Id, match.player2Id);
+                  const matchBreakdown = matchBreakdowns.get(match.id);
 
                   return (
                     <tr key={match.id} className="border-b border-tertiary/40 last:border-b-0 align-top">
@@ -2009,6 +2023,45 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                         <span className="font-semibold">
                           {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
                         </span>
+                        {matchBreakdown && (
+                          <div className="mt-3 space-y-3 text-xs text-text-secondary">
+                            {([
+                              [player1?.name ?? match.player1Id, matchBreakdown.player1],
+                              [player2?.name ?? match.player2Id, matchBreakdown.player2],
+                            ] as const).map(([playerName, breakdown]) => (
+                              <div key={breakdown.playerId} className="rounded-lg border border-tertiary/50 bg-primary/40 p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold text-text-primary">{playerName}</span>
+                                  <span className={`font-bold ${
+                                    breakdown.totalPoints > 0
+                                      ? 'text-green-400'
+                                      : breakdown.totalPoints < 0
+                                        ? 'text-red-400'
+                                        : 'text-text-secondary'
+                                  }`}>
+                                    {formatSignedPoints(breakdown.totalPoints)}
+                                  </span>
+                                </div>
+                                <div className="mt-2 space-y-1">
+                                  <div>Risultato ({getMatchOutcomeLabel(breakdown.outcome)}): {formatSignedPoints(breakdown.resultPoints)}</div>
+                                  <div>Game fatti: {breakdown.gameFatti} ({formatSignedPoints(breakdown.gameFattiPoints)})</div>
+                                  {breakdown.gameDiffPoints !== 0 && (
+                                    <div>Bonus differenza game: {formatSignedPoints(breakdown.gameDiffPoints)}</div>
+                                  )}
+                                  {breakdown.participationPoints !== 0 && (
+                                    <div>Partecipazione: {formatSignedPoints(breakdown.participationPoints)}</div>
+                                  )}
+                                  {breakdown.rulesAdjustmentPoints !== 0 && (
+                                    <div>Adeguamento regola: {formatSignedPoints(breakdown.rulesAdjustmentPoints)}</div>
+                                  )}
+                                </div>
+                                <div className="mt-2 border-t border-tertiary/50 pt-2 font-semibold text-text-primary">
+                                  Totale match: {formatSignedPoints(breakdown.totalPoints)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="py-4 pr-3 text-xs text-text-secondary">
                         {encounterCount}/5
