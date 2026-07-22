@@ -2025,7 +2025,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 <th className="py-3 pr-3">Stato</th>
                 <th className="py-3 pr-3">Slot</th>
                 <th className="py-3 pr-3">Risultato</th>
-                <th className="py-3 pr-3">Limite scontri</th>
+                <th className="py-3 pr-3">Partite giocate</th>
                 <th className="py-3 pr-3">Azioni</th>
               </tr>
             </thead>
@@ -2068,10 +2068,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   );
                 }
 
+                const myCompletedMatchesCount = loggedInPlayerId
+                  ? rankingData.matches.filter(m =>
+                      m.status === 'completed' &&
+                      (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId)
+                    ).length
+                  : 0;
+
                 return visibleMatches.map(match => {
                   const player1 = playerMap.get(match.player1Id);
                   const player2 = playerMap.get(match.player2Id);
-                  const encounterCount = getHeadToHeadCount(rankingData.matches, match.player1Id, match.player2Id);
                   const matchBreakdown = matchBreakdowns.get(match.id);
 
                   return (
@@ -2128,7 +2134,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                         )}
                       </td>
                       <td className="py-4 pr-3 text-xs text-text-secondary">
-                        {encounterCount}/5
+                        {myCompletedMatchesCount}
                       </td>
                       <td className="py-4 pr-3">
                         <div className="flex flex-wrap gap-2">
