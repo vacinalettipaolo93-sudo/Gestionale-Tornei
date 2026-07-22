@@ -576,17 +576,6 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => calculateSummerRankingMatchBreakdowns(confirmedPlayers, rankingData.matches, effectiveConfig),
     [confirmedPlayers, rankingData.matches, effectiveConfig],
   );
-  const lastCompletedMatch = useMemo(() => {
-    const completed = rankingData.matches.filter(
-      match => match.status === 'completed' && match.score1 !== null && match.score2 !== null,
-    );
-    if (completed.length === 0) return null;
-    return completed.reduce((latest, match) => {
-      const latestTime = new Date(latest.completedAt ?? 0).getTime();
-      const matchTime = new Date(match.completedAt ?? 0).getTime();
-      return matchTime > latestTime ? match : latest;
-    });
-  }, [rankingData.matches]);
   const autoQualifiedPlayerIds = useMemo(
     () => getSummerRankingAutoQualifiedPlayerIds(ranking, effectiveConfig),
     [ranking, effectiveConfig],
@@ -1515,56 +1504,6 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </a>
           </div>
 
-          {lastCompletedMatch && matchBreakdowns.get(lastCompletedMatch.id) && (() => {
-            const breakdown = matchBreakdowns.get(lastCompletedMatch.id)!;
-            const p1 = playerMap.get(lastCompletedMatch.player1Id);
-            const p2 = playerMap.get(lastCompletedMatch.player2Id);
-            return (
-              <div className="bg-secondary rounded-xl shadow-lg p-5">
-                <h3 className="text-lg font-bold text-accent mb-1">Ultima partita giocata</h3>
-                <div className="text-sm text-text-secondary mb-3">
-                  {p1?.name ?? lastCompletedMatch.player1Id} vs {p2?.name ?? lastCompletedMatch.player2Id}
-                  {lastCompletedMatch.score1 !== null && lastCompletedMatch.score2 !== null && (
-                    <span className="ml-2 font-semibold text-text-primary">{lastCompletedMatch.score1} - {lastCompletedMatch.score2}</span>
-                  )}
-                  {lastCompletedMatch.completedAt && (
-                    <span className="ml-2 text-xs">• {formatDateTime(lastCompletedMatch.completedAt)}</span>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {([
-                    [p1?.name ?? lastCompletedMatch.player1Id, breakdown.player1],
-                    [p2?.name ?? lastCompletedMatch.player2Id, breakdown.player2],
-                  ] as const).map(([playerName, bd]) => (
-                    <div key={bd.playerId} className="rounded-lg border border-tertiary/50 bg-primary/40 p-3 text-xs text-text-secondary">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="font-semibold text-text-primary text-sm">{playerName}</span>
-                        <span className={`font-bold text-sm ${bd.totalPoints > 0 ? 'text-green-400' : bd.totalPoints < 0 ? 'text-red-400' : 'text-text-secondary'}`}>
-                          {formatSignedPoints(bd.totalPoints)}
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        <div>Risultato ({getMatchOutcomeLabel(bd.outcome)}): {formatSignedPoints(bd.resultPoints)}</div>
-                        <div>Game fatti: {bd.gameFatti} ({formatSignedPoints(bd.gameFattiPoints)})</div>
-                        {bd.gameDiffPoints !== 0 && (
-                          <div>Bonus differenza game: {formatSignedPoints(bd.gameDiffPoints)}</div>
-                        )}
-                        {bd.participationPoints !== 0 && (
-                          <div>Partecipazione: {formatSignedPoints(bd.participationPoints)}</div>
-                        )}
-                        {bd.rulesAdjustmentPoints !== 0 && (
-                          <div>Adeguamento regola: {formatSignedPoints(bd.rulesAdjustmentPoints)}</div>
-                        )}
-                      </div>
-                      <div className="mt-2 border-t border-tertiary/50 pt-2 font-semibold text-text-primary">
-                        Totale match: {formatSignedPoints(bd.totalPoints)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
 
           <div className="bg-secondary rounded-xl shadow-lg p-5 space-y-4">
             <div className="flex flex-col gap-1">
@@ -1759,6 +1698,23 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                     ? getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id)
                     : 0;
                   const remainingHeadToHead = Math.max(0, effectiveConfig.headToHeadLimit - headToHeadCount);
+                  const playerLastMatch = rankingData.matches
+                    .filter(m =>
+                      m.status === 'completed' &&
+                      m.score1 !== null &&
+                      m.score2 !== null &&
+                      (m.player1Id === entry.player.id || m.player2Id === entry.player.id),
+                    )
+                    .reduce<Match | null>((latest, m) => {
+                      if (!latest) return m;
+                      return new Date(m.completedAt ?? 0) > new Date(latest.completedAt ?? 0) ? m : latest;
+                    }, null);
+                  const playerLastMatchBreakdown = playerLastMatch ? matchBreakdowns.get(playerLastMatch.id) : null;
+                  const playerLastMatchPlayerBd = playerLastMatchBreakdown
+                    ? (playerLastMatch!.player1Id === entry.player.id
+                      ? playerLastMatchBreakdown.player1
+                      : playerLastMatchBreakdown.player2)
+                    : null;
 
                   return (
                   <tr
@@ -1845,18 +1801,25 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                       </div>
                     </td>
                     <td className="py-4 pr-3 text-xs text-text-secondary">
-                      <div>Risultati: {entry.resultPoints}</div>
-                      {effectiveConfig.wonGamesBonusEnabled && (
-                        <div>Game fatti: +{entry.wonGamesBonus}</div>
-                      )}
-                      {effectiveConfig.gameDiffBonusEnabled && (
-                        <div>Game diff: +{entry.gameDiffBonus}</div>
-                      )}
-                      {effectiveConfig.participationBonusEnabled && (
-                        <div>Partecipazione: +{entry.participationBonus}</div>
-                      )}
-                      {effectiveConfig.inactivityMalusEnabled && (
-                        <div>Inattività: -{entry.inactivityMalus}</div>
+                      {playerLastMatchPlayerBd ? (
+                        <div className="space-y-0.5">
+                          <div>Risultato ({getMatchOutcomeLabel(playerLastMatchPlayerBd.outcome)}): {formatSignedPoints(playerLastMatchPlayerBd.resultPoints)}</div>
+                          <div>Game fatti: {playerLastMatchPlayerBd.gameFatti} ({formatSignedPoints(playerLastMatchPlayerBd.gameFattiPoints)})</div>
+                          {playerLastMatchPlayerBd.gameDiffPoints !== 0 && (
+                            <div>Bonus diff: {formatSignedPoints(playerLastMatchPlayerBd.gameDiffPoints)}</div>
+                          )}
+                          {playerLastMatchPlayerBd.participationPoints !== 0 && (
+                            <div>Partecipazione: {formatSignedPoints(playerLastMatchPlayerBd.participationPoints)}</div>
+                          )}
+                          {playerLastMatchPlayerBd.rulesAdjustmentPoints !== 0 && (
+                            <div>Adeguamento: {formatSignedPoints(playerLastMatchPlayerBd.rulesAdjustmentPoints)}</div>
+                          )}
+                          <div className="border-t border-tertiary/50 pt-0.5 font-semibold text-text-primary">
+                            Totale: {formatSignedPoints(playerLastMatchPlayerBd.totalPoints)}
+                          </div>
+                        </div>
+                      ) : (
+                        <span>—</span>
                       )}
                     </td>
                     <td className="py-4 pr-3 text-xs text-text-secondary">
