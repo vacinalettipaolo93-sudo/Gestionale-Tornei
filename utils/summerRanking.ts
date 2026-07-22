@@ -88,7 +88,7 @@ export const generateRulesText = (config: SummerRankingRulesConfig): string => {
   ];
   if (config.wonGamesBonusEnabled) {
     const mult = config.wonGamesMultiplier === 2 ? 'doppi (×2)' : 'normali (×1)';
-    lines.push(`• Bonus game vinti: i game fatti dal vincitore si sommano ai punti vittoria (${mult}); i game dello sconfitto riducono la penalità dello stesso importo (min. 0 perdita).`);
+    lines.push(`• Bonus game fatti: i game fatti dal vincitore si sommano ai punti vittoria (${mult}); i game dello sconfitto riducono la penalità dello stesso importo (min. 0 perdita).`);
   }
   if (config.participationBonusEnabled) {
     lines.push(`• Bonus partecipazione: +${config.participationBase} punti a partita.`);
@@ -556,6 +556,11 @@ const getParticipationBonus = (config: SummerRankingRulesConfig) => {
   return config.participationBase;
 };
 
+const getWonGamesBonus = (gamesWon: number, config: SummerRankingRulesConfig) => {
+  if (!config.wonGamesBonusEnabled) return 0;
+  return gamesWon * config.wonGamesMultiplier;
+};
+
 const getGameDiffBonus = (scoreDiff: number, config: SummerRankingRulesConfig) => {
   if (!config.gameDiffBonusEnabled) return 0;
   if (scoreDiff >= 4) return config.gameDiffBonus4plus;
@@ -677,11 +682,15 @@ export const calculateSummerRanking = (
         player1DrawPoints = player1BaseWin * (cfg.drawPercentage / 100);
         player2DrawPoints = player2BaseWin * (cfg.drawPercentage / 100);
       }
+      const player1WonGamesBonus = getWonGamesBonus(match.score1 ?? 0, cfg);
+      const player2WonGamesBonus = getWonGamesBonus(match.score2 ?? 0, cfg);
 
-      player1Stats.points += player1DrawPoints;
-      player2Stats.points += player2DrawPoints;
+      player1Stats.points += player1DrawPoints + player1WonGamesBonus;
+      player2Stats.points += player2DrawPoints + player2WonGamesBonus;
       player1Stats.resultPoints += player1DrawPoints;
       player2Stats.resultPoints += player2DrawPoints;
+      player1Stats.wonGamesBonus += player1WonGamesBonus;
+      player2Stats.wonGamesBonus += player2WonGamesBonus;
       player1Stats.draws += 1;
       player2Stats.draws += 1;
       player1Stats.recentForm.push('D');
@@ -704,8 +713,8 @@ export const calculateSummerRanking = (
     const gameDiffBonus = getGameDiffBonus(scoreDiff, cfg);
 
     // Winner gains base result + won games bonus (if enabled) + game diff bonus
-    const wonGamesBonus = cfg.wonGamesBonusEnabled ? winnerScore * cfg.wonGamesMultiplier : 0;
-    const loserGamesReduction = cfg.wonGamesBonusEnabled ? loserScore * cfg.wonGamesMultiplier : 0;
+    const wonGamesBonus = getWonGamesBonus(winnerScore, cfg);
+    const loserGamesReduction = getWonGamesBonus(loserScore, cfg);
     const winnerTotalResult = winnerResult + wonGamesBonus + gameDiffBonus;
     // Loser penalty reduced by their game score (minimum penalty is 0, i.e. cannot gain from a loss)
     const loserPenalty = -Math.max(0, Math.abs(loserResult) - loserGamesReduction);

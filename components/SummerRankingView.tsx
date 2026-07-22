@@ -1771,7 +1771,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                     <td className="py-4 pr-3 text-xs text-text-secondary">
                       <div>Risultati: {entry.resultPoints}</div>
                       {effectiveConfig.wonGamesBonusEnabled && (
-                        <div>Game vinti: +{entry.wonGamesBonus}</div>
+                        <div>Game fatti: +{entry.wonGamesBonus}</div>
                       )}
                       {effectiveConfig.gameDiffBonusEnabled && (
                         <div>Game diff: +{entry.gameDiffBonus}</div>
@@ -3053,15 +3053,15 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </div>
           </div>
 
-          {/* Bonus game vinti */}
+          {/* Bonus game fatti */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus game vinti</h4>
+              <h4 className="text-sm font-bold text-accent uppercase tracking-wide">Bonus game fatti</h4>
               <button
                 type="button"
                 onClick={() => toggleRulesConfigFlag('wonGamesBonusEnabled')}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${rulesConfigForm.wonGamesBonusEnabled ? 'bg-accent' : 'bg-tertiary'}`}
-                aria-label="Attiva/disattiva bonus game vinti"
+                aria-label="Attiva/disattiva bonus game fatti"
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${rulesConfigForm.wonGamesBonusEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
