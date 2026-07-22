@@ -530,6 +530,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [challengeError, setChallengeError] = useState<string | null>(null);
   const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
   const [isSavingChallenge, setIsSavingChallenge] = useState(false);
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
 
   const currentPlayerRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -575,6 +576,17 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => calculateSummerRankingMatchBreakdowns(confirmedPlayers, rankingData.matches, effectiveConfig),
     [confirmedPlayers, rankingData.matches, effectiveConfig],
   );
+  const lastCompletedMatch = useMemo(() => {
+    const completed = rankingData.matches.filter(
+      match => match.status === 'completed' && match.score1 !== null && match.score2 !== null,
+    );
+    if (completed.length === 0) return null;
+    return completed.reduce((latest, match) => {
+      const latestTime = new Date(latest.completedAt ?? 0).getTime();
+      const matchTime = new Date(match.completedAt ?? 0).getTime();
+      return matchTime > latestTime ? match : latest;
+    });
+  }, [rankingData.matches]);
   const autoQualifiedPlayerIds = useMemo(
     () => getSummerRankingAutoQualifiedPlayerIds(ranking, effectiveConfig),
     [ranking, effectiveConfig],
@@ -1503,6 +1515,57 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </a>
           </div>
 
+          {lastCompletedMatch && matchBreakdowns.get(lastCompletedMatch.id) && (() => {
+            const breakdown = matchBreakdowns.get(lastCompletedMatch.id)!;
+            const p1 = playerMap.get(lastCompletedMatch.player1Id);
+            const p2 = playerMap.get(lastCompletedMatch.player2Id);
+            return (
+              <div className="bg-secondary rounded-xl shadow-lg p-5">
+                <h3 className="text-lg font-bold text-accent mb-1">Ultima partita giocata</h3>
+                <div className="text-sm text-text-secondary mb-3">
+                  {p1?.name ?? lastCompletedMatch.player1Id} vs {p2?.name ?? lastCompletedMatch.player2Id}
+                  {lastCompletedMatch.score1 !== null && lastCompletedMatch.score2 !== null && (
+                    <span className="ml-2 font-semibold text-text-primary">{lastCompletedMatch.score1} - {lastCompletedMatch.score2}</span>
+                  )}
+                  {lastCompletedMatch.completedAt && (
+                    <span className="ml-2 text-xs">• {formatDateTime(lastCompletedMatch.completedAt)}</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {([
+                    [p1?.name ?? lastCompletedMatch.player1Id, breakdown.player1],
+                    [p2?.name ?? lastCompletedMatch.player2Id, breakdown.player2],
+                  ] as const).map(([playerName, bd]) => (
+                    <div key={bd.playerId} className="rounded-lg border border-tertiary/50 bg-primary/40 p-3 text-xs text-text-secondary">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-semibold text-text-primary text-sm">{playerName}</span>
+                        <span className={`font-bold text-sm ${bd.totalPoints > 0 ? 'text-green-400' : bd.totalPoints < 0 ? 'text-red-400' : 'text-text-secondary'}`}>
+                          {formatSignedPoints(bd.totalPoints)}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <div>Risultato ({getMatchOutcomeLabel(bd.outcome)}): {formatSignedPoints(bd.resultPoints)}</div>
+                        <div>Game fatti: {bd.gameFatti} ({formatSignedPoints(bd.gameFattiPoints)})</div>
+                        {bd.gameDiffPoints !== 0 && (
+                          <div>Bonus differenza game: {formatSignedPoints(bd.gameDiffPoints)}</div>
+                        )}
+                        {bd.participationPoints !== 0 && (
+                          <div>Partecipazione: {formatSignedPoints(bd.participationPoints)}</div>
+                        )}
+                        {bd.rulesAdjustmentPoints !== 0 && (
+                          <div>Adeguamento regola: {formatSignedPoints(bd.rulesAdjustmentPoints)}</div>
+                        )}
+                      </div>
+                      <div className="mt-2 border-t border-tertiary/50 pt-2 font-semibold text-text-primary">
+                        Totale match: {formatSignedPoints(bd.totalPoints)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="bg-secondary rounded-xl shadow-lg p-5 space-y-4">
             <div className="flex flex-col gap-1">
               <h3 className="text-lg font-bold text-accent">Ricerca e filtri ranking</h3>
@@ -2024,40 +2087,22 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                           {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
                         </span>
                         {matchBreakdown && (
-                          <div className="mt-3 space-y-3 text-xs text-text-secondary">
+                          <div className="mt-1 space-y-0.5 text-xs">
                             {([
                               [player1?.name ?? match.player1Id, matchBreakdown.player1],
                               [player2?.name ?? match.player2Id, matchBreakdown.player2],
                             ] as const).map(([playerName, breakdown]) => (
-                              <div key={breakdown.playerId} className="rounded-lg border border-tertiary/50 bg-primary/40 p-3">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-semibold text-text-primary">{playerName}</span>
-                                  <span className={`font-bold ${
-                                    breakdown.totalPoints > 0
-                                      ? 'text-green-400'
-                                      : breakdown.totalPoints < 0
-                                        ? 'text-red-400'
-                                        : 'text-text-secondary'
-                                  }`}>
-                                    {formatSignedPoints(breakdown.totalPoints)}
-                                  </span>
-                                </div>
-                                <div className="mt-2 space-y-1">
-                                  <div>Risultato ({getMatchOutcomeLabel(breakdown.outcome)}): {formatSignedPoints(breakdown.resultPoints)}</div>
-                                  <div>Game fatti: {breakdown.gameFatti} ({formatSignedPoints(breakdown.gameFattiPoints)})</div>
-                                  {breakdown.gameDiffPoints !== 0 && (
-                                    <div>Bonus differenza game: {formatSignedPoints(breakdown.gameDiffPoints)}</div>
-                                  )}
-                                  {breakdown.participationPoints !== 0 && (
-                                    <div>Partecipazione: {formatSignedPoints(breakdown.participationPoints)}</div>
-                                  )}
-                                  {breakdown.rulesAdjustmentPoints !== 0 && (
-                                    <div>Adeguamento regola: {formatSignedPoints(breakdown.rulesAdjustmentPoints)}</div>
-                                  )}
-                                </div>
-                                <div className="mt-2 border-t border-tertiary/50 pt-2 font-semibold text-text-primary">
-                                  Totale match: {formatSignedPoints(breakdown.totalPoints)}
-                                </div>
+                              <div
+                                key={breakdown.playerId}
+                                className={`font-semibold ${
+                                  breakdown.totalPoints > 0
+                                    ? 'text-green-400'
+                                    : breakdown.totalPoints < 0
+                                      ? 'text-red-400'
+                                      : 'text-text-secondary'
+                                }`}
+                              >
+                                {playerName} {formatSignedPoints(breakdown.totalPoints)}
                               </div>
                             ))}
                           </div>
@@ -2068,6 +2113,14 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                       </td>
                       <td className="py-4 pr-3">
                         <div className="flex flex-wrap gap-2">
+                          {matchBreakdown && (
+                            <button
+                              onClick={() => setSelectedMatchId(match.id)}
+                              className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold"
+                            >
+                              Dettaglio punti
+                            </button>
+                          )}
                           {canEditMatchResult(match) && (
                             <button
                               onClick={() => openEditResult(match)}
@@ -3504,6 +3557,86 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           </div>
         </Portal>
       )}
+
+      {selectedMatchId && (() => {
+        const match = rankingData.matches.find(m => m.id === selectedMatchId);
+        if (!match) return null;
+        const breakdown = matchBreakdowns.get(match.id);
+        if (!breakdown) return null;
+        const p1 = playerMap.get(match.player1Id);
+        const p2 = playerMap.get(match.player2Id);
+        return (
+          <Portal>
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              onClick={(e) => { if (e.target === e.currentTarget) setSelectedMatchId(null); }}
+            >
+              <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-bold text-accent">Dettaglio punti partita</h3>
+                    <div className="text-sm text-text-secondary mt-1">
+                      {p1?.name ?? match.player1Id} vs {p2?.name ?? match.player2Id}
+                      {match.score1 !== null && match.score2 !== null && (
+                        <span className="ml-2 font-semibold text-text-primary">{match.score1} - {match.score2}</span>
+                      )}
+                      {match.completedAt && (
+                        <span className="ml-2 text-xs">• {formatDateTime(match.completedAt)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedMatchId(null)}
+                    className="shrink-0 text-text-secondary hover:text-text-primary text-xl font-bold leading-none"
+                    aria-label="Chiudi"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {([
+                    [p1?.name ?? match.player1Id, breakdown.player1],
+                    [p2?.name ?? match.player2Id, breakdown.player2],
+                  ] as const).map(([playerName, bd]) => (
+                    <div key={bd.playerId} className="rounded-lg border border-tertiary/50 bg-primary/40 p-3 text-xs text-text-secondary">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-semibold text-text-primary text-sm">{playerName}</span>
+                        <span className={`font-bold text-sm ${bd.totalPoints > 0 ? 'text-green-400' : bd.totalPoints < 0 ? 'text-red-400' : 'text-text-secondary'}`}>
+                          {formatSignedPoints(bd.totalPoints)}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <div>Risultato ({getMatchOutcomeLabel(bd.outcome)}): {formatSignedPoints(bd.resultPoints)}</div>
+                        <div>Game fatti: {bd.gameFatti} ({formatSignedPoints(bd.gameFattiPoints)})</div>
+                        {bd.gameDiffPoints !== 0 && (
+                          <div>Bonus differenza game: {formatSignedPoints(bd.gameDiffPoints)}</div>
+                        )}
+                        {bd.participationPoints !== 0 && (
+                          <div>Partecipazione: {formatSignedPoints(bd.participationPoints)}</div>
+                        )}
+                        {bd.rulesAdjustmentPoints !== 0 && (
+                          <div>Adeguamento regola: {formatSignedPoints(bd.rulesAdjustmentPoints)}</div>
+                        )}
+                      </div>
+                      <div className="mt-2 border-t border-tertiary/50 pt-2 font-semibold text-text-primary">
+                        Totale match: {formatSignedPoints(bd.totalPoints)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={() => setSelectedMatchId(null)}
+                    className="px-4 py-2 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary font-semibold text-sm"
+                  >
+                    Chiudi
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Portal>
+        );
+      })()}
 
     </div>
   );
