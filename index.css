@@ -13,6 +13,26 @@ body {
   color: var(--text);
 }
 
+/* ─── Mobile/Responsive base ─────────────────────────────────────────────── */
+
+/* Prevent the root element from ever producing horizontal scroll */
+html {
+  overflow-x: hidden;
+}
+
+/* Ensure images and videos never break out of their container */
+img, video, svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Comfortable tap targets on touch screens */
+@media (max-width: 639px) {
+  button, a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 /* Dual range slider: transparent track, styled thumb only */
 .dual-range {
   -webkit-appearance: none;
