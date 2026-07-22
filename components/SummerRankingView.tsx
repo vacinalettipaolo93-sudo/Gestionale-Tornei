@@ -18,7 +18,7 @@ import {
   type SummerRankingRulesConfig,
   type TimeSlot,
 } from '../types';
-import { ArrowDownIcon, ArrowUpIcon, PlusIcon, TrashIcon, WhatsAppIcon } from './Icons';
+import { ArrowDownIcon, ArrowUpIcon, PhoneIcon, PlusIcon, TrashIcon, WhatsAppIcon } from './Icons';
 import {
   SUMMER_RANKING_NAME,
   calculateSummerRanking,
@@ -390,6 +390,13 @@ const formatTimeOnly = (value?: string) => {
 };
 
 const normalizeWhatsAppPhone = (phone?: string) => phone?.replace(/[^0-9]/g, '') ?? '';
+const normalizeTelPhone = (phone?: string) => phone?.replace(/[^\d+]/g, '') ?? '';
+const getMatchPlayedAtLabel = (match: Match) => match.completedAt ?? match.scheduledTime;
+const getMatchSortTime = (match: Match) => {
+  const playedAt = getMatchPlayedAtLabel(match);
+  if (!playedAt) return Number.NaN;
+  return new Date(playedAt).getTime();
+};
 
 const CIRCOLO_WHATSAPP_PHONE = '393397957909';
 const CIRCOLO_WHATSAPP_LINK = `https://wa.me/${CIRCOLO_WHATSAPP_PHONE}?text=${encodeURIComponent('Salve, vi contatto per chiedere disponibilità per prenotare la partita per la summer Ranking per il giorno ')}`;
@@ -531,6 +538,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
   const [isSavingChallenge, setIsSavingChallenge] = useState(false);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [matchesSubTab, setMatchesSubTab] = useState<'booked' | 'completed_mine' | 'all_completed'>('booked');
 
   const currentPlayerRowRef = useRef<HTMLTableRowElement | null>(null);
@@ -642,6 +650,67 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     () => new Map(ranking.map(entry => [entry.player.id, entry])),
     [ranking],
   );
+  const selectedPlayerProfile = useMemo(() => {
+    if (!selectedPlayerId) return null;
+    const player = playerMap.get(selectedPlayerId);
+    if (!player) return null;
+
+    const rankingEntry = rankingById.get(selectedPlayerId);
+    const startingPoints = rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0;
+    let runningPoints = startingPoints;
+
+    const history = rankingData.matches
+      .filter(match =>
+        match.status === 'completed' &&
+        match.score1 !== null &&
+        match.score2 !== null &&
+        (match.player1Id === selectedPlayerId || match.player2Id === selectedPlayerId)
+      )
+      .slice()
+      .sort((a, b) => {
+        const aTime = getMatchSortTime(a);
+        const bTime = getMatchSortTime(b);
+        if (Number.isNaN(aTime) && Number.isNaN(bTime)) return a.id.localeCompare(b.id);
+        if (Number.isNaN(aTime)) return 1;
+        if (Number.isNaN(bTime)) return -1;
+        return aTime - bTime;
+      })
+      .map(match => {
+        const isPlayer1 = match.player1Id === selectedPlayerId;
+        const opponent = playerMap.get(isPlayer1 ? match.player2Id : match.player1Id);
+        const breakdown = matchBreakdowns.get(match.id);
+        const playerBreakdown = breakdown
+          ? (isPlayer1 ? breakdown.player1 : breakdown.player2)
+          : null;
+        const pointsBefore = runningPoints;
+        const pointsDelta = playerBreakdown?.totalPoints ?? 0;
+        const pointsAfter = pointsBefore + pointsDelta;
+        runningPoints = pointsAfter;
+
+        return {
+          match,
+          opponent,
+          breakdown: playerBreakdown,
+          pointsBefore,
+          pointsAfter,
+          pointsDelta,
+          scoreLabel: match.score1 !== null && match.score2 !== null
+            ? `${isPlayer1 ? match.score1 : match.score2} - ${isPlayer1 ? match.score2 : match.score1}`
+            : '—',
+        };
+      });
+
+    return {
+      player,
+      rankingEntry,
+      startingPoints,
+      currentPoints: rankingEntry?.points ?? history.at(-1)?.pointsAfter ?? startingPoints,
+      history,
+      hasPhone: !!player.phone?.trim(),
+      whatsappPhone: normalizeWhatsAppPhone(player.phone),
+      telPhone: normalizeTelPhone(player.phone),
+    };
+  }, [selectedPlayerId, playerMap, rankingById, rankingData.matches, matchBreakdowns]);
   const addablePlayers = useMemo(
     () =>
       players
@@ -1728,7 +1797,14 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                     <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
                     <td className="py-4 pr-3">
                       <div className="font-semibold flex items-center gap-2">
-                        {entry.player.name}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPlayerId(entry.player.id)}
+                          className="text-left hover:underline"
+                          title={`Apri il profilo di ${entry.player.name}`}
+                        >
+                          {entry.player.name}
+                        </button>
                         {isCurrentPlayerRow && (
                           <span className="px-2 py-0.5 rounded bg-accent text-white text-xs font-semibold">
                             Tu
@@ -1928,7 +2004,16 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
 
                 return (
                   <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
-                    <td className="py-3 pr-3 font-semibold">{player.name}</td>
+                    <td className="py-3 pr-3 font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPlayerId(player.id)}
+                        className="text-left hover:underline"
+                        title={`Apri il profilo di ${player.name}`}
+                      >
+                        {player.name}
+                      </button>
+                    </td>
                     <td className="py-3 pr-3 text-text-secondary">{rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0}</td>
                     {isOrganizer ? (
                       <>
@@ -3306,7 +3391,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       {resultModal && resultModalMatch && (
         <Portal>
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={(e) => { if (e.target === e.currentTarget) closeResultModal(); }}
           >
             <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
@@ -3404,7 +3489,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       {matchToDelete && (
         <Portal>
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={(e) => { if (e.target === e.currentTarget) closeDeleteMatchModal(); }}
           >
             <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
@@ -3656,6 +3741,195 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           </Portal>
         );
       })()}
+
+      {selectedPlayerProfile && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setSelectedPlayerId(null); }}
+          >
+            <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="flex items-start justify-between gap-4 border-b border-tertiary/50 px-6 py-5">
+                <div className="flex items-center gap-4 min-w-0">
+                  <img
+                    src={selectedPlayerProfile.player.avatar}
+                    alt={selectedPlayerProfile.player.name}
+                    className="w-16 h-16 rounded-full object-cover border-2 border-accent"
+                  />
+                  <div className="min-w-0">
+                    <h3 className="text-2xl font-bold text-accent truncate">{selectedPlayerProfile.player.name}</h3>
+                    <div className="mt-1 text-sm text-text-secondary">
+                      Profilo ranking • {selectedPlayerProfile.history.length} partite completate
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedPlayerId(null)}
+                  className="shrink-0 text-text-secondary hover:text-text-primary text-xl font-bold leading-none"
+                  aria-label="Chiudi"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="overflow-y-auto px-6 py-5 space-y-6">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="rounded-xl border border-tertiary/50 bg-primary/40 p-4">
+                    <div className="text-xs uppercase tracking-wide text-text-secondary">Punteggio iniziale</div>
+                    <div className="mt-2 text-2xl font-bold text-text-primary">{selectedPlayerProfile.startingPoints} pt</div>
+                  </div>
+                  <div className="rounded-xl border border-tertiary/50 bg-primary/40 p-4">
+                    <div className="text-xs uppercase tracking-wide text-text-secondary">Punteggio attuale</div>
+                    <div className="mt-2 text-2xl font-bold text-accent">{selectedPlayerProfile.currentPoints} pt</div>
+                  </div>
+                  <div className="rounded-xl border border-tertiary/50 bg-primary/40 p-4">
+                    <div className="text-xs uppercase tracking-wide text-text-secondary">Variazione totale</div>
+                    <div className={`mt-2 text-2xl font-bold ${(selectedPlayerProfile.currentPoints - selectedPlayerProfile.startingPoints) > 0 ? 'text-green-400' : (selectedPlayerProfile.currentPoints - selectedPlayerProfile.startingPoints) < 0 ? 'text-red-400' : 'text-text-primary'}`}>
+                      {formatSignedPoints(selectedPlayerProfile.currentPoints - selectedPlayerProfile.startingPoints)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-tertiary/50 bg-primary/30 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-semibold text-text-primary">Contatti</h4>
+                      <p className="mt-1 text-sm text-text-secondary">
+                        Usa i recapiti già visibili nel ranking per contattare il giocatore.
+                      </p>
+                    </div>
+                    {selectedPlayerProfile.hasPhone ? (
+                      <div className="flex flex-wrap gap-2">
+                        <a
+                          href={`tel:${selectedPlayerProfile.telPhone}`}
+                          className="inline-flex items-center gap-2 rounded-lg bg-tertiary hover:bg-tertiary/80 px-4 py-2 text-sm font-semibold text-text-primary transition-colors"
+                        >
+                          <PhoneIcon className="w-4 h-4" />
+                          Chiama
+                        </a>
+                        <a
+                          href={`https://wa.me/${selectedPlayerProfile.whatsappPhone}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg bg-green-600 hover:bg-green-700 px-4 py-2 text-sm font-semibold text-white transition-colors"
+                        >
+                          <WhatsAppIcon className="w-4 h-4" />
+                          WhatsApp
+                        </a>
+                        <button
+                          onClick={() => onPlayerContact(selectedPlayerProfile.player)}
+                          className="inline-flex items-center rounded-lg bg-accent hover:bg-accent/80 px-4 py-2 text-sm font-semibold text-white transition-colors"
+                        >
+                          Contatta
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-tertiary bg-primary/60 px-4 py-3 text-sm text-text-secondary">
+                        Numero non disponibile
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-lg font-semibold text-text-primary">Storico partite completate</h4>
+                      <p className="mt-1 text-sm text-text-secondary">
+                        Progressione dal punteggio base fino al totale attuale, mantenendo il breakdown del ranking estivo.
+                      </p>
+                    </div>
+                    <div className="rounded-full bg-primary/60 px-3 py-1 text-xs font-semibold text-text-secondary">
+                      Base {selectedPlayerProfile.startingPoints} pt → Attuale {selectedPlayerProfile.currentPoints} pt
+                    </div>
+                  </div>
+
+                  {selectedPlayerProfile.history.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-tertiary bg-primary/30 px-4 py-8 text-center text-text-secondary">
+                      Nessuna partita completata ancora per questo giocatore.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {selectedPlayerProfile.history.map((item, index) => (
+                        <div key={item.match.id} className="rounded-xl border border-tertiary/50 bg-primary/40 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="text-xs uppercase tracking-wide text-text-secondary">Partita {index + 1}</div>
+                              <div className="mt-1 text-lg font-semibold text-text-primary">
+                                vs {item.opponent?.name ?? (item.match.player1Id === selectedPlayerProfile.player.id ? item.match.player2Id : item.match.player1Id)}
+                              </div>
+                              <div className="mt-1 text-sm text-text-secondary">
+                                {getMatchPlayedAtLabel(item.match) ? formatDateTime(getMatchPlayedAtLabel(item.match)) : 'Data non disponibile'}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-semibold text-text-primary">{item.scoreLabel}</div>
+                              <div className={`mt-1 text-sm font-bold ${item.pointsDelta > 0 ? 'text-green-400' : item.pointsDelta < 0 ? 'text-red-400' : 'text-text-secondary'}`}>
+                                {formatSignedPoints(item.pointsDelta)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)]">
+                            <div className="space-y-1 text-sm text-text-secondary">
+                              <div>
+                                Risultato: <span className="font-semibold text-text-primary">{item.breakdown ? getMatchOutcomeLabel(item.breakdown.outcome) : 'Non disponibile'}</span>
+                              </div>
+                              {item.breakdown ? (
+                                <>
+                                  <div>Risultato punti: {formatSignedPoints(item.breakdown.resultPoints)}</div>
+                                  <div>Game fatti: {item.breakdown.gameFatti} ({formatSignedPoints(item.breakdown.gameFattiPoints)})</div>
+                                  {item.breakdown.participationPoints !== 0 && (
+                                    <div>Partecipazione: {formatSignedPoints(item.breakdown.participationPoints)}</div>
+                                  )}
+                                  {item.breakdown.gameDiffPoints !== 0 && (
+                                    <div>Bonus differenza game: {formatSignedPoints(item.breakdown.gameDiffPoints)}</div>
+                                  )}
+                                  {item.breakdown.rulesAdjustmentPoints !== 0 && (
+                                    <div>Adeguamento regola: {formatSignedPoints(item.breakdown.rulesAdjustmentPoints)}</div>
+                                  )}
+                                  <div className="font-semibold text-text-primary">Totale match: {formatSignedPoints(item.breakdown.totalPoints)}</div>
+                                </>
+                              ) : (
+                                <div>Dettaglio punteggio non disponibile.</div>
+                              )}
+                            </div>
+
+                            <div className="rounded-lg border border-tertiary/50 bg-secondary/60 p-3 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-text-secondary">Punti prima</span>
+                                <span className="font-semibold text-text-primary">{item.pointsBefore} pt</span>
+                              </div>
+                              <div className="mt-2 flex items-center justify-between gap-3">
+                                <span className="text-text-secondary">Delta match</span>
+                                <span className={`font-semibold ${item.pointsDelta > 0 ? 'text-green-400' : item.pointsDelta < 0 ? 'text-red-400' : 'text-text-primary'}`}>
+                                  {formatSignedPoints(item.pointsDelta)}
+                                </span>
+                              </div>
+                              <div className="mt-2 flex items-center justify-between gap-3 border-t border-tertiary/50 pt-2">
+                                <span className="text-text-secondary">Punti dopo</span>
+                                <span className="font-bold text-accent">{item.pointsAfter} pt</span>
+                              </div>
+                              {item.breakdown && (
+                                <button
+                                  onClick={() => setSelectedMatchId(item.match.id)}
+                                  className="mt-3 w-full rounded-lg bg-accent hover:bg-accent/80 px-3 py-2 text-xs font-semibold text-white transition-colors"
+                                >
+                                  Dettaglio punti partita
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
 
     </div>
   );
