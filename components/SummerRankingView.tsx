@@ -531,6 +531,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null);
   const [isSavingChallenge, setIsSavingChallenge] = useState(false);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [matchesSubTab, setMatchesSubTab] = useState<'booked' | 'completed_mine' | 'all_completed'>('booked');
 
   const currentPlayerRowRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -1974,24 +1975,48 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       {activeTab === 'matches' && (
         <>
           <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
-            <div className="mb-4 flex items-center justify-end gap-2">
-              <a
-                href={CIRCOLO_WHATSAPP_LINK}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded transition-colors"
-              >
-                <WhatsAppIcon className="w-4 h-4" />
-                Contatta circolo
-              </a>
-              <button
-                onClick={() => openChallengeModal()}
-                disabled={!canBookAsParticipant || eligibleOpponents.length === 0}
-                title={!canBookAsParticipant ? 'Accedi come giocatore per creare una partita' : (eligibleOpponents.length === 0 ? 'Nessun avversario disponibile per una nuova prenotazione' : 'Crea una nuova partita')}
-                className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Crea partita
-              </button>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setMatchesSubTab('booked')}
+                  className={`px-3 py-1 text-sm font-semibold rounded-full transition-colors ${matchesSubTab === 'booked' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90 text-text-primary'}`}
+                >
+                  Partite prenotate
+                </button>
+                {!isOrganizer && (
+                  <button
+                    onClick={() => setMatchesSubTab('completed_mine')}
+                    className={`px-3 py-1 text-sm font-semibold rounded-full transition-colors ${matchesSubTab === 'completed_mine' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90 text-text-primary'}`}
+                  >
+                    Partite completate
+                  </button>
+                )}
+                <button
+                  onClick={() => setMatchesSubTab('all_completed')}
+                  className={`px-3 py-1 text-sm font-semibold rounded-full transition-colors ${matchesSubTab === 'all_completed' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90 text-text-primary'}`}
+                >
+                  {isOrganizer ? 'Tutte le partite completate' : 'Tutte le partite'}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={CIRCOLO_WHATSAPP_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded transition-colors"
+                >
+                  <WhatsAppIcon className="w-4 h-4" />
+                  Contatta circolo
+                </a>
+                <button
+                  onClick={() => openChallengeModal()}
+                  disabled={!canBookAsParticipant || eligibleOpponents.length === 0}
+                  title={!canBookAsParticipant ? 'Accedi come giocatore per creare una partita' : (eligibleOpponents.length === 0 ? 'Nessun avversario disponibile per una nuova prenotazione' : 'Crea una nuova partita')}
+                  className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Crea partita
+                </button>
+              </div>
             </div>
             <table className="w-full min-w-[920px] text-sm">
             <thead>
@@ -2005,14 +2030,45 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               </tr>
             </thead>
             <tbody>
-              {rankingData.matches
-                .slice()
-                .sort((a, b) => {
-                  const aTime = new Date(a.completedAt ?? a.scheduledTime ?? 0).getTime();
-                  const bTime = new Date(b.completedAt ?? b.scheduledTime ?? 0).getTime();
-                  return bTime - aTime;
-                })
-                .map(match => {
+              {(() => {
+                const isMyMatch = (match: Match) =>
+                  !!(loggedInPlayerId && (match.player1Id === loggedInPlayerId || match.player2Id === loggedInPlayerId));
+
+                const visibleMatches = rankingData.matches
+                  .slice()
+                  .filter(match => {
+                    if (matchesSubTab === 'booked') {
+                      // Admin: all scheduled; User: only own scheduled
+                      return match.status === 'scheduled' && (isOrganizer || isMyMatch(match));
+                    }
+                    if (matchesSubTab === 'completed_mine') {
+                      // Only for normal users: own completed matches
+                      return match.status === 'completed' && isMyMatch(match);
+                    }
+                    // all_completed: all completed matches (no booked from other users)
+                    return match.status === 'completed';
+                  })
+                  .sort((a, b) => {
+                    const aTime = new Date(a.completedAt ?? a.scheduledTime ?? 0).getTime();
+                    const bTime = new Date(b.completedAt ?? b.scheduledTime ?? 0).getTime();
+                    return bTime - aTime;
+                  });
+
+                if (visibleMatches.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-text-secondary">
+                        {matchesSubTab === 'booked'
+                          ? 'Nessuna partita prenotata.'
+                          : matchesSubTab === 'completed_mine'
+                            ? 'Nessuna partita completata.'
+                            : 'Nessuna partita completata nel ranking.'}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return visibleMatches.map(match => {
                   const player1 = playerMap.get(match.player1Id);
                   const player2 = playerMap.get(match.player2Id);
                   const encounterCount = getHeadToHeadCount(rankingData.matches, match.player1Id, match.player2Id);
@@ -2146,14 +2202,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                       </td>
                     </tr>
                   );
-                })}
-              {rankingData.matches.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-text-secondary">
-                    Nessuna partita prenotata nel ranking.
-                  </td>
-                </tr>
-              )}
+                });
+              })()}
             </tbody>
             </table>
           </div>
