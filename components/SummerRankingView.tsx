@@ -69,6 +69,8 @@ type ChallengeModalState = {
   scheduledDate: string;
   scheduledHour: string;
   location: string;
+  /** Only populated when an organiser creates the match (no currentPlayer). */
+  player1Id?: string;
 };
 
 type MatchResultModalState = {
@@ -943,7 +945,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     const initialOpponentName = opponentName
       ?? eligibleOpponents.find(player => player.id === initialOpponentId)?.name
       ?? '';
-    setChallengeModal({ opponentId: initialOpponentId, opponentName: initialOpponentName, scheduledDate: '', scheduledHour: '', location: 'Tennis Salò Canottieri' });
+    // Admin without their own player account needs to pick both participants.
+    const player1Id = (isOrganizer && !currentPlayer) ? '' : undefined;
+    setChallengeModal({ opponentId: initialOpponentId, opponentName: initialOpponentName, scheduledDate: '', scheduledHour: '', location: 'Tennis Salò Canottieri', player1Id });
     setChallengeError(null);
     setChallengeSuccess(null);
   };
@@ -955,7 +959,13 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   const handleCreateChallenge = async () => {
-    if (!challengeModal || !loggedInPlayerId || !currentPlayer) return;
+    if (!challengeModal) return;
+    // For organisers without a player account the modal carries player1Id; for
+    // regular players we fall back to loggedInPlayerId.
+    const isAdminMode = isOrganizer && !currentPlayer;
+    const effectivePlayer1Id = isAdminMode ? (challengeModal.player1Id ?? '') : (loggedInPlayerId ?? '');
+    if (!isAdminMode && (!loggedInPlayerId || !currentPlayer)) return;
+    if (isAdminMode && !effectivePlayer1Id) return;
     const { opponentId, scheduledDate, scheduledHour, location } = challengeModal;
 
     if (!opponentId) {
@@ -982,19 +992,19 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       return;
     }
 
-    if (opponentId === loggedInPlayerId) {
+    if (opponentId === effectivePlayer1Id) {
       setChallengeError('Non puoi prenotare una partita contro te stesso.');
       return;
     }
 
-    if (getHeadToHeadCount(rankingData.matches, loggedInPlayerId, opponentId) >= effectiveConfig.headToHeadLimit) {
-      setChallengeError(`Hai già raggiunto il limite massimo di ${effectiveConfig.headToHeadLimit} scontri con questo avversario.`);
+    if (getHeadToHeadCount(rankingData.matches, effectivePlayer1Id, opponentId) >= effectiveConfig.headToHeadLimit) {
+      setChallengeError(`Il limite massimo di ${effectiveConfig.headToHeadLimit} scontri tra questi giocatori è già stato raggiunto.`);
       return;
     }
 
     const nextMatch: Match = {
       id: generateId('srn-booking'),
-      player1Id: loggedInPlayerId,
+      player1Id: effectivePlayer1Id,
       player2Id: opponentId,
       score1: null,
       score2: null,
@@ -1925,13 +1935,15 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                         >
                           Contatta
                         </button>
-                        {!isCurrentPlayerRow && currentPlayer && loggedInPlayerId && (
+                        {!isCurrentPlayerRow && (isOrganizer || (currentPlayer && loggedInPlayerId)) && (
                           <div className="flex flex-col gap-1">
-                            <span className="text-xs text-text-secondary">
-                              Scontri: {headToHeadCount}/{effectiveConfig.headToHeadLimit}
-                              {remainingHeadToHead > 0 ? ` · Restano: ${remainingHeadToHead}` : ''}
-                            </span>
-                            {remainingHeadToHead > 0 ? (
+                            {!isOrganizer && (
+                              <span className="text-xs text-text-secondary">
+                                Scontri: {headToHeadCount}/{effectiveConfig.headToHeadLimit}
+                                {remainingHeadToHead > 0 ? ` · Restano: ${remainingHeadToHead}` : ''}
+                              </span>
+                            )}
+                            {(isOrganizer || remainingHeadToHead > 0) ? (
                               <button
                                 onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
                                 className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold"
@@ -2095,8 +2107,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </a>
                 <button
                   onClick={() => openChallengeModal()}
-                  disabled={!canBookAsParticipant || eligibleOpponents.length === 0}
-                  title={!canBookAsParticipant ? 'Accedi come giocatore per creare una partita' : (eligibleOpponents.length === 0 ? 'Nessun avversario disponibile per una nuova prenotazione' : 'Crea una nuova partita')}
+                  disabled={!isOrganizer && (!canBookAsParticipant || eligibleOpponents.length === 0)}
+                  title={isOrganizer ? 'Crea una nuova partita' : (!canBookAsParticipant ? 'Accedi come giocatore per creare una partita' : (eligibleOpponents.length === 0 ? 'Nessun avversario disponibile per una nuova prenotazione' : 'Crea una nuova partita'))}
                   className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Crea partita
@@ -3543,8 +3555,28 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               </p>
 
               <div className="space-y-3">
+                {/* Admin-only: pick Giocatore 1 when the admin has no player account */}
+                {isOrganizer && !currentPlayer && (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-text-secondary">Giocatore 1 <span className="text-red-400">*</span></span>
+                    <select
+                      value={challengeModal.player1Id ?? ''}
+                      onChange={e => setChallengeModal(prev => prev ? { ...prev, player1Id: e.target.value } : prev)}
+                      className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
+                    >
+                      <option value="">Seleziona giocatore 1</option>
+                      {confirmedPlayers
+                        .filter(p => p.id !== challengeModal.opponentId)
+                        .map(player => (
+                          <option key={player.id} value={player.id}>
+                            {player.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-text-secondary">Avversario <span className="text-red-400">*</span></span>
+                  <span className="text-xs font-semibold text-text-secondary">{(isOrganizer && !currentPlayer) ? 'Giocatore 2' : 'Avversario'} <span className="text-red-400">*</span></span>
                   <select
                     value={challengeModal.opponentId}
                     onChange={e => setChallengeModal(prev => prev ? {
@@ -3554,8 +3586,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                     } : prev)}
                     className="bg-primary border border-tertiary rounded-lg px-3 py-2 text-text-primary"
                   >
-                    <option value="">Seleziona avversario</option>
-                    {eligibleOpponents.map(player => (
+                    <option value="">{(isOrganizer && !currentPlayer) ? 'Seleziona giocatore 2' : 'Seleziona avversario'}</option>
+                    {(isOrganizer && !currentPlayer ? confirmedPlayers.filter(p => p.id !== (challengeModal.player1Id ?? '')) : eligibleOpponents).map(player => (
                       <option key={player.id} value={player.id}>
                         {player.name}
                       </option>
@@ -3617,7 +3649,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </button>
                 <button
                   onClick={handleCreateChallenge}
-                  disabled={isSavingChallenge || !challengeModal.opponentId || !challengeModal.scheduledDate || !challengeModal.scheduledHour || !challengeModal.location}
+                  disabled={isSavingChallenge || !challengeModal.opponentId || !challengeModal.scheduledDate || !challengeModal.scheduledHour || !challengeModal.location || (isOrganizer && !currentPlayer && !challengeModal.player1Id)}
                   className="px-4 py-2 rounded bg-accent hover:bg-accent/80 text-white font-semibold text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isSavingChallenge ? 'Salvataggio...' : 'Conferma prenotazione'}
