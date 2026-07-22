@@ -1517,11 +1517,11 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="bg-secondary rounded-xl shadow-lg p-6">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="bg-secondary rounded-xl shadow-lg p-4 sm:p-6">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
-            <h2 className="text-3xl font-bold text-accent">{title ?? SUMMER_RANKING_NAME}</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold text-accent">{title ?? SUMMER_RANKING_NAME}</h2>
             <p className="text-text-secondary mt-1">
               {description ?? 'Classifica, partite, regolamento e disponibilità per questo evento.'}
             </p>
@@ -1531,7 +1531,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           </div>
         </div>
 
-        <nav className="mt-6 bg-primary/60 rounded-lg p-3 flex flex-wrap gap-2" aria-label="Menu Summer Ranking Next">
+        <nav className="mt-4 sm:mt-6 bg-primary/60 rounded-lg p-2 sm:p-3 flex flex-wrap gap-1.5 sm:gap-2" aria-label="Menu Summer Ranking Next">
           {([
             ['ranking', 'Ranking'],
             ['matches', 'Partite'],
@@ -1543,7 +1543,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
           ] as Array<[RankingTab, string]>).map(([tab, label]) => (
             <button
               key={tab}
-              className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${activeTab === tab ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90 text-text-primary'}`}
+              className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-colors ${activeTab === tab ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90 text-text-primary'}`}
               onClick={() => setActiveTab(tab)}
             >
               {label}
@@ -1553,8 +1553,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
       </div>
 
       {activeTab === 'ranking' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="space-y-4 sm:space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="bg-secondary rounded-xl p-5 shadow-lg">
               <div className="text-sm text-text-secondary">Leader attuale</div>
               <div className="text-xl font-bold mt-2">{ranking[0]?.player.name ?? 'Nessuno'}</div>
@@ -1728,7 +1728,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             </div>
           )}
 
-          <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+          <div className="bg-secondary rounded-xl shadow-lg p-4 sm:p-6">
             {showChallengePointsColumn && (
               <div className="flex flex-wrap items-center gap-3 mb-4 text-xs text-text-secondary">
                 <span className="font-semibold">Fascia avversario:</span>
@@ -1746,99 +1746,75 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </span>
               </div>
             )}
-            <table className="w-full min-w-[1120px] text-sm">
-              <thead>
-                <tr className="text-left border-b border-tertiary text-text-secondary">
-                  <th className="py-3 pr-3">Rank</th>
-                  <th className="py-3 pr-3">Giocatore</th>
-                  <th className="py-3 pr-3">Punti</th>
-                  {showChallengePointsColumn && <th className="py-3 pr-3">Punti sfida (base)</th>}
-                  <th className="py-3 pr-3">Serie</th>
-                  <th className="py-3 pr-3">Partite</th>
-                  <th className="py-3 pr-3">Bonus/Malus</th>
-                  <th className="py-3 pr-3">Slot</th>
-                  <th className="py-3 pr-3">Disponibilità</th>
-                  <th className="py-3 pr-3">Azioni</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRanking.map(entry => {
-                  const availabilitySummary = getAvailabilitySummary(rankingData.availabilities?.[entry.player.id]);
-                  const isCurrentPlayerRow = entry.player.id === loggedInPlayerId;
-                  const pointsToWin = currentPlayerRankingEntry
-                    ? getSummerRankingWinPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
-                    : 0;
-                  const pointsToLose = currentPlayerRankingEntry
-                    ? getSummerRankingLossPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
-                    : 0;
-                  const opponentBand = (currentPlayerRankingEntry && !isCurrentPlayerRow)
-                    ? getSummerRankingDiffBand(Math.abs(currentPlayerRankingEntry.points - entry.points), effectiveConfig)
-                    : null;
-                  const headToHeadCount = (!isCurrentPlayerRow && loggedInPlayerId)
-                    ? getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id)
-                    : 0;
-                  const remainingHeadToHead = Math.max(0, effectiveConfig.headToHeadLimit - headToHeadCount);
-                  const playerLastMatch = rankingData.matches
-                    .filter(m =>
-                      m.status === 'completed' &&
-                      m.score1 !== null &&
-                      m.score2 !== null &&
-                      (m.player1Id === entry.player.id || m.player2Id === entry.player.id),
-                    )
-                    .reduce<Match | null>((latest, m) => {
-                      if (!latest) return m;
-                      return new Date(m.completedAt ?? 0) > new Date(latest.completedAt ?? 0) ? m : latest;
-                    }, null);
-                  const playerLastMatchBreakdown = playerLastMatch ? matchBreakdowns.get(playerLastMatch.id) : null;
-                  const playerLastMatchPlayerBd = playerLastMatchBreakdown
-                    ? (playerLastMatch!.player1Id === entry.player.id
-                      ? playerLastMatchBreakdown.player1
-                      : playerLastMatchBreakdown.player2)
-                    : null;
 
-                  return (
-                  <tr
+            {/* ── Mobile card view (hidden on sm+) ── */}
+            <div className="sm:hidden space-y-3">
+              {filteredRanking.length === 0 ? (
+                <div className="py-8 text-center text-text-secondary">
+                  {hasActiveRankingFilters
+                    ? 'Nessun giocatore corrisponde ai filtri selezionati.'
+                    : 'Nessun giocatore confermato nel Summer Ranking Next.'}
+                </div>
+              ) : filteredRanking.map(entry => {
+                const isCurrentPlayerRow = entry.player.id === loggedInPlayerId;
+                const availabilitySummary = getAvailabilitySummary(rankingData.availabilities?.[entry.player.id]);
+                const pointsToWin = currentPlayerRankingEntry && !isCurrentPlayerRow
+                  ? getSummerRankingWinPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
+                  : 0;
+                const pointsToLose = currentPlayerRankingEntry && !isCurrentPlayerRow
+                  ? getSummerRankingLossPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
+                  : 0;
+                const opponentBand = (currentPlayerRankingEntry && !isCurrentPlayerRow)
+                  ? getSummerRankingDiffBand(Math.abs(currentPlayerRankingEntry.points - entry.points), effectiveConfig)
+                  : null;
+                const headToHeadCount = (!isCurrentPlayerRow && loggedInPlayerId)
+                  ? getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id)
+                  : 0;
+                const remainingHeadToHead = Math.max(0, effectiveConfig.headToHeadLimit - headToHeadCount);
+
+                return (
+                  <div
                     key={entry.player.id}
-                    ref={node => {
-                      if (isCurrentPlayerRow) currentPlayerRowRef.current = node;
-                    }}
-                    className={`border-b border-tertiary/40 last:border-b-0 align-top transition-colors ${isCurrentPlayerRow ? 'bg-accent/20 ring-2 ring-inset ring-accent/70 border-l-4 border-accent' : opponentBand ? getOpponentBandRowClass(opponentBand) : ''}`}
+                    ref={node => { if (isCurrentPlayerRow) currentPlayerRowRef.current = node; }}
+                    className={`rounded-xl border p-4 ${
+                      isCurrentPlayerRow
+                        ? 'bg-accent/20 border-l-4 border-accent/70'
+                        : opponentBand
+                          ? getOpponentBandRowClass(opponentBand)
+                          : 'bg-primary/40 border-tertiary/40'
+                    }`}
                   >
-                    <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
-                    <td className="py-4 pr-3">
-                      <div className="font-semibold flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPlayerId(entry.player.id)}
-                          className="text-left hover:underline"
-                          title={`Apri il profilo di ${entry.player.name}`}
-                        >
-                          {entry.player.name}
-                        </button>
-                        {isCurrentPlayerRow && (
-                          <span className="px-2 py-0.5 rounded bg-accent text-white text-xs font-semibold">
-                            Tu
-                          </span>
-                        )}
-                        {masterQualifiedIdSet.has(entry.player.id) && (
-                          <span
-                            className="px-2 py-0.5 rounded bg-green-600 text-white text-xs font-semibold"
-                            title="Giocatore qualificato al Master finale"
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-xl font-bold text-accent">#{entry.rank}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPlayerId(entry.player.id)}
+                            className="font-semibold text-text-primary hover:underline text-left"
+                            title={`Apri il profilo di ${entry.player.name}`}
                           >
-                            Qualificato Master
-                          </span>
-                        )}
-
-                      </div>
-                      <div className="text-xs text-text-secondary mt-1">
-                        Base {entry.startingPoints} pt
+                            {entry.player.name}
+                          </button>
+                          {isCurrentPlayerRow && (
+                            <span className="px-2 py-0.5 rounded bg-accent text-white text-xs font-semibold">Tu</span>
+                          )}
+                          {masterQualifiedIdSet.has(entry.player.id) && (
+                            <span className="px-2 py-0.5 rounded bg-green-600 text-white text-xs font-semibold">Master</span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex items-baseline gap-2">
+                          <span className="text-2xl font-bold">{entry.points}</span>
+                          <span className="text-sm text-text-secondary">pt</span>
+                          <span className="text-xs text-text-secondary">· base: {entry.startingPoints}</span>
+                        </div>
                         {isOrganizer && (
-                          <span className="ml-2 inline-flex items-center gap-2">
+                          <div className="mt-2 flex items-center gap-2">
                             <input
                               type="number"
                               value={startPointsDrafts[entry.player.id] ?? '0'}
                               onChange={event => setStartPointsDrafts(prev => ({ ...prev, [entry.player.id]: event.target.value }))}
-                              className="w-20 bg-primary border border-tertiary rounded px-2 py-1 text-text-primary"
+                              className="w-20 bg-primary border border-tertiary rounded px-2 py-1 text-text-primary text-xs"
                             />
                             <button
                               onClick={() => requestStartPointsSave(entry.player.id)}
@@ -1847,140 +1823,305 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             >
                               {busyPlayerId === entry.player.id ? 'Salvo...' : 'Salva'}
                             </button>
-                          </span>
+                          </div>
                         )}
                       </div>
-                    </td>
-                    <td className="py-4 pr-3">
-                      <div className="font-bold text-lg">{entry.points}</div>
-                      <div className="flex items-center gap-1 text-xs mt-1">
-                        {entry.trend === 'up' && <ArrowUpIcon className="w-4 h-4 text-green-400" />}
-                        {entry.trend === 'down' && <ArrowDownIcon className="w-4 h-4 text-red-400" />}
-                        {entry.trend === 'steady' && <span className="text-text-secondary">•</span>}
-                        <span className="text-text-secondary">trend recente</span>
+                      <div className="text-right shrink-0 text-xs text-text-secondary space-y-1">
+                        <div className="font-semibold text-text-primary">{entry.wins}V {entry.draws}N {entry.losses}P</div>
+                        <div className="font-mono">{entry.recentForm.length > 0 ? entry.recentForm.join(' ') : '—'}</div>
+                        <div className={`font-semibold ${
+                          availabilitySummary.status === 'Disponibile' ? 'text-green-400' :
+                          availabilitySummary.status === 'Non disponibile' ? 'text-red-400' :
+                          'text-text-secondary'
+                        }`}>
+                          {availabilitySummary.status}
+                        </div>
                       </div>
-                    </td>
-                    {showChallengePointsColumn && (
+                    </div>
+
+                    {showChallengePointsColumn && !isCurrentPlayerRow && (
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        <span className="inline-flex items-center rounded-md border border-green-400/40 bg-green-500/15 px-2 py-0.5 font-bold text-green-400">
+                          +{pointsToWin} pt vittoria
+                        </span>
+                        <span className="inline-flex items-center rounded-md border border-red-400/40 bg-red-500/15 px-2 py-0.5 font-bold text-red-400">
+                          {pointsToLose} pt sconfitta
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        onClick={() => onPlayerContact(entry.player)}
+                        className="px-3 py-1.5 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
+                      >
+                        Contatta
+                      </button>
+                      {!isCurrentPlayerRow && (isOrganizer || (currentPlayer && loggedInPlayerId)) && (
+                        <>
+                          {!isOrganizer && (
+                            <span className="text-xs text-text-secondary self-center">
+                              {headToHeadCount}/{effectiveConfig.headToHeadLimit} scontri
+                            </span>
+                          )}
+                          {(isOrganizer || remainingHeadToHead > 0) ? (
+                            <button
+                              onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
+                              className="px-3 py-1.5 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold"
+                            >
+                              Crea partita
+                            </button>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 text-xs font-semibold border border-red-500/30">
+                              Limite raggiunto
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── Desktop table (hidden on mobile) ── */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full min-w-[1120px] text-sm">
+                <thead>
+                  <tr className="text-left border-b border-tertiary text-text-secondary">
+                    <th className="py-3 pr-3">Rank</th>
+                    <th className="py-3 pr-3">Giocatore</th>
+                    <th className="py-3 pr-3">Punti</th>
+                    {showChallengePointsColumn && <th className="py-3 pr-3">Punti sfida (base)</th>}
+                    <th className="py-3 pr-3">Serie</th>
+                    <th className="py-3 pr-3">Partite</th>
+                    <th className="py-3 pr-3">Bonus/Malus</th>
+                    <th className="py-3 pr-3">Slot</th>
+                    <th className="py-3 pr-3">Disponibilità</th>
+                    <th className="py-3 pr-3">Azioni</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRanking.map(entry => {
+                    const availabilitySummary = getAvailabilitySummary(rankingData.availabilities?.[entry.player.id]);
+                    const isCurrentPlayerRow = entry.player.id === loggedInPlayerId;
+                    const pointsToWin = currentPlayerRankingEntry
+                      ? getSummerRankingWinPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
+                      : 0;
+                    const pointsToLose = currentPlayerRankingEntry
+                      ? getSummerRankingLossPoints(currentPlayerRankingEntry.points, entry.points, effectiveConfig)
+                      : 0;
+                    const opponentBand = (currentPlayerRankingEntry && !isCurrentPlayerRow)
+                      ? getSummerRankingDiffBand(Math.abs(currentPlayerRankingEntry.points - entry.points), effectiveConfig)
+                      : null;
+                    const headToHeadCount = (!isCurrentPlayerRow && loggedInPlayerId)
+                      ? getHeadToHeadCount(rankingData.matches, loggedInPlayerId, entry.player.id)
+                      : 0;
+                    const remainingHeadToHead = Math.max(0, effectiveConfig.headToHeadLimit - headToHeadCount);
+                    const playerLastMatch = rankingData.matches
+                      .filter(m =>
+                        m.status === 'completed' &&
+                        m.score1 !== null &&
+                        m.score2 !== null &&
+                        (m.player1Id === entry.player.id || m.player2Id === entry.player.id),
+                      )
+                      .reduce<Match | null>((latest, m) => {
+                        if (!latest) return m;
+                        return new Date(m.completedAt ?? 0) > new Date(latest.completedAt ?? 0) ? m : latest;
+                      }, null);
+                    const playerLastMatchBreakdown = playerLastMatch ? matchBreakdowns.get(playerLastMatch.id) : null;
+                    const playerLastMatchPlayerBd = playerLastMatchBreakdown
+                      ? (playerLastMatch!.player1Id === entry.player.id
+                        ? playerLastMatchBreakdown.player1
+                        : playerLastMatchBreakdown.player2)
+                      : null;
+
+                    return (
+                    <tr
+                      key={entry.player.id}
+                      ref={node => {
+                        if (isCurrentPlayerRow) currentPlayerRowRef.current = node;
+                      }}
+                      className={`border-b border-tertiary/40 last:border-b-0 align-top transition-colors ${isCurrentPlayerRow ? 'bg-accent/20 ring-2 ring-inset ring-accent/70 border-l-4 border-accent' : opponentBand ? getOpponentBandRowClass(opponentBand) : ''}`}
+                    >
+                      <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
                       <td className="py-4 pr-3">
-                        {isCurrentPlayerRow ? (
-                          <span className="inline-flex items-center rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">
-                            Tu
-                          </span>
+                        <div className="font-semibold flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPlayerId(entry.player.id)}
+                            className="text-left hover:underline"
+                            title={`Apri il profilo di ${entry.player.name}`}
+                          >
+                            {entry.player.name}
+                          </button>
+                          {isCurrentPlayerRow && (
+                            <span className="px-2 py-0.5 rounded bg-accent text-white text-xs font-semibold">
+                              Tu
+                            </span>
+                          )}
+                          {masterQualifiedIdSet.has(entry.player.id) && (
+                            <span
+                              className="px-2 py-0.5 rounded bg-green-600 text-white text-xs font-semibold"
+                              title="Giocatore qualificato al Master finale"
+                            >
+                              Qualificato Master
+                            </span>
+                          )}
+
+                        </div>
+                        <div className="text-xs text-text-secondary mt-1">
+                          Base {entry.startingPoints} pt
+                          {isOrganizer && (
+                            <span className="ml-2 inline-flex items-center gap-2">
+                              <input
+                                type="number"
+                                value={startPointsDrafts[entry.player.id] ?? '0'}
+                                onChange={event => setStartPointsDrafts(prev => ({ ...prev, [entry.player.id]: event.target.value }))}
+                                className="w-20 bg-primary border border-tertiary rounded px-2 py-1 text-text-primary"
+                              />
+                              <button
+                                onClick={() => requestStartPointsSave(entry.player.id)}
+                                disabled={busyPlayerId === entry.player.id}
+                                className="px-2 py-1 rounded bg-highlight text-white text-xs font-semibold"
+                              >
+                                {busyPlayerId === entry.player.id ? 'Salvo...' : 'Salva'}
+                              </button>
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-4 pr-3">
+                        <div className="font-bold text-lg">{entry.points}</div>
+                        <div className="flex items-center gap-1 text-xs mt-1">
+                          {entry.trend === 'up' && <ArrowUpIcon className="w-4 h-4 text-green-400" />}
+                          {entry.trend === 'down' && <ArrowDownIcon className="w-4 h-4 text-red-400" />}
+                          {entry.trend === 'steady' && <span className="text-text-secondary">•</span>}
+                          <span className="text-text-secondary">trend recente</span>
+                        </div>
+                      </td>
+                      {showChallengePointsColumn && (
+                        <td className="py-4 pr-3">
+                          {isCurrentPlayerRow ? (
+                            <span className="inline-flex items-center rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">
+                              Tu
+                            </span>
+                          ) : (
+                            <div className="flex flex-col gap-1">
+                              <span className="inline-flex items-center rounded-md border border-green-400/40 bg-green-500/15 px-2 py-0.5 text-xs font-bold text-green-400">
+                                +{pointsToWin} pt
+                              </span>
+                              <span className="inline-flex items-center rounded-md border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-400">
+                                {pointsToLose} pt
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                      )}
+                      <td className="py-4 pr-3 font-mono text-xs tracking-wide">
+                        {entry.recentForm.length > 0 ? entry.recentForm.join(' ') : '—'}
+                      </td>
+                      <td className="py-4 pr-3">
+                        <div>{entry.matchesPlayed} giocate</div>
+                        <div className="text-xs text-text-secondary mt-1">
+                          {entry.wins}V • {entry.draws}N • {entry.losses}P
+                        </div>
+                      </td>
+                      <td className="py-4 pr-3 text-xs text-text-secondary">
+                        {playerLastMatchPlayerBd ? (
+                          <div className="space-y-0.5">
+                            <div>Risultato ({getMatchOutcomeLabel(playerLastMatchPlayerBd.outcome)}): {formatSignedPoints(playerLastMatchPlayerBd.resultPoints)}</div>
+                            <div>Game fatti: {playerLastMatchPlayerBd.gameFatti} ({formatSignedPoints(playerLastMatchPlayerBd.gameFattiPoints)})</div>
+                            {playerLastMatchPlayerBd.gameDiffPoints !== 0 && (
+                              <div>Bonus diff: {formatSignedPoints(playerLastMatchPlayerBd.gameDiffPoints)}</div>
+                            )}
+                            {playerLastMatchPlayerBd.participationPoints !== 0 && (
+                              <div>Partecipazione: {formatSignedPoints(playerLastMatchPlayerBd.participationPoints)}</div>
+                            )}
+                            {playerLastMatchPlayerBd.rulesAdjustmentPoints !== 0 && (
+                              <div>Adeguamento: {formatSignedPoints(playerLastMatchPlayerBd.rulesAdjustmentPoints)}</div>
+                            )}
+                            <div className="border-t border-tertiary/50 pt-0.5 font-semibold text-text-primary">
+                              Totale: {formatSignedPoints(playerLastMatchPlayerBd.totalPoints)}
+                            </div>
+                          </div>
                         ) : (
-                          <div className="flex flex-col gap-1">
-                            <span className="inline-flex items-center rounded-md border border-green-400/40 bg-green-500/15 px-2 py-0.5 text-xs font-bold text-green-400">
-                              +{pointsToWin} pt
-                            </span>
-                            <span className="inline-flex items-center rounded-md border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-400">
-                              {pointsToLose} pt
-                            </span>
+                          <span>—</span>
+                        )}
+                      </td>
+                      <td className="py-4 pr-3 text-xs text-text-secondary">
+                        <div>{entry.upcomingMatches} prenotazioni attive</div>
+                        <div className="mt-1">{entry.lastMatchAt ? `Ultima: ${formatDateTime(entry.lastMatchAt)}` : 'Nessuna partita'}</div>
+                      </td>
+                      <td className="py-4 pr-3 text-xs text-text-secondary">
+                        <div className={`font-semibold ${
+                          availabilitySummary.status === 'Disponibile' ? 'text-green-400' :
+                          availabilitySummary.status === 'Non disponibile' ? 'text-red-400' :
+                          'text-text-secondary'
+                        }`}>
+                          {availabilitySummary.status}
+                        </div>
+                        {availabilitySummary.details && (
+                          <div className="mt-1 leading-relaxed">
+                            {availabilitySummary.details}
                           </div>
                         )}
                       </td>
-                    )}
-                    <td className="py-4 pr-3 font-mono text-xs tracking-wide">
-                      {entry.recentForm.length > 0 ? entry.recentForm.join(' ') : '—'}
-                    </td>
-                    <td className="py-4 pr-3">
-                      <div>{entry.matchesPlayed} giocate</div>
-                      <div className="text-xs text-text-secondary mt-1">
-                        {entry.wins}V • {entry.draws}N • {entry.losses}P
-                      </div>
-                    </td>
-                    <td className="py-4 pr-3 text-xs text-text-secondary">
-                      {playerLastMatchPlayerBd ? (
-                        <div className="space-y-0.5">
-                          <div>Risultato ({getMatchOutcomeLabel(playerLastMatchPlayerBd.outcome)}): {formatSignedPoints(playerLastMatchPlayerBd.resultPoints)}</div>
-                          <div>Game fatti: {playerLastMatchPlayerBd.gameFatti} ({formatSignedPoints(playerLastMatchPlayerBd.gameFattiPoints)})</div>
-                          {playerLastMatchPlayerBd.gameDiffPoints !== 0 && (
-                            <div>Bonus diff: {formatSignedPoints(playerLastMatchPlayerBd.gameDiffPoints)}</div>
+                      <td className="py-4 pr-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => onPlayerContact(entry.player)}
+                            className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
+                          >
+                            Contatta
+                          </button>
+                          {!isCurrentPlayerRow && (isOrganizer || (currentPlayer && loggedInPlayerId)) && (
+                            <div className="flex flex-col gap-1">
+                              {!isOrganizer && (
+                                <span className="text-xs text-text-secondary">
+                                  Scontri: {headToHeadCount}/{effectiveConfig.headToHeadLimit}
+                                  {remainingHeadToHead > 0 ? ` · Restano: ${remainingHeadToHead}` : ''}
+                                </span>
+                              )}
+                              {(isOrganizer || remainingHeadToHead > 0) ? (
+                                <button
+                                  onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
+                                  className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold"
+                                  title={`Crea partita con ${entry.player.name}`}
+                                >
+                                  Crea partita
+                                </button>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 text-xs font-semibold border border-red-500/30">
+                                  Limite raggiunto
+                                </span>
+                              )}
+                            </div>
                           )}
-                          {playerLastMatchPlayerBd.participationPoints !== 0 && (
-                            <div>Partecipazione: {formatSignedPoints(playerLastMatchPlayerBd.participationPoints)}</div>
-                          )}
-                          {playerLastMatchPlayerBd.rulesAdjustmentPoints !== 0 && (
-                            <div>Adeguamento: {formatSignedPoints(playerLastMatchPlayerBd.rulesAdjustmentPoints)}</div>
-                          )}
-                          <div className="border-t border-tertiary/50 pt-0.5 font-semibold text-text-primary">
-                            Totale: {formatSignedPoints(playerLastMatchPlayerBd.totalPoints)}
-                          </div>
                         </div>
-                      ) : (
-                        <span>—</span>
-                      )}
-                    </td>
-                    <td className="py-4 pr-3 text-xs text-text-secondary">
-                      <div>{entry.upcomingMatches} prenotazioni attive</div>
-                      <div className="mt-1">{entry.lastMatchAt ? `Ultima: ${formatDateTime(entry.lastMatchAt)}` : 'Nessuna partita'}</div>
-                    </td>
-                    <td className="py-4 pr-3 text-xs text-text-secondary">
-                      <div className={`font-semibold ${
-                        availabilitySummary.status === 'Disponibile' ? 'text-green-400' :
-                        availabilitySummary.status === 'Non disponibile' ? 'text-red-400' :
-                        'text-text-secondary'
-                      }`}>
-                        {availabilitySummary.status}
-                      </div>
-                      {availabilitySummary.details && (
-                        <div className="mt-1 leading-relaxed">
-                          {availabilitySummary.details}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-4 pr-3">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => onPlayerContact(entry.player)}
-                          className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
-                        >
-                          Contatta
-                        </button>
-                        {!isCurrentPlayerRow && (isOrganizer || (currentPlayer && loggedInPlayerId)) && (
-                          <div className="flex flex-col gap-1">
-                            {!isOrganizer && (
-                              <span className="text-xs text-text-secondary">
-                                Scontri: {headToHeadCount}/{effectiveConfig.headToHeadLimit}
-                                {remainingHeadToHead > 0 ? ` · Restano: ${remainingHeadToHead}` : ''}
-                              </span>
-                            )}
-                            {(isOrganizer || remainingHeadToHead > 0) ? (
-                              <button
-                                onClick={() => openChallengeModal(entry.player.id, entry.player.name)}
-                                className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold"
-                                title={`Crea partita con ${entry.player.name}`}
-                              >
-                                Crea partita
-                              </button>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 text-xs font-semibold border border-red-500/30">
-                                Limite raggiunto
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-                {filteredRanking.length === 0 && (
-                  <tr>
-                    <td colSpan={showChallengePointsColumn ? 10 : 9} className="py-8 text-center text-text-secondary">
-                      {hasActiveRankingFilters
-                        ? 'Nessun giocatore corrisponde ai filtri selezionati.'
-                        : 'Nessun giocatore confermato nel Summer Ranking Next.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                  {filteredRanking.length === 0 && (
+                    <tr>
+                      <td colSpan={showChallengePointsColumn ? 10 : 9} className="py-8 text-center text-text-secondary">
+                        {hasActiveRankingFilters
+                          ? 'Nessun giocatore corrisponde ai filtri selezionati.'
+                          : 'Nessun giocatore confermato nel Summer Ranking Next.'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {activeTab === 'players' && (
-        <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
-          <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="bg-secondary rounded-xl shadow-lg p-4 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h3 className="text-xl font-bold text-accent">Partecipanti ranking ({confirmedPlayers.length})</h3>
             {isOrganizer && onOpenPlayersAdmin && (
               <button
@@ -1991,87 +2132,140 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               </button>
             )}
           </div>
-          <table className="w-full min-w-[680px] text-sm">
-            <thead>
-              <tr className="text-left border-b border-tertiary text-text-secondary">
-                <th className="py-3 pr-3">Giocatore</th>
-                <th className="py-3 pr-3">Punti iniziali</th>
-                {isOrganizer ? (
-                  <>
-                    <th className="py-3 pr-3">Telefono</th>
-                    <th className="py-3 pr-3">Azioni</th>
-                  </>
-                ) : (
-                  <>
-                    <th className="py-3 pr-3">Punti attuali</th>
-                    <th className="py-3 pr-3">Azioni</th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {confirmedPlayers.map(player => {
-                const rankingEntry = rankingById.get(player.id);
-                const hasPhone = !!player.phone?.trim();
 
-                return (
-                  <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
-                    <td className="py-3 pr-3 font-semibold">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPlayerId(player.id)}
-                        className="text-left hover:underline"
-                        title={`Apri il profilo di ${player.name}`}
-                      >
-                        {player.name}
-                      </button>
-                    </td>
-                    <td className="py-3 pr-3 text-text-secondary">{rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0}</td>
+          {/* ── Mobile card view ── */}
+          <div className="sm:hidden space-y-3">
+            {confirmedPlayers.length === 0 ? (
+              <div className="py-8 text-center text-text-secondary">Nessun partecipante nel ranking.</div>
+            ) : confirmedPlayers.map(player => {
+              const rankingEntry = rankingById.get(player.id);
+              const hasPhone = !!player.phone?.trim();
+              return (
+                <div key={player.id} className="flex items-center justify-between gap-3 rounded-xl border border-tertiary/40 bg-primary/40 p-4">
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPlayerId(player.id)}
+                      className="font-semibold text-text-primary hover:underline text-left"
+                    >
+                      {player.name}
+                    </button>
+                    <div className="text-xs text-text-secondary mt-1">
+                      {isOrganizer ? (
+                        <>Inizio: {rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0} pt · Tel: {player.phone || '—'}</>
+                      ) : (
+                        <>Inizio: {rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0} pt · Attuale: {rankingEntry?.points ?? rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0} pt</>
+                      )}
+                    </div>
+                  </div>
+                  <div className="shrink-0">
                     {isOrganizer ? (
-                      <>
-                        <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
-                        <td className="py-3 pr-3">
-                          <button
-                            onClick={() => handleRemoveParticipant(player.id)}
-                            className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
-                          >
-                            Rimuovi dal ranking
-                          </button>
-                        </td>
-                      </>
+                      <button
+                        onClick={() => handleRemoveParticipant(player.id)}
+                        className="px-3 py-1.5 rounded bg-red-600 text-white text-xs font-semibold"
+                      >
+                        Rimuovi
+                      </button>
                     ) : (
-                      <>
-                        <td className="py-3 pr-3 font-bold text-text-primary">{rankingEntry?.points ?? rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0}</td>
-                        <td className="py-3 pr-3">
-                          <button
-                            onClick={() => onPlayerContact(player)}
-                            disabled={!hasPhone}
-                            title={hasPhone ? `Contatta ${player.name}` : 'Numero non disponibile'}
-                            className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            Contatta
-                          </button>
-                        </td>
-                      </>
+                      <button
+                        onClick={() => onPlayerContact(player)}
+                        disabled={!hasPhone}
+                        title={hasPhone ? `Contatta ${player.name}` : 'Numero non disponibile'}
+                        className="px-3 py-1.5 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Contatta
+                      </button>
                     )}
-                  </tr>
-                );
-              })}
-              {confirmedPlayers.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="py-8 text-center text-text-secondary">
-                    Nessun partecipante nel ranking.
-                  </td>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Desktop table ── */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full min-w-[680px] text-sm">
+              <thead>
+                <tr className="text-left border-b border-tertiary text-text-secondary">
+                  <th className="py-3 pr-3">Giocatore</th>
+                  <th className="py-3 pr-3">Punti iniziali</th>
+                  {isOrganizer ? (
+                    <>
+                      <th className="py-3 pr-3">Telefono</th>
+                      <th className="py-3 pr-3">Azioni</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="py-3 pr-3">Punti attuali</th>
+                      <th className="py-3 pr-3">Azioni</th>
+                    </>
+                  )}
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {confirmedPlayers.map(player => {
+                  const rankingEntry = rankingById.get(player.id);
+                  const hasPhone = !!player.phone?.trim();
+
+                  return (
+                    <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
+                      <td className="py-3 pr-3 font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPlayerId(player.id)}
+                          className="text-left hover:underline"
+                          title={`Apri il profilo di ${player.name}`}
+                        >
+                          {player.name}
+                        </button>
+                      </td>
+                      <td className="py-3 pr-3 text-text-secondary">{rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0}</td>
+                      {isOrganizer ? (
+                        <>
+                          <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
+                          <td className="py-3 pr-3">
+                            <button
+                              onClick={() => handleRemoveParticipant(player.id)}
+                              className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
+                            >
+                              Rimuovi dal ranking
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-3 pr-3 font-bold text-text-primary">{rankingEntry?.points ?? rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0}</td>
+                          <td className="py-3 pr-3">
+                            <button
+                              onClick={() => onPlayerContact(player)}
+                              disabled={!hasPhone}
+                              title={hasPhone ? `Contatta ${player.name}` : 'Numero non disponibile'}
+                              className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Contatta
+                            </button>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
+                {confirmedPlayers.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-text-secondary">
+                      Nessun partecipante nel ranking.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {activeTab === 'matches' && (
         <>
-          <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+          <div className="bg-secondary rounded-xl shadow-lg p-4 sm:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-2">
                 <button
@@ -2095,7 +2289,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   {isOrganizer ? 'Tutte le partite completate' : 'Tutte le partite'}
                 </button>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <a
                   href={CIRCOLO_WHATSAPP_LINK}
                   target="_blank"
@@ -2115,200 +2309,268 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </button>
               </div>
             </div>
-            <table className="w-full min-w-[920px] text-sm">
-            <thead>
-              <tr className="text-left border-b border-tertiary text-text-secondary">
-                <th className="py-3 pr-3">Partita</th>
-                <th className="py-3 pr-3">Stato</th>
-                <th className="py-3 pr-3">Slot</th>
-                <th className="py-3 pr-3">Risultato</th>
-                <th className="py-3 pr-3">Partite giocate</th>
-                <th className="py-3 pr-3">Azioni</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const isMyMatch = (match: Match) =>
-                  !!(loggedInPlayerId && (match.player1Id === loggedInPlayerId || match.player2Id === loggedInPlayerId));
 
-                const visibleMatches = rankingData.matches
-                  .slice()
-                  .filter(match => {
-                    if (matchesSubTab === 'booked') {
-                      // Admin: all scheduled; User: only own scheduled
-                      return match.status === 'scheduled' && (isOrganizer || isMyMatch(match));
-                    }
-                    if (matchesSubTab === 'completed_mine') {
-                      // Only for normal users: own completed matches
-                      return match.status === 'completed' && isMyMatch(match);
-                    }
-                    // all_completed: all completed matches (no booked from other users)
-                    return match.status === 'completed';
-                  })
-                  .sort((a, b) => {
-                    const aTime = new Date(a.completedAt ?? a.scheduledTime ?? 0).getTime();
-                    const bTime = new Date(b.completedAt ?? b.scheduledTime ?? 0).getTime();
-                    return bTime - aTime;
-                  });
+            {/* ── Shared match data computation ── */}
+            {(() => {
+              const isMyMatch = (match: Match) =>
+                !!(loggedInPlayerId && (match.player1Id === loggedInPlayerId || match.player2Id === loggedInPlayerId));
 
-                if (visibleMatches.length === 0) {
-                  return (
-                    <tr>
-                      <td colSpan={6} className="py-8 text-center text-text-secondary">
-                        {matchesSubTab === 'booked'
-                          ? 'Nessuna partita prenotata.'
-                          : matchesSubTab === 'completed_mine'
-                            ? 'Nessuna partita completata.'
-                            : 'Nessuna partita completata nel ranking.'}
-                      </td>
-                    </tr>
-                  );
-                }
-
-                const myCompletedMatchesCount = loggedInPlayerId
-                  ? rankingData.matches.filter(m =>
-                      m.status === 'completed' &&
-                      (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId)
-                    ).length
-                  : 0;
-
-                return visibleMatches.map(match => {
-                  const player1 = playerMap.get(match.player1Id);
-                  const player2 = playerMap.get(match.player2Id);
-                  const matchBreakdown = matchBreakdowns.get(match.id);
-
-                  return (
-                    <tr key={match.id} className="border-b border-tertiary/40 last:border-b-0 align-top">
-                      <td className="py-4 pr-3">
-                        <div className="font-semibold">{player1?.name ?? match.player1Id} vs {player2?.name ?? match.player2Id}</div>
-                        <div className="text-xs text-text-secondary mt-1">
-                          {match.completedAt ? `Conclusa il ${formatDateTime(match.completedAt)}` : 'In attesa di risultato'}
-                        </div>
-                      </td>
-                      <td className="py-4 pr-3">
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${match.status === 'completed' ? 'bg-green-600 text-white' : match.status === 'scheduled' ? 'bg-accent text-white' : 'bg-tertiary text-text-primary'}`}>
-                          {match.status === 'completed' ? 'Completata' : match.status === 'scheduled' ? 'Prenotata' : 'Da programmare'}
-                        </span>
-                      </td>
-                      <td className="py-4 pr-3 text-xs text-text-secondary">
-                        {match.slotId ? (
-                          <>
-                            <div>{formatDateTime(match.scheduledTime)}</div>
-                            <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>
-                          </>
-                        ) : match.scheduledTime ? (
-                          <>
-                            <div>{formatDateTime(match.scheduledTime)}</div>
-                            {match.location && <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>}
-                            <div className="text-text-secondary italic">Prenotazione diretta</div>
-                          </>
-                        ) : 'Nessuno slot'}
-                      </td>
-                      <td className="py-4 pr-3">
-                        <span className="font-semibold">
-                          {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
-                        </span>
-                        {matchBreakdown && (
-                          <div className="mt-1 space-y-0.5 text-xs">
-                            {([
-                              [player1?.name ?? match.player1Id, matchBreakdown.player1],
-                              [player2?.name ?? match.player2Id, matchBreakdown.player2],
-                            ] as const).map(([playerName, breakdown]) => (
-                              <div
-                                key={breakdown.playerId}
-                                className={`font-semibold ${
-                                  breakdown.totalPoints > 0
-                                    ? 'text-green-400'
-                                    : breakdown.totalPoints < 0
-                                      ? 'text-red-400'
-                                      : 'text-text-secondary'
-                                }`}
-                              >
-                                {playerName} {formatSignedPoints(breakdown.totalPoints)}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-4 pr-3 text-xs text-text-secondary">
-                        {myCompletedMatchesCount}
-                      </td>
-                      <td className="py-4 pr-3">
-                        <div className="flex flex-wrap gap-2">
-                          {matchBreakdown && (
-                            <button
-                              onClick={() => setSelectedMatchId(match.id)}
-                              className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold"
-                            >
-                              Dettaglio punti
-                            </button>
-                          )}
-                          {canEditMatchResult(match) && (
-                            <button
-                              onClick={() => openEditResult(match)}
-                              className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
-                            >
-                              {match.status === 'completed' ? 'Modifica risultato' : 'Inserisci risultato'}
-                            </button>
-                          )}
-                          {canEditMatchResult(match) && match.status === 'completed' && (
-                            <button
-                              onClick={() => handleResetResult(match)}
-                              className="px-3 py-1 rounded bg-primary border border-tertiary text-xs font-semibold"
-                            >
-                              Ripristina
-                            </button>
-                          )}
-                          {canEditMatchResult(match) && (
-                            <button
-                              onClick={() => openDeleteMatchModal(match)}
-                              className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
-                            >
-                              Elimina
-                            </button>
-                          )}
-                          {match.status === 'scheduled' && (() => {
-                            const isParticipantMatch = !!(loggedInPlayerId && (match.player1Id === loggedInPlayerId || match.player2Id === loggedInPlayerId));
-                            const opponentId = loggedInPlayerId === match.player1Id ? match.player2Id : match.player1Id;
-                            const opponent = playerMap.get(opponentId);
-                            const opponentPhone = normalizeWhatsAppPhone(opponent?.phone);
-                            const reminderMessage = encodeURIComponent(
-                              buildWhatsAppReminderMessage(currentPlayer?.name ?? 'il giocatore', match.scheduledTime, match.location, match.field)
-                            );
-                            const whatsappReminderLink = opponentPhone ? `https://wa.me/${opponentPhone}?text=${reminderMessage}` : null;
-                            const reminderDisabledReason = !isParticipantMatch
-                              ? 'Puoi inviare promemoria solo per le tue partite prenotate.'
-                              : !opponentPhone
-                                ? 'Numero WhatsApp avversario non disponibile.'
-                                : '';
-
-                            return whatsappReminderLink && isParticipantMatch ? (
-                              <a
-                                href={whatsappReminderLink}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
-                              >
-                                Promemoria WhatsApp
-                              </a>
-                            ) : (
-                              <button
-                                disabled
-                                title={reminderDisabledReason}
-                                className="px-3 py-1 rounded bg-green-600 text-white text-xs font-semibold opacity-50 cursor-not-allowed"
-                              >
-                                Promemoria WhatsApp
-                              </button>
-                            );
-                          })()}
-                        </div>
-                      </td>
-                    </tr>
-                  );
+              const visibleMatches = rankingData.matches
+                .slice()
+                .filter(match => {
+                  if (matchesSubTab === 'booked') {
+                    return match.status === 'scheduled' && (isOrganizer || isMyMatch(match));
+                  }
+                  if (matchesSubTab === 'completed_mine') {
+                    return match.status === 'completed' && isMyMatch(match);
+                  }
+                  return match.status === 'completed';
+                })
+                .sort((a, b) => {
+                  const aTime = new Date(a.completedAt ?? a.scheduledTime ?? 0).getTime();
+                  const bTime = new Date(b.completedAt ?? b.scheduledTime ?? 0).getTime();
+                  return bTime - aTime;
                 });
-              })()}
-            </tbody>
-            </table>
+
+              const myCompletedMatchesCount = loggedInPlayerId
+                ? rankingData.matches.filter(m =>
+                    m.status === 'completed' &&
+                    (m.player1Id === loggedInPlayerId || m.player2Id === loggedInPlayerId)
+                  ).length
+                : 0;
+
+              const emptyMessage = matchesSubTab === 'booked'
+                ? 'Nessuna partita prenotata.'
+                : matchesSubTab === 'completed_mine'
+                  ? 'Nessuna partita completata.'
+                  : 'Nessuna partita completata nel ranking.';
+
+              /* ── Render match action buttons ── */
+              const renderMatchActions = (match: Match) => {
+                const matchBreakdown = matchBreakdowns.get(match.id);
+                const player2 = playerMap.get(match.player2Id);
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    {matchBreakdown && (
+                      <button
+                        onClick={() => setSelectedMatchId(match.id)}
+                        className="px-3 py-1 rounded bg-accent hover:bg-accent/80 text-white text-xs font-semibold"
+                      >
+                        Dettaglio punti
+                      </button>
+                    )}
+                    {canEditMatchResult(match) && (
+                      <button
+                        onClick={() => openEditResult(match)}
+                        className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
+                      >
+                        {match.status === 'completed' ? 'Modifica risultato' : 'Inserisci risultato'}
+                      </button>
+                    )}
+                    {canEditMatchResult(match) && match.status === 'completed' && (
+                      <button
+                        onClick={() => handleResetResult(match)}
+                        className="px-3 py-1 rounded bg-primary border border-tertiary text-xs font-semibold"
+                      >
+                        Ripristina
+                      </button>
+                    )}
+                    {canEditMatchResult(match) && (
+                      <button
+                        onClick={() => openDeleteMatchModal(match)}
+                        className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold"
+                      >
+                        Elimina
+                      </button>
+                    )}
+                    {match.status === 'scheduled' && (() => {
+                      const isParticipantMatch = !!(loggedInPlayerId && (match.player1Id === loggedInPlayerId || match.player2Id === loggedInPlayerId));
+                      const opponentId = loggedInPlayerId === match.player1Id ? match.player2Id : match.player1Id;
+                      const opponent = playerMap.get(opponentId);
+                      const opponentPhone = normalizeWhatsAppPhone(opponent?.phone);
+                      const reminderMessage = encodeURIComponent(
+                        buildWhatsAppReminderMessage(currentPlayer?.name ?? 'il giocatore', match.scheduledTime, match.location, match.field)
+                      );
+                      const whatsappReminderLink = opponentPhone ? `https://wa.me/${opponentPhone}?text=${reminderMessage}` : null;
+                      const reminderDisabledReason = !isParticipantMatch
+                        ? 'Puoi inviare promemoria solo per le tue partite prenotate.'
+                        : !opponentPhone
+                          ? 'Numero WhatsApp avversario non disponibile.'
+                          : '';
+
+                      return whatsappReminderLink && isParticipantMatch ? (
+                        <a
+                          href={whatsappReminderLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
+                        >
+                          Promemoria WhatsApp
+                        </a>
+                      ) : (
+                        <button
+                          disabled
+                          title={reminderDisabledReason}
+                          className="px-3 py-1 rounded bg-green-600 text-white text-xs font-semibold opacity-50 cursor-not-allowed"
+                        >
+                          Promemoria WhatsApp
+                        </button>
+                      );
+                    })()}
+                  </div>
+                );
+              };
+
+              return (
+                <>
+                  {/* ── Mobile card view ── */}
+                  <div className="sm:hidden space-y-3">
+                    {visibleMatches.length === 0 ? (
+                      <div className="py-8 text-center text-text-secondary">{emptyMessage}</div>
+                    ) : visibleMatches.map(match => {
+                      const player1 = playerMap.get(match.player1Id);
+                      const player2 = playerMap.get(match.player2Id);
+                      const matchBreakdown = matchBreakdowns.get(match.id);
+                      return (
+                        <div key={match.id} className="rounded-xl border border-tertiary/40 bg-primary/40 p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-text-primary">
+                                {player1?.name ?? match.player1Id} vs {player2?.name ?? match.player2Id}
+                              </div>
+                              <div className="text-xs text-text-secondary mt-0.5">
+                                {match.completedAt ? `Conclusa il ${formatDateTime(match.completedAt)}` : 'In attesa di risultato'}
+                              </div>
+                            </div>
+                            <span className={`shrink-0 px-2 py-1 rounded text-xs font-semibold ${match.status === 'completed' ? 'bg-green-600 text-white' : match.status === 'scheduled' ? 'bg-accent text-white' : 'bg-tertiary text-text-primary'}`}>
+                              {match.status === 'completed' ? 'Completata' : match.status === 'scheduled' ? 'Prenotata' : 'Da programmare'}
+                            </span>
+                          </div>
+                          {(match.slotId || match.scheduledTime) && (
+                            <div className="text-xs text-text-secondary">
+                              {match.scheduledTime && <div>{formatDateTime(match.scheduledTime)}</div>}
+                              {match.location && <div>{match.location}{match.field ? ` • ${match.field}` : ''}</div>}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold">
+                              {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
+                            </span>
+                            {matchBreakdown && (
+                              <div className="flex flex-wrap gap-2 text-xs">
+                                {([
+                                  [player1?.name ?? match.player1Id, matchBreakdown.player1],
+                                  [player2?.name ?? match.player2Id, matchBreakdown.player2],
+                                ] as const).map(([playerName, breakdown]) => (
+                                  <span
+                                    key={breakdown.playerId}
+                                    className={`font-semibold ${breakdown.totalPoints > 0 ? 'text-green-400' : breakdown.totalPoints < 0 ? 'text-red-400' : 'text-text-secondary'}`}
+                                  >
+                                    {playerName} {formatSignedPoints(breakdown.totalPoints)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {renderMatchActions(match)}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ── Desktop table ── */}
+                  <div className="hidden sm:block overflow-x-auto">
+                    <table className="w-full min-w-[920px] text-sm">
+                      <thead>
+                        <tr className="text-left border-b border-tertiary text-text-secondary">
+                          <th className="py-3 pr-3">Partita</th>
+                          <th className="py-3 pr-3">Stato</th>
+                          <th className="py-3 pr-3">Slot</th>
+                          <th className="py-3 pr-3">Risultato</th>
+                          <th className="py-3 pr-3">Partite giocate</th>
+                          <th className="py-3 pr-3">Azioni</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleMatches.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-text-secondary">
+                              {emptyMessage}
+                            </td>
+                          </tr>
+                        ) : visibleMatches.map(match => {
+                          const player1 = playerMap.get(match.player1Id);
+                          const player2 = playerMap.get(match.player2Id);
+                          const matchBreakdown = matchBreakdowns.get(match.id);
+
+                          return (
+                            <tr key={match.id} className="border-b border-tertiary/40 last:border-b-0 align-top">
+                              <td className="py-4 pr-3">
+                                <div className="font-semibold">{player1?.name ?? match.player1Id} vs {player2?.name ?? match.player2Id}</div>
+                                <div className="text-xs text-text-secondary mt-1">
+                                  {match.completedAt ? `Conclusa il ${formatDateTime(match.completedAt)}` : 'In attesa di risultato'}
+                                </div>
+                              </td>
+                              <td className="py-4 pr-3">
+                                <span className={`px-2 py-1 rounded text-xs font-semibold ${match.status === 'completed' ? 'bg-green-600 text-white' : match.status === 'scheduled' ? 'bg-accent text-white' : 'bg-tertiary text-text-primary'}`}>
+                                  {match.status === 'completed' ? 'Completata' : match.status === 'scheduled' ? 'Prenotata' : 'Da programmare'}
+                                </span>
+                              </td>
+                              <td className="py-4 pr-3 text-xs text-text-secondary">
+                                {match.slotId ? (
+                                  <>
+                                    <div>{formatDateTime(match.scheduledTime)}</div>
+                                    <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>
+                                  </>
+                                ) : match.scheduledTime ? (
+                                  <>
+                                    <div>{formatDateTime(match.scheduledTime)}</div>
+                                    {match.location && <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>}
+                                    <div className="text-text-secondary italic">Prenotazione diretta</div>
+                                  </>
+                                ) : 'Nessuno slot'}
+                              </td>
+                              <td className="py-4 pr-3">
+                                <span className="font-semibold">
+                                  {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
+                                </span>
+                                {matchBreakdown && (
+                                  <div className="mt-1 space-y-0.5 text-xs">
+                                    {([
+                                      [player1?.name ?? match.player1Id, matchBreakdown.player1],
+                                      [player2?.name ?? match.player2Id, matchBreakdown.player2],
+                                    ] as const).map(([playerName, breakdown]) => (
+                                      <div
+                                        key={breakdown.playerId}
+                                        className={`font-semibold ${
+                                          breakdown.totalPoints > 0
+                                            ? 'text-green-400'
+                                            : breakdown.totalPoints < 0
+                                              ? 'text-red-400'
+                                              : 'text-text-secondary'
+                                        }`}
+                                      >
+                                        {playerName} {formatSignedPoints(breakdown.totalPoints)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-4 pr-3 text-xs text-text-secondary">
+                                {myCompletedMatchesCount}
+                              </td>
+                              <td className="py-4 pr-3">
+                                {renderMatchActions(match)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
           </div>
           {matchActionError && (
             <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
@@ -2571,7 +2833,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </div>
               )}
 
-              <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+              <div className="bg-secondary rounded-xl shadow-lg p-4 sm:p-6">
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-4">
                   <div>
                     <h3 className="text-xl font-bold text-accent">Partite del Master</h3>
@@ -2584,140 +2846,245 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   </div>
                 </div>
 
-                <table className="w-full min-w-[1180px] text-sm">
-                  <thead>
-                    <tr className="text-left border-b border-tertiary text-text-secondary">
-                      <th className="py-3 pr-3">Match</th>
-                      <th className="py-3 pr-3">Stato</th>
-                      <th className="py-3 pr-3">Slot / Campo</th>
-                      <th className="py-3 pr-3">Prenotazione</th>
-                      <th className="py-3 pr-3">Risultato</th>
-                      <th className="py-3 pr-3">Azioni</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleMasterMatches.map(match => {
-                      const player1 = playerMap.get(match.player1Id ?? '');
-                      const player2 = playerMap.get(match.player2Id ?? '');
-                      const canManage = canManageMasterMatch(match);
-                      const opponent = loggedInPlayerId === match.player1Id ? player2 : loggedInPlayerId === match.player2Id ? player1 : null;
+                {/* ── Mobile card view ── */}
+                <div className="sm:hidden space-y-4">
+                  {visibleMasterMatches.map(match => {
+                    const player1 = playerMap.get(match.player1Id ?? '');
+                    const player2 = playerMap.get(match.player2Id ?? '');
+                    const canManage = canManageMasterMatch(match);
+                    const opponent = loggedInPlayerId === match.player1Id ? player2 : loggedInPlayerId === match.player2Id ? player1 : null;
 
-                      return (
-                        <tr key={match.id} className="border-b border-tertiary/40 last:border-b-0 align-top">
-                          <td className="py-4 pr-3">
+                    return (
+                      <div key={match.id} className="rounded-xl border border-tertiary/40 bg-primary/40 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
                             <div className="font-semibold">{match.label}</div>
-                            <div className="text-xs text-text-secondary mt-1">
+                            <div className="text-xs text-text-secondary mt-0.5">
                               {player1?.name ?? 'Da definire'} vs {player2?.name ?? 'Da definire'}
                             </div>
-                          </td>
-                          <td className="py-4 pr-3">
-                            <span className={`px-2 py-1 rounded text-xs font-semibold ${getMasterMatchStatusTone(match)}`}>
-                              {getMasterMatchStatusLabel(match)}
-                            </span>
-                          </td>
-                          <td className="py-4 pr-3 text-xs text-text-secondary">
-                            {match.slotId ? (
-                              <>
-                                <div>{formatDateTime(match.scheduledTime)}</div>
-                                <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>
-                              </>
-                            ) : (
-                              'Nessuno slot assegnato'
-                            )}
-                          </td>
-                          <td className="py-4 pr-3">
-                            {canManage && match.player1Id && match.player2Id && match.status !== 'completed' ? (
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={masterBookingSlotIdByMatch[match.id] ?? ''}
-                                  onChange={event => setMasterBookingSlotIdByMatch(previous => ({ ...previous, [match.id]: event.target.value }))}
-                                  className="min-w-[280px] bg-primary border border-tertiary rounded-lg p-2"
-                                >
-                                  <option value="">Seleziona slot</option>
-                                  {availableSlots.map(slot => (
-                                    <option key={slot.id} value={slot.id}>
-                                      {formatDateTime(slot.start)} • {slot.location} {slot.field ? `• ${slot.field}` : ''}
-                                    </option>
-                                  ))}
-                                </select>
-                                <button
-                                  onClick={() => handleScheduleMasterMatch(match)}
-                                  disabled={!masterBookingSlotIdByMatch[match.id]}
-                                  className="px-3 py-2 rounded bg-highlight text-white text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-                                >
-                                  {match.slotId ? 'Aggiorna' : 'Prenota'}
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-text-secondary">
-                                {match.player1Id && match.player2Id ? 'Disponibile solo ai giocatori coinvolti o all’organizzatore.' : 'Attendi il completamento del turno precedente.'}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-4 pr-3">
-                            {editingMasterMatchId === match.id ? (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={masterScoreForm.score1}
-                                  onChange={event => setMasterScoreForm(previous => ({ ...previous, score1: event.target.value }))}
-                                  className="w-16 bg-primary border border-tertiary rounded px-2 py-1"
-                                />
-                                <span>-</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={masterScoreForm.score2}
-                                  onChange={event => setMasterScoreForm(previous => ({ ...previous, score2: event.target.value }))}
-                                  className="w-16 bg-primary border border-tertiary rounded px-2 py-1"
-                                />
-                                <button
-                                  onClick={() => handleSaveMasterResult(match)}
-                                  className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
-                                >
-                                  Salva
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="font-semibold">
-                                {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-4 pr-3">
-                            <div className="flex flex-wrap gap-2">
-                              {canManage && match.player1Id && match.player2Id && editingMasterMatchId !== match.id && (
-                                <button
-                                  onClick={() => openEditMasterResult(match)}
-                                  className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
-                                >
-                                  {match.status === 'completed' ? 'Modifica risultato' : 'Pubblica risultato'}
-                                </button>
-                              )}
-                              {canManage && match.status === 'completed' && (
-                                <button
-                                  onClick={() => handleResetMasterResult(match)}
-                                  className="px-3 py-1 rounded bg-primary border border-tertiary text-xs font-semibold"
-                                >
-                                  Ripristina
-                                </button>
-                              )}
-                              {opponent && (
-                                <button
-                                  onClick={() => onPlayerContact(opponent)}
-                                  className="px-3 py-1 rounded bg-primary border border-tertiary text-xs font-semibold"
-                                >
-                                  Contatta avversario
-                                </button>
-                              )}
+                          </div>
+                          <span className={`shrink-0 px-2 py-1 rounded text-xs font-semibold ${getMasterMatchStatusTone(match)}`}>
+                            {getMasterMatchStatusLabel(match)}
+                          </span>
+                        </div>
+
+                        {match.slotId ? (
+                          <div className="text-xs text-text-secondary">
+                            <div>{formatDateTime(match.scheduledTime)}</div>
+                            <div>{match.location}{match.field ? ` • ${match.field}` : ''}</div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-text-secondary">Nessuno slot assegnato</div>
+                        )}
+
+                        {canManage && match.player1Id && match.player2Id && match.status !== 'completed' ? (
+                          <div className="flex flex-col gap-2">
+                            <select
+                              value={masterBookingSlotIdByMatch[match.id] ?? ''}
+                              onChange={event => setMasterBookingSlotIdByMatch(previous => ({ ...previous, [match.id]: event.target.value }))}
+                              className="w-full bg-primary border border-tertiary rounded-lg p-2 text-sm"
+                            >
+                              <option value="">Seleziona slot</option>
+                              {availableSlots.map(slot => (
+                                <option key={slot.id} value={slot.id}>
+                                  {formatDateTime(slot.start)} • {slot.location}{slot.field ? ` • ${slot.field}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => handleScheduleMasterMatch(match)}
+                              disabled={!masterBookingSlotIdByMatch[match.id]}
+                              className="w-full px-3 py-2 rounded bg-highlight text-white text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {match.slotId ? 'Aggiorna prenotazione' : 'Prenota slot'}
+                            </button>
+                          </div>
+                        ) : (!canManage || !match.player1Id || !match.player2Id) ? (
+                          <div className="text-xs text-text-secondary">
+                            {match.player1Id && match.player2Id ? 'Disponibile solo ai giocatori coinvolti o all\'organizzatore.' : 'Attendi il completamento del turno precedente.'}
+                          </div>
+                        ) : null}
+
+                        <div>
+                          {editingMasterMatchId === match.id ? (
+                            <div className="flex items-center gap-2">
+                              <input type="number" min="0" value={masterScoreForm.score1}
+                                onChange={event => setMasterScoreForm(previous => ({ ...previous, score1: event.target.value }))}
+                                className="w-16 bg-primary border border-tertiary rounded px-2 py-1 text-sm"
+                              />
+                              <span>-</span>
+                              <input type="number" min="0" value={masterScoreForm.score2}
+                                onChange={event => setMasterScoreForm(previous => ({ ...previous, score2: event.target.value }))}
+                                className="w-16 bg-primary border border-tertiary rounded px-2 py-1 text-sm"
+                              />
+                              <button onClick={() => handleSaveMasterResult(match)} className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold">Salva</button>
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          ) : (
+                            <div className="text-sm font-semibold">
+                              Risultato: {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {canManage && match.player1Id && match.player2Id && editingMasterMatchId !== match.id && (
+                            <button onClick={() => openEditMasterResult(match)} className="px-3 py-1.5 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold">
+                              {match.status === 'completed' ? 'Modifica risultato' : 'Pubblica risultato'}
+                            </button>
+                          )}
+                          {canManage && match.status === 'completed' && (
+                            <button onClick={() => handleResetMasterResult(match)} className="px-3 py-1.5 rounded bg-primary border border-tertiary text-xs font-semibold">
+                              Ripristina
+                            </button>
+                          )}
+                          {opponent && (
+                            <button onClick={() => onPlayerContact(opponent)} className="px-3 py-1.5 rounded bg-primary border border-tertiary text-xs font-semibold">
+                              Contatta avversario
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ── Desktop table ── */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full min-w-[1180px] text-sm">
+                    <thead>
+                      <tr className="text-left border-b border-tertiary text-text-secondary">
+                        <th className="py-3 pr-3">Match</th>
+                        <th className="py-3 pr-3">Stato</th>
+                        <th className="py-3 pr-3">Slot / Campo</th>
+                        <th className="py-3 pr-3">Prenotazione</th>
+                        <th className="py-3 pr-3">Risultato</th>
+                        <th className="py-3 pr-3">Azioni</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleMasterMatches.map(match => {
+                        const player1 = playerMap.get(match.player1Id ?? '');
+                        const player2 = playerMap.get(match.player2Id ?? '');
+                        const canManage = canManageMasterMatch(match);
+                        const opponent = loggedInPlayerId === match.player1Id ? player2 : loggedInPlayerId === match.player2Id ? player1 : null;
+
+                        return (
+                          <tr key={match.id} className="border-b border-tertiary/40 last:border-b-0 align-top">
+                            <td className="py-4 pr-3">
+                              <div className="font-semibold">{match.label}</div>
+                              <div className="text-xs text-text-secondary mt-1">
+                                {player1?.name ?? 'Da definire'} vs {player2?.name ?? 'Da definire'}
+                              </div>
+                            </td>
+                            <td className="py-4 pr-3">
+                              <span className={`px-2 py-1 rounded text-xs font-semibold ${getMasterMatchStatusTone(match)}`}>
+                                {getMasterMatchStatusLabel(match)}
+                              </span>
+                            </td>
+                            <td className="py-4 pr-3 text-xs text-text-secondary">
+                              {match.slotId ? (
+                                <>
+                                  <div>{formatDateTime(match.scheduledTime)}</div>
+                                  <div>{match.location} {match.field ? `• ${match.field}` : ''}</div>
+                                </>
+                              ) : (
+                                'Nessuno slot assegnato'
+                              )}
+                            </td>
+                            <td className="py-4 pr-3">
+                              {canManage && match.player1Id && match.player2Id && match.status !== 'completed' ? (
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={masterBookingSlotIdByMatch[match.id] ?? ''}
+                                    onChange={event => setMasterBookingSlotIdByMatch(previous => ({ ...previous, [match.id]: event.target.value }))}
+                                    className="min-w-[280px] bg-primary border border-tertiary rounded-lg p-2"
+                                  >
+                                    <option value="">Seleziona slot</option>
+                                    {availableSlots.map(slot => (
+                                      <option key={slot.id} value={slot.id}>
+                                        {formatDateTime(slot.start)} • {slot.location} {slot.field ? `• ${slot.field}` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => handleScheduleMasterMatch(match)}
+                                    disabled={!masterBookingSlotIdByMatch[match.id]}
+                                    className="px-3 py-2 rounded bg-highlight text-white text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                                  >
+                                    {match.slotId ? 'Aggiorna' : 'Prenota'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-text-secondary">
+                                  {match.player1Id && match.player2Id ? "Disponibile solo ai giocatori coinvolti o all'organizzatore." : 'Attendi il completamento del turno precedente.'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 pr-3">
+                              {editingMasterMatchId === match.id ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={masterScoreForm.score1}
+                                    onChange={event => setMasterScoreForm(previous => ({ ...previous, score1: event.target.value }))}
+                                    className="w-16 bg-primary border border-tertiary rounded px-2 py-1"
+                                  />
+                                  <span>-</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={masterScoreForm.score2}
+                                    onChange={event => setMasterScoreForm(previous => ({ ...previous, score2: event.target.value }))}
+                                    className="w-16 bg-primary border border-tertiary rounded px-2 py-1"
+                                  />
+                                  <button
+                                    onClick={() => handleSaveMasterResult(match)}
+                                    className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
+                                  >
+                                    Salva
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="font-semibold">
+                                  {match.score1 !== null && match.score2 !== null ? `${match.score1} - ${match.score2}` : '—'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 pr-3">
+                              <div className="flex flex-wrap gap-2">
+                                {canManage && match.player1Id && match.player2Id && editingMasterMatchId !== match.id && (
+                                  <button
+                                    onClick={() => openEditMasterResult(match)}
+                                    className="px-3 py-1 rounded bg-tertiary hover:bg-tertiary/90 text-text-primary text-xs font-semibold"
+                                  >
+                                    {match.status === 'completed' ? 'Modifica risultato' : 'Pubblica risultato'}
+                                  </button>
+                                )}
+                                {canManage && match.status === 'completed' && (
+                                  <button
+                                    onClick={() => handleResetMasterResult(match)}
+                                    className="px-3 py-1 rounded bg-primary border border-tertiary text-xs font-semibold"
+                                  >
+                                    Ripristina
+                                  </button>
+                                )}
+                                {opponent && (
+                                  <button
+                                    onClick={() => onPlayerContact(opponent)}
+                                    className="px-3 py-1 rounded bg-primary border border-tertiary text-xs font-semibold"
+                                  >
+                                    Contatta avversario
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </>
           )}
@@ -3781,15 +4148,15 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
             onClick={(e) => { if (e.target === e.currentTarget) setSelectedPlayerId(null); }}
           >
             <div className="bg-secondary rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="flex items-start justify-between gap-4 border-b border-tertiary/50 px-6 py-5">
-                <div className="flex items-center gap-4 min-w-0">
+              <div className="flex items-start justify-between gap-4 border-b border-tertiary/50 px-4 sm:px-6 py-4 sm:py-5">
+                <div className="flex items-center gap-3 min-w-0">
                   <img
                     src={selectedPlayerProfile.player.avatar}
                     alt={selectedPlayerProfile.player.name}
-                    className="w-16 h-16 rounded-full object-cover border-2 border-accent"
+                    className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-full object-cover border-2 border-accent"
                   />
                   <div className="min-w-0">
-                    <h3 className="text-2xl font-bold text-accent truncate">{selectedPlayerProfile.player.name}</h3>
+                    <h3 className="text-xl sm:text-2xl font-bold text-accent truncate">{selectedPlayerProfile.player.name}</h3>
                     <div className="mt-1 text-sm text-text-secondary">
                       Profilo ranking • {selectedPlayerProfile.history.length} partite completate
                     </div>
@@ -3797,14 +4164,14 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 </div>
                 <button
                   onClick={() => setSelectedPlayerId(null)}
-                  className="shrink-0 text-text-secondary hover:text-text-primary text-xl font-bold leading-none"
+                  className="shrink-0 text-text-secondary hover:text-text-primary text-xl font-bold leading-none p-1"
                   aria-label="Chiudi"
                 >
                   ✕
                 </button>
               </div>
 
-              <div className="overflow-y-auto px-6 py-5 space-y-6">
+              <div className="overflow-y-auto px-4 sm:px-6 py-4 sm:py-5 space-y-6">
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className="rounded-xl border border-tertiary/50 bg-primary/40 p-4">
                     <div className="text-xs uppercase tracking-wide text-text-secondary">Punteggio iniziale</div>
@@ -3902,7 +4269,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             </div>
                           </div>
 
-                          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)]">
+                          <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)]">
                             <div className="space-y-1 text-sm text-text-secondary">
                               <div>
                                 Risultato: <span className="font-semibold text-text-primary">{item.breakdown ? getMatchOutcomeLabel(item.breakdown.outcome) : 'Non disponibile'}</span>

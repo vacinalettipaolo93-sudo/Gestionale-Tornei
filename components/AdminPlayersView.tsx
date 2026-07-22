@@ -556,10 +556,10 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
         </label>
       </div>
 
-      <div className="bg-secondary rounded-xl shadow-lg p-6 overflow-x-auto">
+      <div className="bg-secondary rounded-xl shadow-lg p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h3 className="text-xl font-semibold">Giocatori globali ({sortedPlayers.length})</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full sm:w-auto items-center gap-2">
             <input
               type="search"
               value={playerSearchInput}
@@ -568,7 +568,7 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                 setPlayerSearchQuery(event.target.value);
               }}
               placeholder="Cerca giocatore per nome"
-              className="bg-primary border border-tertiary rounded-lg p-2 text-sm min-w-[220px]"
+              className="flex-1 sm:flex-none bg-primary border border-tertiary rounded-lg p-2 text-sm sm:min-w-[220px]"
             />
             <button
               type="button"
@@ -587,140 +587,227 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
             {feedback.message}
           </div>
         )}
-        <table className="w-full min-w-[720px] text-sm">
-          <thead>
-            <tr className="text-left border-b border-tertiary text-text-secondary">
-              <th className="py-3 pr-3">Giocatore</th>
-              <th className="py-3 pr-3">Telefono</th>
-              <th className="py-3 pr-3">Punti livello</th>
-              <th className="py-3 pr-3">Ranking</th>
-              <th className="py-3 pr-3">Azioni</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredPlayers.map(player => (
-              <React.Fragment key={player.id}>
-                <tr className="border-b border-tertiary/40">
-                  <td className="py-3 pr-3 font-semibold">{player.name}</td>
-                  <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
-                  <td className="py-3 pr-3">
-                    <input
-                      type="number"
-                      min="0"
-                      value={eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0)}
-                      onChange={event => setEventPlayerPointsById(prev => ({ ...prev, [player.id]: event.target.value }))}
-                      onBlur={() => {
-                        void handleSaveLevelPoints(player);
-                      }}
-                      onKeyDown={event => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
+
+        {/* ── Mobile card view ── */}
+        <div className="sm:hidden space-y-3">
+          {filteredPlayers.length === 0 ? (
+            <div className="py-8 text-center text-text-secondary">Nessun giocatore trovato.</div>
+          ) : filteredPlayers.map(player => (
+            <div key={player.id} className="rounded-xl border border-tertiary/40 bg-primary/40 p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-text-primary">{player.name}</div>
+                  <div className="text-xs text-text-secondary mt-0.5">{player.phone || '—'}</div>
+                </div>
+                {participantIdSet.has(player.id) ? (
+                  <span className="shrink-0 px-2 py-1 rounded bg-green-600 text-white text-xs font-semibold">Nel ranking</span>
+                ) : null}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-text-secondary shrink-0">Punti:</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0)}
+                  onChange={event => setEventPlayerPointsById(prev => ({ ...prev, [player.id]: event.target.value }))}
+                  onBlur={() => { void handleSaveLevelPoints(player); }}
+                  onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void handleSaveLevelPoints(player); } }}
+                  className="w-24 bg-primary border border-tertiary rounded px-2 py-1 text-sm"
+                />
+                {!participantIdSet.has(player.id) && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const rawValue = eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0);
+                        if (rawValue.trim() === '') { setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` }); return; }
+                        const startPoints = Number(rawValue);
+                        if (!Number.isFinite(startPoints) || startPoints < 0) { setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` }); return; }
+                        await addPlayerToRanking(player, startPoints);
+                      } catch (error) {
+                        console.error('Errore aggiunta giocatore ranking', error);
+                        setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} al ranking.` });
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded bg-highlight text-white text-xs font-semibold"
+                  >
+                    Aggiungi
+                  </button>
+                )}
+              </div>
+
+              {editingPlayer?.id === player.id && (
+                <div className="rounded-xl border border-highlight/30 bg-secondary p-4 space-y-3">
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="text-sm text-text-secondary block mb-1">Nome</label>
+                      <input value={editPlayerName} onChange={event => setEditPlayerName(event.target.value)} className="w-full bg-primary border border-tertiary rounded p-2" />
+                    </div>
+                    <div>
+                      <label className="text-sm text-text-secondary block mb-1">Telefono</label>
+                      <input value={editPlayerPhone} onChange={event => setEditPlayerPhone(event.target.value)} className="w-full bg-primary border border-tertiary rounded p-2" />
+                    </div>
+                    <div>
+                      <label className="text-sm text-text-secondary block mb-1">Valore iniziale</label>
+                      <input type="number" min="0" value={editPlayerPoints} onChange={event => setEditPlayerPoints(event.target.value)} className="w-full bg-primary border border-tertiary rounded p-2" />
+                    </div>
+                  </div>
+                  <div className="flex gap-3 justify-end">
+                    <button onClick={closeEditPlayer} className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold text-sm">Annulla</button>
+                    <button onClick={handleSaveEditedPlayer} disabled={editLoading} className="px-4 py-2 rounded bg-highlight text-white font-semibold text-sm">
+                      {editLoading ? 'Salvataggio...' : 'Salva'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button onClick={() => openEditPlayer(player)} className="px-3 py-1.5 rounded bg-highlight text-white text-xs font-semibold">Modifica</button>
+                <button onClick={() => void handleDeletePlayer(player)} disabled={deletingPlayerId === player.id} className="px-3 py-1.5 rounded bg-red-600 text-white text-xs font-semibold disabled:opacity-60">
+                  {deletingPlayerId === player.id ? 'Eliminazione...' : 'Elimina'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Desktop table ── */}
+        <div className="hidden sm:block overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="text-left border-b border-tertiary text-text-secondary">
+                <th className="py-3 pr-3">Giocatore</th>
+                <th className="py-3 pr-3">Telefono</th>
+                <th className="py-3 pr-3">Punti livello</th>
+                <th className="py-3 pr-3">Ranking</th>
+                <th className="py-3 pr-3">Azioni</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPlayers.map(player => (
+                <React.Fragment key={player.id}>
+                  <tr className="border-b border-tertiary/40">
+                    <td className="py-3 pr-3 font-semibold">{player.name}</td>
+                    <td className="py-3 pr-3 text-text-secondary">{player.phone || '—'}</td>
+                    <td className="py-3 pr-3">
+                      <input
+                        type="number"
+                        min="0"
+                        value={eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0)}
+                        onChange={event => setEventPlayerPointsById(prev => ({ ...prev, [player.id]: event.target.value }))}
+                        onBlur={() => {
                           void handleSaveLevelPoints(player);
-                        }
-                      }}
-                      className="w-24 bg-primary border border-tertiary rounded px-2 py-1"
-                    />
-                  </td>
-                  <td className="py-3 pr-3">
-                    {participantIdSet.has(player.id) ? (
-                      <span className="px-2 py-1 rounded bg-green-600 text-white text-xs font-semibold">Nel ranking</span>
-                    ) : (
-                      <button
-                        onClick={async () => {
-                          try {
-                            const rawValue = eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0);
-                            if (rawValue.trim() === '') {
-                              setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
-                              return;
-                            }
-                            const startPoints = Number(rawValue);
-                            if (!Number.isFinite(startPoints) || startPoints < 0) {
-                              setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
-                              return;
-                            }
-                            await addPlayerToRanking(player, startPoints);
-                          } catch (error) {
-                            console.error('Errore aggiunta giocatore ranking', error);
-                            setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} al ranking.` });
+                        }}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            void handleSaveLevelPoints(player);
                           }
                         }}
-                        className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
-                      >
-                        Aggiungi al ranking
-                      </button>
-                    )}
-                  </td>
-                  <td className="py-3 pr-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => openEditPlayer(player)}
-                        className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
-                      >
-                        Modifica
-                      </button>
-                      <button
-                        onClick={() => void handleDeletePlayer(player)}
-                        disabled={deletingPlayerId === player.id}
-                        className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold disabled:opacity-60"
-                      >
-                        {deletingPlayerId === player.id ? 'Eliminazione...' : 'Elimina'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                {editingPlayer?.id === player.id && (
-                  <tr className="border-b border-tertiary/40 last:border-b-0">
-                    <td colSpan={5} className="pb-4 pt-1">
-                      <div className="rounded-xl border border-highlight/30 bg-primary/60 p-4">
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                          <div>
-                            <label className="text-sm text-text-secondary block mb-1">Nome</label>
-                            <input
-                              value={editPlayerName}
-                              onChange={event => setEditPlayerName(event.target.value)}
-                              className="w-full bg-primary border border-tertiary rounded p-2"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-sm text-text-secondary block mb-1">Telefono</label>
-                            <input
-                              value={editPlayerPhone}
-                              onChange={event => setEditPlayerPhone(event.target.value)}
-                              className="w-full bg-primary border border-tertiary rounded p-2"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-sm text-text-secondary block mb-1">Valore iniziale</label>
-                            <input
-                              type="number"
-                              min="0"
-                              value={editPlayerPoints}
-                              onChange={event => setEditPlayerPoints(event.target.value)}
-                              className="w-full bg-primary border border-tertiary rounded p-2"
-                            />
-                          </div>
-                        </div>
-                        <div className="flex justify-end gap-3 mt-4">
-                          <button onClick={closeEditPlayer} className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold">Annulla</button>
-                          <button onClick={handleSaveEditedPlayer} disabled={editLoading} className="px-4 py-2 rounded bg-highlight text-white font-semibold">
-                            {editLoading ? 'Salvataggio...' : 'Salva'}
-                          </button>
-                        </div>
+                        className="w-24 bg-primary border border-tertiary rounded px-2 py-1"
+                      />
+                    </td>
+                    <td className="py-3 pr-3">
+                      {participantIdSet.has(player.id) ? (
+                        <span className="px-2 py-1 rounded bg-green-600 text-white text-xs font-semibold">Nel ranking</span>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const rawValue = eventPlayerPointsById[player.id] ?? String(player.summerRankingStartPoints ?? 0);
+                              if (rawValue.trim() === '') {
+                                setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
+                                return;
+                              }
+                              const startPoints = Number(rawValue);
+                              if (!Number.isFinite(startPoints) || startPoints < 0) {
+                                setFeedback({ type: 'error', message: `Valore non valido per ${player.name}.` });
+                                return;
+                              }
+                              await addPlayerToRanking(player, startPoints);
+                            } catch (error) {
+                              console.error('Errore aggiunta giocatore ranking', error);
+                              setFeedback({ type: 'error', message: `Errore durante l'aggiunta di ${player.name} al ranking.` });
+                            }
+                          }}
+                          className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
+                        >
+                          Aggiungi al ranking
+                        </button>
+                      )}
+                    </td>
+                    <td className="py-3 pr-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => openEditPlayer(player)}
+                          className="px-3 py-1 rounded bg-highlight text-white text-xs font-semibold"
+                        >
+                          Modifica
+                        </button>
+                        <button
+                          onClick={() => void handleDeletePlayer(player)}
+                          disabled={deletingPlayerId === player.id}
+                          className="px-3 py-1 rounded bg-red-600 text-white text-xs font-semibold disabled:opacity-60"
+                        >
+                          {deletingPlayerId === player.id ? 'Eliminazione...' : 'Elimina'}
+                        </button>
                       </div>
                     </td>
                   </tr>
-                )}
-              </React.Fragment>
-            ))}
-            {filteredPlayers.length === 0 && (
-              <tr>
-                <td colSpan={5} className="py-8 text-center text-text-secondary">
-                  Nessun giocatore trovato.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                  {editingPlayer?.id === player.id && (
+                    <tr className="border-b border-tertiary/40 last:border-b-0">
+                      <td colSpan={5} className="pb-4 pt-1">
+                        <div className="rounded-xl border border-highlight/30 bg-primary/60 p-4">
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                            <div>
+                              <label className="text-sm text-text-secondary block mb-1">Nome</label>
+                              <input
+                                value={editPlayerName}
+                                onChange={event => setEditPlayerName(event.target.value)}
+                                className="w-full bg-primary border border-tertiary rounded p-2"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm text-text-secondary block mb-1">Telefono</label>
+                              <input
+                                value={editPlayerPhone}
+                                onChange={event => setEditPlayerPhone(event.target.value)}
+                                className="w-full bg-primary border border-tertiary rounded p-2"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-sm text-text-secondary block mb-1">Valore iniziale</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={editPlayerPoints}
+                                onChange={event => setEditPlayerPoints(event.target.value)}
+                                className="w-full bg-primary border border-tertiary rounded p-2"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-3 mt-4">
+                            <button onClick={closeEditPlayer} className="px-4 py-2 rounded bg-tertiary text-text-primary font-semibold">Annulla</button>
+                            <button onClick={handleSaveEditedPlayer} disabled={editLoading} className="px-4 py-2 rounded bg-highlight text-white font-semibold">
+                              {editLoading ? 'Salvataggio...' : 'Salva'}
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+              {filteredPlayers.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-text-secondary">
+                    Nessun giocatore trovato.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
