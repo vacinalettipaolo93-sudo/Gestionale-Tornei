@@ -39,6 +39,13 @@ import {
   removePlayerFromSummerRankingMaster,
   syncSummerRankingMasterMatches,
 } from '../utils/summerRanking';
+import {
+  getSummerRankingScrollTarget,
+  scrollSummerRankingRowIntoView,
+  shouldAutoScrollToCurrentPlayer,
+  SUMMER_RANKING_ROW_SCROLL_MARGIN,
+  waitForSummerRankingScrollTarget,
+} from '../utils/summerRankingAutoScroll';
 
 // Portal renders children directly in document.body, bypassing any ancestor CSS transforms
 // (such as animate-fadeIn) that would otherwise break position:fixed modal centering.
@@ -543,7 +550,8 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [matchesSubTab, setMatchesSubTab] = useState<'booked' | 'completed_mine' | 'all_completed'>('booked');
 
-  const currentPlayerRowRef = useRef<HTMLTableRowElement | null>(null);
+  const currentPlayerMobileRowRef = useRef<HTMLElement | null>(null);
+  const currentPlayerDesktopRowRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setRulesConfigForm(normalizeRulesConfig(rankingData.rulesConfig));
@@ -1455,11 +1463,20 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
     [filteredRanking, loggedInPlayerId],
   );
   useEffect(() => {
-    if (activeTab !== 'ranking' || !loggedInPlayerId || !currentPlayerVisibleInFilteredRanking) return;
-    const frame = requestAnimationFrame(() => {
-      currentPlayerRowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!shouldAutoScrollToCurrentPlayer({
+      activeTab,
+      loggedInPlayerId,
+      isCurrentPlayerVisible: currentPlayerVisibleInFilteredRanking,
+    })) return;
+
+    return waitForSummerRankingScrollTarget({
+      getTarget: () =>
+        getSummerRankingScrollTarget({
+          mobileRow: currentPlayerMobileRowRef.current,
+          desktopRow: currentPlayerDesktopRowRef.current,
+        }),
+      onTargetReady: scrollSummerRankingRowIntoView,
     });
-    return () => cancelAnimationFrame(frame);
   }, [activeTab, loggedInPlayerId, currentPlayerVisibleInFilteredRanking, filteredRanking.length]);
   const masterCandidatePlayers = useMemo(
     () => ranking.map(entry => entry.player),
@@ -1775,7 +1792,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                 return (
                   <div
                     key={entry.player.id}
-                    ref={node => { if (isCurrentPlayerRow) currentPlayerRowRef.current = node; }}
+                    ref={node => { if (isCurrentPlayerRow) currentPlayerMobileRowRef.current = node; }}
                     className={`rounded-xl border p-4 ${
                       isCurrentPlayerRow
                         ? 'bg-accent/20 border-l-4 border-accent/70'
@@ -1783,6 +1800,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                           ? getOpponentBandRowClass(opponentBand)
                           : 'bg-primary/40 border-tertiary/40'
                     }`}
+                    style={isCurrentPlayerRow ? { scrollMarginTop: SUMMER_RANKING_ROW_SCROLL_MARGIN } : undefined}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -1940,9 +1958,10 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                     <tr
                       key={entry.player.id}
                       ref={node => {
-                        if (isCurrentPlayerRow) currentPlayerRowRef.current = node;
+                        if (isCurrentPlayerRow) currentPlayerDesktopRowRef.current = node;
                       }}
                       className={`border-b border-tertiary/40 last:border-b-0 align-top transition-colors ${isCurrentPlayerRow ? 'bg-accent/20 ring-2 ring-inset ring-accent/70 border-l-4 border-accent' : opponentBand ? getOpponentBandRowClass(opponentBand) : ''}`}
+                      style={isCurrentPlayerRow ? { scrollMarginTop: SUMMER_RANKING_ROW_SCROLL_MARGIN } : undefined}
                     >
                       <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
                       <td className="py-4 pr-3">
