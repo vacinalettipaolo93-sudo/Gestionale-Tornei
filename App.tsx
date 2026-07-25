@@ -1,5 +1,5 @@
 // App.tsx
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { type Event, type Tournament, type User, type Player, type SummerRankingData, type Match, type SummerRankingMasterMatch } from './types';
 import EventView from './components/EventView';
 import TournamentView from './components/TournamentView';
@@ -20,6 +20,7 @@ import {
   normalizeRulesConfig,
 } from './utils/summerRanking';
 import { isEventConcluded } from './utils/eventStatus';
+import { clearPersistedAuthSession, getAuthSessionStorage, persistAuthSession, resolvePersistedAuthUser } from './utils/authSession.js';
 
 type View = 'dashboard' | 'event' | 'tournament' | 'playersAdmin';
 type EventType = NonNullable<Event['eventType']>;
@@ -141,6 +142,8 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [legacySummerRanking, setLegacySummerRanking] = useState<SummerRankingData | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isUsersLoaded, setIsUsersLoaded] = useState(false);
+  const [isAuthBootstrapComplete, setIsAuthBootstrapComplete] = useState(false);
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -164,6 +167,14 @@ const App: React.FC = () => {
 
   const isOrganizer = currentUser?.role === 'organizer';
   const loggedInPlayerId = currentUser?.playerId;
+
+  const resetNavigationState = useCallback(() => {
+    setCurrentView('dashboard');
+    setSelectedEvent(null);
+    setSelectedTournament(null);
+    setTournamentInitialTab(undefined);
+    setTournamentInitialGroupId(undefined);
+  }, []);
 
   const getEventRankingData = (event?: Event | null) => {
     const eventType = getEventType(event);
@@ -194,9 +205,18 @@ const App: React.FC = () => {
     const unsubPlayers = onSnapshot(collection(db, "players"), snapshot => {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player)));
     });
-    const unsubUsers = onSnapshot(collection(db, "users"), snapshot => {
-      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
-    });
+    const unsubUsers = onSnapshot(
+      collection(db, "users"),
+      snapshot => {
+        setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+        setIsUsersLoaded(true);
+      },
+      error => {
+        console.error('Errore lettura utenti', error);
+        setUsers([]);
+        setIsUsersLoaded(true);
+      },
+    );
 
     void getDoc(doc(db, "summerRankingNext", "main"))
       .then(snapshot => {
@@ -214,6 +234,37 @@ const App: React.FC = () => {
       unsubUsers();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isUsersLoaded || isAuthBootstrapComplete) return;
+
+    const { user } = resolvePersistedAuthUser({
+      storage: getAuthSessionStorage(),
+      users,
+    });
+
+    if (user) {
+      setCurrentUser(user);
+    }
+
+    setIsAuthBootstrapComplete(true);
+  }, [isAuthBootstrapComplete, isUsersLoaded, users]);
+
+  useEffect(() => {
+    if (!isAuthBootstrapComplete || !currentUser) return;
+
+    const matchedUser = users.find(user => user.id === currentUser.id) ?? null;
+    if (!matchedUser) {
+      clearPersistedAuthSession(getAuthSessionStorage());
+      setCurrentUser(null);
+      resetNavigationState();
+      return;
+    }
+
+    if (matchedUser !== currentUser) {
+      setCurrentUser(matchedUser);
+    }
+  }, [currentUser, isAuthBootstrapComplete, resetNavigationState, users]);
 
   const handleSelectEvent = (event: Event) => {
     setTournamentInitialTab(undefined);
@@ -401,13 +452,15 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLoginSuccess = (user: User) => {
+    setCurrentUser(user);
+    persistAuthSession(getAuthSessionStorage(), user);
+  };
+
   const handleLogout = () => {
+    clearPersistedAuthSession(getAuthSessionStorage());
     setCurrentUser(null);
-    setCurrentView('dashboard');
-    setSelectedEvent(null);
-    setSelectedTournament(null);
-    setTournamentInitialTab(undefined);
-    setTournamentInitialGroupId(undefined);
+    resetNavigationState();
   };
 
   const currentEventState = useMemo(() => events.find(e => e.id === selectedEvent?.id), [events, selectedEvent]);
@@ -421,8 +474,19 @@ const App: React.FC = () => {
   const ongoingEvents = useMemo(() => filteredEventsForOrganizer.filter(e => !isEventConcluded(e)), [filteredEventsForOrganizer]);
   const concludedEvents = useMemo(() => filteredEventsForOrganizer.filter(e => isEventConcluded(e)), [filteredEventsForOrganizer]);
 
+  if (!isAuthBootstrapComplete) {
+    return (
+      <div className="min-h-screen bg-primary text-text-primary flex flex-col items-center justify-center p-4 animate-fadeIn">
+        <div className="w-full max-w-sm bg-secondary p-8 rounded-xl shadow-2xl border border-tertiary/50 text-center">
+          <h2 className="text-xl font-bold mb-2">Ripristino sessione</h2>
+          <p className="text-text-secondary">Controllo accesso in corso...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
-    return <Login users={users} onLoginSuccess={setCurrentUser} />;
+    return <Login users={users} onLoginSuccess={handleLoginSuccess} />;
   }
 
   const renderContent = () => {
