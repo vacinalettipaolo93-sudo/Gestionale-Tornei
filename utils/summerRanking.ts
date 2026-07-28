@@ -646,7 +646,9 @@ const getSummerRankingMatchBreakdown = (
   const winnerResult = winnerWasFavorite
     ? (band === 'low' ? config.favoriteWinLow : band === 'medium' ? config.favoriteWinMedium : config.favoriteWinHigh)
     : (band === 'low' ? config.underdogWinLow : band === 'medium' ? config.underdogWinMedium : config.underdogWinHigh);
-  const loserResult = winnerWasFavorite
+  // The loser's penalty is based on the loser's own role (opposite of the winner's role).
+  const loserWasFavorite = !winnerWasFavorite;
+  const loserResult = loserWasFavorite
     ? (band === 'low' ? config.favoriteLossLow : band === 'medium' ? config.favoriteLossMedium : config.favoriteLossHigh)
     : (band === 'low' ? config.underdogLossLow : band === 'medium' ? config.underdogLossMedium : config.underdogLossHigh);
   const scoreDiff = Math.abs(match.score1 - match.score2);
@@ -873,7 +875,9 @@ export const calculateSummerRanking = (
     const winnerResult = winnerWasFavorite
       ? (band === 'low' ? cfg.favoriteWinLow : band === 'medium' ? cfg.favoriteWinMedium : cfg.favoriteWinHigh)
       : (band === 'low' ? cfg.underdogWinLow : band === 'medium' ? cfg.underdogWinMedium : cfg.underdogWinHigh);
-    const loserResult = winnerWasFavorite
+    // The loser's penalty is based on the loser's own role (opposite of the winner's role).
+    const loserWasFavorite = !winnerWasFavorite;
+    const loserResult = loserWasFavorite
       ? (band === 'low' ? cfg.favoriteLossLow : band === 'medium' ? cfg.favoriteLossMedium : cfg.favoriteLossHigh)
       : (band === 'low' ? cfg.underdogLossLow : band === 'medium' ? cfg.underdogLossMedium : cfg.underdogLossHigh);
     const gameDiffBonus = getGameDiffBonus(scoreDiff, cfg);
