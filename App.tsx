@@ -9,6 +9,7 @@ import ParticipantDashboard from './components/ParticipantDashboard';
 import ContactModal from './components/ContactModal';
 import SummerRankingView from './components/SummerRankingView';
 import AdminPlayersView from './components/AdminPlayersView';
+import AdminUsersModal from './components/AdminUsersModal';
 import { BackArrowIcon, NextTsBrandIcon, PencilIcon, PlusIcon, TrashIcon, UserCircleIcon, LogoutIcon } from './components/Icons';
 
 import { db } from "./firebase";
@@ -164,6 +165,7 @@ const App: React.FC = () => {
   const [renameEventError, setRenameEventError] = useState<string | null>(null);
   const [isRenamingEvent, setIsRenamingEvent] = useState(false);
   const [contactPlayer, setContactPlayer] = useState<Player | null>(null);
+  const [isAdminUsersModalOpen, setIsAdminUsersModalOpen] = useState(false);
 
   const isOrganizer = currentUser?.role === 'organizer';
   const loggedInPlayerId = currentUser?.playerId;
@@ -506,6 +508,12 @@ const App: React.FC = () => {
             <h2 className="text-3xl font-bold">I Miei Eventi</h2>
             {isOrganizer && (
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsAdminUsersModalOpen(true)}
+                  className="flex items-center gap-2 bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-all shadow-lg"
+                >
+                  Controllo Utenti
+                </button>
                 <button
                   onClick={() => {
                     resetCreateEventForm();
@@ -1016,6 +1024,13 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {isAdminUsersModalOpen && isOrganizer && (
+        <AdminUsersModal
+          users={users}
+          onClose={() => setIsAdminUsersModalOpen(false)}
+        />
       )}
     </div>
   );
