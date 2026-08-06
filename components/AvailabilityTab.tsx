@@ -391,7 +391,12 @@ export default function AvailabilityTab({ event, tournament, selectedGroup, logg
                 <tbody>
                   {participants.map(p => (
                     <tr key={p.id} className="odd:bg-primary/60">
-                      <td className="py-2 pr-4 font-medium">{p.name}</td>
+                      <td className="py-2 pr-4 font-medium">
+                        <div className="inline-flex items-center gap-2">
+                          <img src={p.avatar} alt={p.name} className="w-7 h-7 rounded-full object-cover" />
+                          <span>{p.name}</span>
+                        </div>
+                      </td>
                       {dateKeys.map(dk => {
                         const unavailable = isParticipantUnavailableOn(p.id, dk);
                         const slotsForDate = dateSlotsMap[dk] ?? [];

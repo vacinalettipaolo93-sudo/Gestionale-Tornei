@@ -899,6 +899,7 @@ const App: React.FC = () => {
           setUsers={setUsers}
           events={events}
           setEvents={setEvents}
+          initialTab="avatar"
           onClose={() => setIsProfileModalOpen(false)}
         />
       )}

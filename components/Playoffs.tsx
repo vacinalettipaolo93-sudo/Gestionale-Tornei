@@ -598,8 +598,11 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
     const isLoggedUser = player.id === loggedInPlayerId;
 
     return (
-      <span className={`truncate ${isWinner ? 'font-bold text-text-primary' : isLoser ? 'text-text-secondary/70 line-through' : 'text-text-secondary'} ${isLoggedUser ? 'text-accent font-bold' : ''}`}>
-        {player.name}
+      <span className="inline-flex items-center gap-2 min-w-0">
+        <img src={player.avatar} alt={player.name} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+        <span className={`truncate ${isWinner ? 'font-bold text-text-primary' : isLoser ? 'text-text-secondary/70 line-through' : 'text-text-secondary'} ${isLoggedUser ? 'text-accent font-bold' : ''}`}>
+          {player.name}
+        </span>
       </span>
     );
   };
@@ -636,7 +639,14 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
     <div className="bg-secondary p-2 md:p-6 rounded-xl shadow-lg">
       <div className="text-center mb-6">
         <h3 className="text-2xl font-bold text-accent">Tabellone Playoff</h3>
-        {winner && <div className="mt-2 text-lg text-yellow-400 font-bold animate-subtlePulse">🏆 Vincitore: {winner.name} 🏆</div>}
+        {winner && (
+          <div className="mt-2 text-lg text-yellow-400 font-bold animate-subtlePulse inline-flex items-center gap-2">
+            <span>🏆 Vincitore:</span>
+            <img src={winner.avatar} alt={winner.name} className="w-7 h-7 rounded-full object-cover" />
+            <span>{winner.name}</span>
+            <span>🏆</span>
+          </div>
+        )}
         {isOrganizer && <button onClick={() => setIsResetModalOpen(true)} className="mt-2 text-sm text-yellow-500 hover:text-yellow-400 underline">Modifica Tabellone</button>}
       </div>
 
@@ -684,13 +694,23 @@ const Playoffs: React.FC<PlayoffsProps> = ({ event, tournament, setEvents, isOrg
           <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-sm border border-tertiary">
             <h4 className="text-lg font-bold mb-4">Risultato Playoff</h4>
             <div className="flex items-center justify-between gap-4">
-              <span className="font-semibold">{getPlayer(editingMatch.player1Id)?.name}</span>
+              <span className="font-semibold inline-flex items-center gap-2">
+                {getPlayer(editingMatch.player1Id) && (
+                  <img src={getPlayer(editingMatch.player1Id)!.avatar} alt={getPlayer(editingMatch.player1Id)!.name} className="w-6 h-6 rounded-full object-cover" />
+                )}
+                {getPlayer(editingMatch.player1Id)?.name}
+              </span>
               <div className="flex gap-2">
                 <input type="number" value={score1} onChange={e => setScore1(e.target.value)} className="w-16 text-center bg-primary p-2 rounded-lg" />
                 <span>-</span>
                 <input type="number" value={score2} onChange={e => setScore2(e.target.value)} className="w-16 text-center bg-primary p-2 rounded-lg" />
               </div>
-              <span className="font-semibold">{getPlayer(editingMatch.player2Id)?.name}</span>
+              <span className="font-semibold inline-flex items-center gap-2">
+                {getPlayer(editingMatch.player2Id) && (
+                  <img src={getPlayer(editingMatch.player2Id)!.avatar} alt={getPlayer(editingMatch.player2Id)!.name} className="w-6 h-6 rounded-full object-cover" />
+                )}
+                {getPlayer(editingMatch.player2Id)?.name}
+              </span>
             </div>
             <div className="flex justify-end gap-4 mt-6">
               <button onClick={() => setEditingMatch(null)} className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors">Annulla</button>

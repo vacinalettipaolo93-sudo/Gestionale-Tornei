@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { type User, type Event } from '../types';
 import { FaceSmileIcon, LinkIcon, PhotoIcon, TrashIcon } from './Icons';
 import { collection, query, where, getDocs, updateDoc, doc } from "firebase/firestore";
@@ -7,6 +7,8 @@ import {
   createInitialsAvatar,
   validateImageFile,
   compressImageToDataUrl,
+  getCharacterAvatarPresets,
+  isSafeAvatarSource,
   ACCEPTED_IMAGE_EXTENSIONS,
 } from '../utils/avatar';
 
@@ -17,12 +19,13 @@ interface EditProfileModalProps {
   events: Event[];
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   onClose: () => void;
+  initialTab?: 'password' | 'avatar';
 }
 
-const EMOJIS = ['🏓', '🎾', '⚽', '🏆', '🥇', '😎', '💪', '🔥', '🚀', '🎯', '👑', '🤖'];
+type ConfirmAction = 'password' | 'avatar';
 
-const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUsers, events, setEvents, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'password' | 'avatar'>('password');
+const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUsers, events, setEvents, onClose, initialTab = 'password' }) => {
+  const [activeTab, setActiveTab] = useState<'password' | 'avatar'>(initialTab);
 
   // Password state
   const [oldPassword, setOldPassword] = useState('');
@@ -36,28 +39,28 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
   const [avatarError, setAvatarError] = useState('');
   const [avatarSuccess, setAvatarSuccess] = useState('');
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [pendingAvatar, setPendingAvatar] = useState<string | null>(null);
+  const [pendingAvatarLabel, setPendingAvatarLabel] = useState('');
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const characterAvatarPresets = useMemo(() => getCharacterAvatarPresets(), []);
 
-  // Persist password change to Firestore users collection (keeps existing local setUsers)
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError('');
-    setPasswordSuccess('');
-
+  const validatePasswordChange = () => {
     const currentUserState = users.find(u => u.id === user.id);
     if (!currentUserState || currentUserState.password !== oldPassword) {
-      setPasswordError('La vecchia password non è corretta.');
-      return;
+      return 'La vecchia password non è corretta.';
     }
     if (newPassword.length < 4) {
-      setPasswordError('La nuova password deve essere di almeno 4 caratteri.');
-      return;
+      return 'La nuova password deve essere di almeno 4 caratteri.';
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError('Le nuove password non coincidono.');
-      return;
+      return 'Le nuove password non coincidono.';
     }
+    return null;
+  };
 
+  // Persist password change to Firestore users collection (keeps existing local setUsers)
+  const savePasswordChange = async () => {
     try {
       setUsers(prevUsers =>
         prevUsers.map(u => (u.id === user.id ? { ...u, password: newPassword } : u))
@@ -91,6 +94,18 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
       console.error("Errore aggiornamento password:", err);
       setPasswordError('Errore durante il salvataggio della nuova password.');
     }
+  };
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+    const validationError = validatePasswordChange();
+    if (validationError) {
+      setPasswordError(validationError);
+      return;
+    }
+    setConfirmAction('password');
   };
 
   /** Persists the new avatar both in local state and in Firestore. */
@@ -147,26 +162,32 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
     setTimeout(() => setAvatarSuccess(''), 2000);
   };
 
-  const handleEmojiSelect = async (emoji: string) => {
+  const stageAvatar = (avatar: string, label: string) => {
+    setPendingAvatar(avatar);
+    setPendingAvatarLabel(label);
     setAvatarError('');
-    const safe = String(emoji)
-      .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><text x="50" y="50" font-size="80" text-anchor="middle" dominant-baseline="central" dy=".1em">${safe}</text></svg>`;
-    await persistAvatar(`data:image/svg+xml;base64,${btoa(svg)}`);
-    showAvatarSuccess();
+    setAvatarSuccess(`Anteprima pronta (${label}). Premi "Salva modifiche" per confermare.`);
   };
 
-  const handleUrlSubmit = async (e: React.FormEvent) => {
+  const handleCharacterAvatarSelect = (avatar: string, label: string) => {
+    setAvatarError('');
+    stageAvatar(avatar, label);
+  };
+
+  const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setAvatarError('');
     const trimmed = imageUrl.trim();
-    if (!trimmed) return;
-    await persistAvatar(trimmed);
+    if (!trimmed) {
+      setAvatarError('Inserisci un URL valido.');
+      return;
+    }
+    if (!isSafeAvatarSource(trimmed)) {
+      setAvatarError('URL non valido. Usa un link https/http o un\'immagine compatibile.');
+      return;
+    }
+    stageAvatar(trimmed, 'URL immagine');
     setImageUrl('');
-    showAvatarSuccess();
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -180,12 +201,10 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
-
     setAvatarLoading(true);
     try {
       const dataUrl = await compressImageToDataUrl(file);
-      await persistAvatar(dataUrl);
-      showAvatarSuccess('Foto caricata con successo!');
+      stageAvatar(dataUrl, `foto caricata (${file.name})`);
     } catch (err: any) {
       console.error("[EditProfileModal] Errore compressione/upload immagine:", err);
       setAvatarError('Errore durante il caricamento dell\'immagine. Riprova.');
@@ -195,19 +214,48 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
     }
   };
 
-  const handleRemovePhoto = async () => {
+  const handleRemovePhoto = () => {
     setAvatarError('');
     const playerName = events
       .flatMap(ev => ev.players)
       .find(p => p.id === user.playerId)?.name ?? user.username;
-    await persistAvatar(createInitialsAvatar(playerName));
-    showAvatarSuccess('Foto rimossa.');
+    stageAvatar(createInitialsAvatar(playerName), 'avatar base');
+  };
+
+  const handleSaveAvatarChanges = () => {
+    if (!pendingAvatar) return;
+    setConfirmAction('avatar');
+  };
+
+  const handleConfirmAction = async () => {
+    if (confirmAction === 'password') {
+      setConfirmAction(null);
+      await savePasswordChange();
+      return;
+    }
+    if (confirmAction === 'avatar' && pendingAvatar) {
+      setConfirmAction(null);
+      setAvatarLoading(true);
+      setAvatarError('');
+      try {
+        await persistAvatar(pendingAvatar);
+        setPendingAvatar(null);
+        showAvatarSuccess('Avatar aggiornato con successo!');
+      } catch (err: any) {
+        console.error('[EditProfileModal] Errore salvataggio avatar:', err);
+        setAvatarError('Errore durante il salvataggio avatar.');
+      } finally {
+        setAvatarLoading(false);
+      }
+    }
   };
 
   // Current avatar for preview
   const currentAvatar = user.playerId
     ? events.flatMap(ev => ev.players).find(p => p.id === user.playerId)?.avatar
     : undefined;
+  const avatarPreview = pendingAvatar ?? currentAvatar;
+  const hasPendingAvatarChanges = Boolean(pendingAvatar && pendingAvatar !== currentAvatar);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
@@ -258,9 +306,6 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
                 <div className="space-y-5 animate-fadeIn">
                   <div className="flex items-center gap-4">
                     <h4 className="text-lg font-bold">Personalizza il tuo Avatar</h4>
-                    {currentAvatar && (
-                      <img src={currentAvatar} alt="Il tuo avatar" className="w-14 h-14 rounded-full object-cover border-2 border-accent shadow" />
-                    )}
                   </div>
 
                   {/* Upload photo */}
@@ -292,7 +337,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
                   </div>
 
                   {/* Remove photo */}
-                  {currentAvatar && (
+                  {avatarPreview && (
                     <div>
                       <button
                         type="button"
@@ -305,22 +350,24 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
                     </div>
                   )}
 
-                  {/* Emoji picker */}
+                  {/* Character avatar picker */}
                   <div>
                     <h5 className="flex items-center gap-2 text-sm font-semibold text-text-secondary mb-2">
-                      <FaceSmileIcon className="w-5 h-5" /> Scegli un Emoji
+                      <FaceSmileIcon className="w-5 h-5" /> Scegli un personaggio (uomo/donna)
                     </h5>
-                    <div className="grid grid-cols-6 gap-2 bg-primary/50 p-3 rounded-lg">
-                      {EMOJIS.map(emoji => (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-primary/50 p-3 rounded-lg">
+                      {characterAvatarPresets.map(preset => (
                         <button
-                          key={emoji}
+                          key={preset.id}
                           type="button"
-                          onClick={() => handleEmojiSelect(emoji)}
+                          onClick={() => handleCharacterAvatarSelect(preset.avatar, `${preset.label} (${preset.gender === 'male' ? 'uomo' : 'donna'})`)}
                           disabled={avatarLoading}
-                          className="text-3xl rounded-lg hover:bg-tertiary transition-colors p-1 disabled:opacity-50"
-                          aria-label={`Scegli avatar emoji ${emoji}`}
+                          className={`rounded-lg border p-2 transition-colors disabled:opacity-50 ${pendingAvatar === preset.avatar ? 'border-accent bg-tertiary/80' : 'border-tertiary hover:bg-tertiary/40'}`}
+                          aria-label={`Scegli avatar ${preset.label}`}
                         >
-                          {emoji}
+                          <img src={preset.avatar} alt={`Avatar ${preset.label}`} className="w-12 h-12 rounded-full object-cover mx-auto mb-2" />
+                          <div className="text-xs text-center font-semibold">{preset.label}</div>
+                          <div className="text-[11px] text-text-secondary text-center">{preset.gender === 'male' ? 'Uomo' : 'Donna'}</div>
                         </button>
                       ))}
                     </div>
@@ -348,7 +395,15 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
                   {avatarError && <p className="text-sm text-red-400">{avatarError}</p>}
                   {avatarSuccess && <p className="text-sm text-green-400">{avatarSuccess}</p>}
 
-                  <div className="flex justify-end pt-2">
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveAvatarChanges}
+                      disabled={!hasPendingAvatarChanges || avatarLoading}
+                      className="bg-highlight hover:bg-highlight/80 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Salva Modifiche
+                    </button>
                     <button type="button" onClick={onClose} className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors">Chiudi</button>
                   </div>
                 </div>
@@ -364,9 +419,38 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
           )}
         </div>
       </div>
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-[60] p-4">
+          <div className="bg-secondary rounded-xl shadow-2xl w-full max-w-md border border-tertiary p-6">
+            <h4 className="text-lg font-bold mb-2">
+              {confirmAction === 'password' ? 'Conferma cambio password' : 'Conferma modifica avatar'}
+            </h4>
+            <p className="text-sm text-text-secondary">
+              {confirmAction === 'password'
+                ? 'Stai per salvare la nuova password. Questa è l’ultima conferma prima del salvataggio definitivo.'
+                : `Stai per salvare ${pendingAvatarLabel || 'la modifica avatar'}. Questa è l’ultima conferma prima del salvataggio definitivo.`}
+            </p>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAction}
+                className="bg-highlight hover:bg-highlight/80 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+              >
+                Conferma
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default EditProfileModal;
-
