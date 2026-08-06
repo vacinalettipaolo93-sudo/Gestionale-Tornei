@@ -41,8 +41,16 @@ const ParticipantsTab: React.FC<ParticipantsTabProps> = ({ event, tournament, lo
           return (
             <li key={teamId} className="bg-primary rounded-lg p-3 hover:bg-primary/80 transition">
               <div className="font-medium text-white">{team.name}</div>
-              <div className="text-sm text-text-secondary mt-1">
-                {player1?.name ?? 'Giocatore 1'} / {player2?.name ?? 'Giocatore 2'}
+              <div className="text-sm text-text-secondary mt-2 flex items-center gap-3 flex-wrap">
+                <span className="inline-flex items-center gap-2">
+                  {player1 && <img src={player1.avatar} alt={player1.name} className="w-6 h-6 rounded-full object-cover" />}
+                  <span>{player1?.name ?? 'Giocatore 1'}</span>
+                </span>
+                <span>/</span>
+                <span className="inline-flex items-center gap-2">
+                  {player2 && <img src={player2.avatar} alt={player2.name} className="w-6 h-6 rounded-full object-cover" />}
+                  <span>{player2?.name ?? 'Giocatore 2'}</span>
+                </span>
               </div>
             </li>
           );
@@ -53,7 +61,10 @@ const ParticipantsTab: React.FC<ParticipantsTabProps> = ({ event, tournament, lo
           const whatsappLink = phone ? `https://wa.me/${phone}` : undefined;
           return (
             <li key={pid} className="bg-primary rounded-lg p-3 flex items-center justify-between hover:bg-primary/80 transition">
-              <span className="font-medium text-white">{player.name}</span>
+              <span className="font-medium text-white inline-flex items-center gap-2">
+                <img src={player.avatar} alt={player.name} className="w-7 h-7 rounded-full object-cover" />
+                {player.name}
+              </span>
               {whatsappLink && (
                 <a
                   href={whatsappLink}

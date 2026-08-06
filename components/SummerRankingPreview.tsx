@@ -47,7 +47,12 @@ const SummerRankingPreview: React.FC<SummerRankingPreviewProps> = ({ players, ma
             {ranking.length > 0 ? ranking.map(entry => (
               <tr key={entry.player.id} className="border-b border-tertiary/40 last:border-b-0">
                 <td className="py-3 pr-3 font-bold text-accent">{entry.rank}</td>
-                <td className="py-3 pr-3 font-semibold">{entry.player.name}</td>
+                <td className="py-3 pr-3 font-semibold">
+                  <div className="inline-flex items-center gap-2">
+                    <img src={entry.player.avatar} alt={entry.player.name} className="w-7 h-7 rounded-full object-cover" />
+                    <span>{entry.player.name}</span>
+                  </div>
+                </td>
                 <td className="py-3 pr-3 font-bold">{entry.points}</td>
                 <td className="py-3 pr-3">
                   <div className="flex items-center gap-2">
