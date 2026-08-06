@@ -1,12 +1,5 @@
 import { type Event, type User, type Player } from '../types';
-
-const createInitialsAvatar = (name: string): string => {
-  const initials = name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
-  const colors = ['#8b5cf6', '#22d3ee', '#f59e0b', '#10b981', '#ef4444', '#3b82f6'];
-  const color = colors[initials.charCodeAt(0) % colors.length];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><rect width="100" height="100" fill="${color}"/><text x="50" y="50" font-family="Arial, sans-serif" font-size="50" fill="white" text-anchor="middle" dominant-baseline="central" dy=".1em">${initials}</text></svg>`;
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
-};
+import { createInitialsAvatar } from '../utils/avatar';
 
 
 export const MOCK_EVENTS: Event[] = [
