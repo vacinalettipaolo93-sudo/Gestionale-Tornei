@@ -848,9 +848,27 @@ const App: React.FC = () => {
               Accesso come: <strong className="text-text-primary">{currentUser.username}</strong>
             </span>
 
-            <button onClick={() => setIsProfileModalOpen(true)} className="text-text-secondary hover:text-text-primary transition-colors">
-              <UserCircleIcon className="w-7 h-7" />
-            </button>
+            <button
+                onClick={() => setIsProfileModalOpen(true)}
+                className="relative group focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-full"
+                title="Modifica profilo"
+                aria-label="Apri profilo"
+              >
+                {(() => {
+                  const playerAvatar = loggedInPlayerId
+                    ? events.flatMap(ev => ev.players ?? []).find(p => p.id === loggedInPlayerId)?.avatar
+                    : undefined;
+                  return playerAvatar ? (
+                    <img
+                      src={playerAvatar}
+                      alt="Il tuo avatar"
+                      className="w-8 h-8 rounded-full object-cover border-2 border-transparent group-hover:border-accent transition-colors"
+                    />
+                  ) : (
+                    <UserCircleIcon className="w-7 h-7 text-text-secondary group-hover:text-text-primary transition-colors" />
+                  );
+                })()}
+              </button>
 
             <button onClick={handleLogout} className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors">
               <LogoutIcon className="w-6 h-6" />

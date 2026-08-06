@@ -1803,7 +1803,13 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                     style={isCurrentPlayerRow ? { scrollMarginTop: SUMMER_RANKING_ROW_SCROLL_MARGIN } : undefined}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
+                      <div className="flex items-start gap-2 min-w-0">
+                        <img
+                          src={entry.player.avatar}
+                          alt={entry.player.name}
+                          className="w-8 h-8 rounded-full object-cover flex-shrink-0 mt-0.5"
+                        />
+                        <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-xl font-bold text-accent">#{entry.rank}</span>
                           <button
@@ -1843,6 +1849,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                             </button>
                           </div>
                         )}
+                      </div>
                       </div>
                       <div className="text-right shrink-0 text-xs text-text-secondary space-y-1">
                         <div className="font-semibold text-text-primary">{entry.wins}V {entry.draws}N {entry.losses}P</div>
@@ -1966,6 +1973,11 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                       <td className="py-4 pr-3 font-bold text-accent">{entry.rank}</td>
                       <td className="py-4 pr-3">
                         <div className="font-semibold flex items-center gap-2">
+                          <img
+                            src={entry.player.avatar}
+                            alt={entry.player.name}
+                            className="w-7 h-7 rounded-full object-cover flex-shrink-0"
+                          />
                           <button
                             type="button"
                             onClick={() => setSelectedPlayerId(entry.player.id)}
@@ -2161,7 +2173,9 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
               const hasPhone = !!player.phone?.trim();
               return (
                 <div key={player.id} className="flex items-center justify-between gap-3 rounded-xl border border-tertiary/40 bg-primary/40 p-4">
-                  <div>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img src={player.avatar} alt={player.name} className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+                    <div>
                     <button
                       type="button"
                       onClick={() => setSelectedPlayerId(player.id)}
@@ -2175,6 +2189,7 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                       ) : (
                         <>Inizio: {rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0} pt · Attuale: {rankingEntry?.points ?? rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0} pt</>
                       )}
+                    </div>
                     </div>
                   </div>
                   <div className="shrink-0">
@@ -2229,14 +2244,17 @@ const SummerRankingView: React.FC<SummerRankingViewProps> = ({
                   return (
                     <tr key={player.id} className="border-b border-tertiary/40 last:border-b-0">
                       <td className="py-3 pr-3 font-semibold">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPlayerId(player.id)}
-                          className="text-left hover:underline"
-                          title={`Apri il profilo di ${player.name}`}
-                        >
-                          {player.name}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <img src={player.avatar} alt={player.name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPlayerId(player.id)}
+                            className="text-left hover:underline"
+                            title={`Apri il profilo di ${player.name}`}
+                          >
+                            {player.name}
+                          </button>
+                        </div>
                       </td>
                       <td className="py-3 pr-3 text-text-secondary">{rankingEntry?.startingPoints ?? player.summerRankingStartPoints ?? 0}</td>
                       {isOrganizer ? (
