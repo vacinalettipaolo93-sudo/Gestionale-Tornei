@@ -8,6 +8,7 @@ import {
   validateImageFile,
   compressImageToDataUrl,
   getCharacterAvatarPresets,
+  isSafeAvatarSource,
   ACCEPTED_IMAGE_EXTENSIONS,
 } from '../utils/avatar';
 
@@ -181,6 +182,10 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
       setAvatarError('Inserisci un URL valido.');
       return;
     }
+    if (!isSafeAvatarSource(trimmed)) {
+      setAvatarError('URL non valido. Usa un link https/http o un\'immagine compatibile.');
+      return;
+    }
     stageAvatar(trimmed, 'URL immagine');
     setImageUrl('');
   };
@@ -301,9 +306,6 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, users, setUse
                 <div className="space-y-5 animate-fadeIn">
                   <div className="flex items-center gap-4">
                     <h4 className="text-lg font-bold">Personalizza il tuo Avatar</h4>
-                    {avatarPreview && (
-                      <img src={avatarPreview} alt="Anteprima avatar" className="w-14 h-14 rounded-full object-cover border-2 border-accent shadow" />
-                    )}
                   </div>
 
                   {/* Upload photo */}

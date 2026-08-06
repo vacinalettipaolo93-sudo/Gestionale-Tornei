@@ -111,6 +111,12 @@ export const ACCEPTED_IMAGE_EXTENSIONS = '.jpg,.jpeg,.png,.webp';
 /** Maximum raw file size for profile photo uploads (2 MB). */
 export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 
+const SAFE_AVATAR_SOURCE = /^(https?:\/\/|data:image\/|blob:)/i;
+
+export function isSafeAvatarSource(source: string): boolean {
+  return SAFE_AVATAR_SOURCE.test(source.trim());
+}
+
 /**
  * Validates an image file for upload.
  * Returns an error string or null when the file is acceptable.

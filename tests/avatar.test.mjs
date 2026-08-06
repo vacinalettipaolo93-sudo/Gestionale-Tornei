@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+const SAFE_AVATAR_SOURCE = /^(https?:\/\/|data:image\/|blob:)/i;
 
 function validateImageFile(file) {
   if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
@@ -22,6 +23,10 @@ function validateImageFile(file) {
     return `Il file è troppo grande (max 2 MB). Dimensione attuale: ${(file.size / 1024 / 1024).toFixed(1)} MB.`;
   }
   return null;
+}
+
+function isSafeAvatarSource(source) {
+  return SAFE_AVATAR_SOURCE.test(source.trim());
 }
 
 // Simulate Node environment for btoa (available globally in Node 16+)
@@ -176,4 +181,13 @@ test('getCharacterAvatarPresets: includes male and female presets', () => {
 test('getCharacterAvatarPresets: avatars are data URLs', () => {
   const presets = getCharacterAvatarPresets();
   assert.ok(presets.every(p => p.avatar.startsWith('data:image/svg+xml;base64,')));
+});
+
+test('isSafeAvatarSource: accepts https and data image sources', () => {
+  assert.equal(isSafeAvatarSource('https://example.com/avatar.jpg'), true);
+  assert.equal(isSafeAvatarSource('data:image/png;base64,AAAA'), true);
+});
+
+test('isSafeAvatarSource: rejects javascript URLs', () => {
+  assert.equal(isSafeAvatarSource('javascript:alert(1)'), false);
 });
