@@ -8,8 +8,14 @@ interface AdminUsersModalProps {
   onClose: () => void;
 }
 
-interface ResetState {
+type ActionType = 'editUsername' | 'changePassword' | 'resetPassword';
+
+interface ActionState {
   userId: string;
+  action: ActionType;
+  // editUsername fields
+  newUsername: string;
+  // password fields
   newPassword: string;
   confirmPassword: string;
   error: string | null;
@@ -18,8 +24,10 @@ interface ResetState {
   confirming: boolean;
 }
 
-const initialReset = (userId: string): ResetState => ({
+const initialAction = (userId: string, action: ActionType): ActionState => ({
   userId,
+  action,
+  newUsername: '',
   newPassword: '',
   confirmPassword: '',
   error: null,
@@ -29,69 +37,134 @@ const initialReset = (userId: string): ResetState => ({
 });
 
 const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ users, onClose }) => {
-  const [resetState, setResetState] = useState<ResetState | null>(null);
+  const [actionState, setActionState] = useState<ActionState | null>(null);
+  const [localUsers, setLocalUsers] = useState<User[]>(users);
 
-  const sortedUsers = [...users].sort((a, b) =>
+  const sortedUsers = [...localUsers].sort((a, b) =>
     a.username.localeCompare(b.username, 'it', { sensitivity: 'base' })
   );
 
-  const openReset = (userId: string) => {
-    setResetState(initialReset(userId));
+  const openAction = (userId: string, action: ActionType) => {
+    setActionState(initialAction(userId, action));
   };
 
-  const closeReset = () => {
-    setResetState(null);
+  const closeAction = () => {
+    setActionState(null);
   };
 
-  const handleResetChange = (field: 'newPassword' | 'confirmPassword', value: string) => {
-    setResetState(prev => prev ? { ...prev, [field]: value, error: null, success: false } : prev);
+  const handleChange = (
+    field: 'newUsername' | 'newPassword' | 'confirmPassword',
+    value: string
+  ) => {
+    setActionState(prev =>
+      prev ? { ...prev, [field]: value, error: null, success: false } : prev
+    );
   };
 
-  const handleResetSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resetState) return;
+    if (!actionState) return;
 
-    const { newPassword, confirmPassword } = resetState;
+    const { action, newUsername, newPassword, confirmPassword } = actionState;
 
-    if (!newPassword) {
-      setResetState(prev => prev ? { ...prev, error: 'La nuova password è obbligatoria.' } : prev);
-      return;
-    }
-    if (newPassword.length < 4) {
-      setResetState(prev => prev ? { ...prev, error: 'La password deve essere di almeno 4 caratteri.' } : prev);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setResetState(prev => prev ? { ...prev, error: 'Le password non coincidono.' } : prev);
-      return;
+    if (action === 'editUsername') {
+      if (!newUsername.trim()) {
+        setActionState(prev =>
+          prev ? { ...prev, error: 'Il nome utente è obbligatorio.' } : prev
+        );
+        return;
+      }
+      if (newUsername.trim().length < 3) {
+        setActionState(prev =>
+          prev ? { ...prev, error: 'Il nome utente deve essere di almeno 3 caratteri.' } : prev
+        );
+        return;
+      }
+      const duplicate = localUsers.find(
+        u => u.username.toLowerCase() === newUsername.trim().toLowerCase() && u.id !== actionState.userId
+      );
+      if (duplicate) {
+        setActionState(prev =>
+          prev ? { ...prev, error: 'Nome utente già in uso da un altro utente.' } : prev
+        );
+        return;
+      }
+    } else {
+      if (!newPassword) {
+        setActionState(prev =>
+          prev ? { ...prev, error: 'La nuova password è obbligatoria.' } : prev
+        );
+        return;
+      }
+      if (newPassword.length < 4) {
+        setActionState(prev =>
+          prev ? { ...prev, error: 'La password deve essere di almeno 4 caratteri.' } : prev
+        );
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setActionState(prev =>
+          prev ? { ...prev, error: 'Le password non coincidono.' } : prev
+        );
+        return;
+      }
     }
 
-    // Show confirmation step
-    setResetState(prev => prev ? { ...prev, confirming: true, error: null } : prev);
+    setActionState(prev => prev ? { ...prev, confirming: true, error: null } : prev);
   };
 
-  const handleConfirmReset = async () => {
-    if (!resetState) return;
+  const handleConfirm = async () => {
+    if (!actionState) return;
 
-    setResetState(prev => prev ? { ...prev, saving: true, error: null } : prev);
+    setActionState(prev => prev ? { ...prev, saving: true, error: null } : prev);
 
     try {
-      await updateDoc(doc(db, 'users', resetState.userId), {
-        password: resetState.newPassword,
-      });
-      setResetState(prev => prev ? { ...prev, saving: false, success: true, confirming: false } : prev);
+      if (actionState.action === 'editUsername') {
+        await updateDoc(doc(db, 'users', actionState.userId), {
+          username: actionState.newUsername.trim(),
+        });
+        setLocalUsers(prev =>
+          prev.map(u =>
+            u.id === actionState.userId
+              ? { ...u, username: actionState.newUsername.trim() }
+              : u
+          )
+        );
+      } else {
+        await updateDoc(doc(db, 'users', actionState.userId), {
+          password: actionState.newPassword,
+        });
+      }
+      setActionState(prev =>
+        prev ? { ...prev, saving: false, success: true, confirming: false } : prev
+      );
     } catch (err: any) {
-      setResetState(prev =>
-        prev ? { ...prev, saving: false, confirming: false, error: err?.message ?? 'Errore durante il salvataggio.' } : prev
+      setActionState(prev =>
+        prev
+          ? {
+              ...prev,
+              saving: false,
+              confirming: false,
+              error: err?.message ?? 'Errore durante il salvataggio.',
+            }
+          : prev
       );
     }
   };
 
   const handleCancelConfirm = () => {
-    setResetState(prev => prev ? { ...prev, confirming: false } : prev);
+    setActionState(prev => prev ? { ...prev, confirming: false } : prev);
   };
 
-  const activeUser = resetState ? users.find(u => u.id === resetState.userId) : null;
+  const activeUser = actionState
+    ? localUsers.find(u => u.id === actionState.userId)
+    : null;
+
+  const actionLabel = (action: ActionType) => {
+    if (action === 'editUsername') return 'Modifica username';
+    if (action === 'changePassword') return 'Modifica password';
+    return 'Reimposta password';
+  };
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 animate-fadeIn">
@@ -109,31 +182,47 @@ const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ users, onClose }) => 
 
         <p className="text-sm text-text-secondary mb-4">
           Elenco utenti in ordine alfabetico. Le password non vengono mostrate.
-          Puoi reimpostare la password di qualsiasi utente.
+          Puoi modificare il nome utente, cambiare la password o reimpostarla.
         </p>
 
         <div className="overflow-y-auto flex-1 space-y-2">
           {sortedUsers.map(user => (
             <div
               key={user.id}
-              className="flex items-center justify-between bg-primary rounded-lg px-4 py-3 border border-tertiary/50"
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-primary rounded-lg px-4 py-3 border border-tertiary/50 gap-2"
             >
-              <div>
-                <span className="font-semibold text-text-primary">{user.username}</span>
-                <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
-                  user.role === 'organizer'
-                    ? 'bg-highlight/20 text-highlight'
-                    : 'bg-tertiary text-text-secondary'
-                }`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-semibold text-text-primary truncate">{user.username}</span>
+                <span
+                  className={`shrink-0 text-xs px-2 py-0.5 rounded-full ${
+                    user.role === 'organizer'
+                      ? 'bg-highlight/20 text-highlight'
+                      : 'bg-tertiary text-text-secondary'
+                  }`}
+                >
                   {user.role === 'organizer' ? 'Organizzatore' : 'Partecipante'}
                 </span>
               </div>
-              <button
-                onClick={() => openReset(user.id)}
-                className="text-sm bg-accent/80 hover:bg-accent text-white font-semibold py-1.5 px-3 rounded-lg transition-colors"
-              >
-                Reimposta password
-              </button>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => openAction(user.id, 'editUsername')}
+                  className="text-xs bg-tertiary hover:bg-tertiary/80 text-text-primary font-semibold py-1.5 px-3 rounded-lg transition-colors"
+                >
+                  Username
+                </button>
+                <button
+                  onClick={() => openAction(user.id, 'changePassword')}
+                  className="text-xs bg-accent/80 hover:bg-accent text-white font-semibold py-1.5 px-3 rounded-lg transition-colors"
+                >
+                  Password
+                </button>
+                <button
+                  onClick={() => openAction(user.id, 'resetPassword')}
+                  className="text-xs bg-highlight/80 hover:bg-highlight text-white font-semibold py-1.5 px-3 rounded-lg transition-colors"
+                >
+                  Reset
+                </button>
+              </div>
             </div>
           ))}
 
@@ -143,88 +232,127 @@ const AdminUsersModal: React.FC<AdminUsersModalProps> = ({ users, onClose }) => 
         </div>
       </div>
 
-      {/* Reset password modal */}
-      {resetState && activeUser && (
+      {/* Action modal */}
+      {actionState && activeUser && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-60 animate-fadeIn">
           <div className="bg-secondary rounded-xl shadow-2xl p-6 w-full max-w-sm border border-tertiary">
-            {resetState.confirming ? (
+            {actionState.confirming ? (
               <>
-                <h5 className="text-base font-bold mb-3">Conferma modifica password</h5>
+                <h5 className="text-base font-bold mb-3">
+                  Conferma — {actionLabel(actionState.action)}
+                </h5>
                 <p className="text-sm text-text-secondary mb-4">
-                  Stai per reimpostare la password di{' '}
-                  <strong className="text-text-primary">{activeUser.username}</strong>.
-                  Questa operazione è irreversibile. Procedere?
+                  {actionState.action === 'editUsername' ? (
+                    <>
+                      Stai per cambiare il nome utente di{' '}
+                      <strong className="text-text-primary">{activeUser.username}</strong> in{' '}
+                      <strong className="text-text-primary">{actionState.newUsername.trim()}</strong>.
+                      Procedere?
+                    </>
+                  ) : (
+                    <>
+                      Stai per {actionState.action === 'resetPassword' ? 'reimpostare' : 'modificare'}{' '}
+                      la password di{' '}
+                      <strong className="text-text-primary">{activeUser.username}</strong>.
+                      Questa operazione è irreversibile. Procedere?
+                    </>
+                  )}
                 </p>
-                {resetState.error && (
-                  <p className="text-sm text-red-400 mb-3">{resetState.error}</p>
+                {actionState.error && (
+                  <p className="text-sm text-red-400 mb-3">{actionState.error}</p>
                 )}
                 <div className="flex justify-end gap-3">
                   <button
                     onClick={handleCancelConfirm}
-                    disabled={resetState.saving}
+                    disabled={actionState.saving}
                     className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors"
                   >
                     Annulla
                   </button>
                   <button
-                    onClick={handleConfirmReset}
-                    disabled={resetState.saving}
+                    onClick={handleConfirm}
+                    disabled={actionState.saving}
                     className="bg-highlight hover:bg-highlight/80 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
                   >
-                    {resetState.saving ? 'Salvataggio...' : 'Conferma'}
+                    {actionState.saving ? 'Salvataggio...' : 'Conferma'}
                   </button>
                 </div>
               </>
             ) : (
               <>
                 <h5 className="text-base font-bold mb-3">
-                  Reimposta password — <span className="text-accent">{activeUser.username}</span>
+                  {actionLabel(actionState.action)} —{' '}
+                  <span className="text-accent">{activeUser.username}</span>
                 </h5>
-                {resetState.success ? (
+                {actionState.success && (
                   <div className="text-sm text-green-400 mb-4">
-                    Password aggiornata con successo!
+                    {actionState.action === 'editUsername'
+                      ? 'Nome utente aggiornato con successo!'
+                      : 'Password aggiornata con successo!'}
                   </div>
-                ) : null}
-                <form onSubmit={handleResetSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-text-secondary mb-1">Nuova password</label>
-                    <input
-                      type="password"
-                      value={resetState.newPassword}
-                      onChange={e => handleResetChange('newPassword', e.target.value)}
-                      className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
-                      autoFocus
-                      disabled={resetState.saving}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-text-secondary mb-1">Conferma nuova password</label>
-                    <input
-                      type="password"
-                      value={resetState.confirmPassword}
-                      onChange={e => handleResetChange('confirmPassword', e.target.value)}
-                      className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
-                      disabled={resetState.saving}
-                    />
-                  </div>
-                  {resetState.error && (
-                    <p className="text-sm text-red-400">{resetState.error}</p>
+                )}
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  {actionState.action === 'editUsername' ? (
+                    <div>
+                      <label className="block text-sm text-text-secondary mb-1">
+                        Nuovo nome utente
+                      </label>
+                      <input
+                        type="text"
+                        value={actionState.newUsername}
+                        onChange={e => handleChange('newUsername', e.target.value)}
+                        className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
+                        autoFocus
+                        disabled={actionState.saving}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm text-text-secondary mb-1">
+                          Nuova password
+                        </label>
+                        <input
+                          type="password"
+                          value={actionState.newPassword}
+                          onChange={e => handleChange('newPassword', e.target.value)}
+                          className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
+                          autoFocus
+                          disabled={actionState.saving}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-text-secondary mb-1">
+                          Conferma nuova password
+                        </label>
+                        <input
+                          type="password"
+                          value={actionState.confirmPassword}
+                          onChange={e => handleChange('confirmPassword', e.target.value)}
+                          className="w-full bg-primary border border-tertiary rounded-lg p-2 text-text-primary focus:ring-2 focus:ring-accent focus:border-accent"
+                          disabled={actionState.saving}
+                        />
+                      </div>
+                    </>
+                  )}
+                  {actionState.error && (
+                    <p className="text-sm text-red-400">{actionState.error}</p>
                   )}
                   <div className="flex justify-end gap-3 mt-2">
                     <button
                       type="button"
-                      onClick={closeReset}
-                      disabled={resetState.saving}
+                      onClick={closeAction}
+                      disabled={actionState.saving}
                       className="bg-tertiary hover:bg-tertiary/80 text-text-primary font-bold py-2 px-4 rounded-lg transition-colors"
                     >
                       Annulla
                     </button>
                     <button
                       type="submit"
-                      disabled={resetState.saving}
+                      disabled={actionState.saving}
                       className="bg-highlight hover:bg-highlight/80 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition-colors"
                     >
-                      {resetState.saving ? 'Salvataggio...' : 'Salva'}
+                      {actionState.saving ? 'Salvataggio...' : 'Salva'}
                     </button>
                   </div>
                 </form>
