@@ -1,7 +1,7 @@
 import React from 'react';
 import { type Event } from '../types';
 import { calculateStandings } from '../utils/standings';
-import { calculateSummerRanking } from '../utils/summerRanking';
+import { calculateSummerRanking, normalizeRulesConfig } from '../utils/summerRanking';
 import { isEventConcluded } from '../utils/eventStatus';
 import { getTeamForPlayer, getTournamentCompetitors, getTournamentPadelTeams, isPadelEvent } from '../utils/padel';
 
@@ -32,7 +32,7 @@ const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({ events, hea
       const confirmedPlayers = Array.isArray(event.players)
         ? event.players.filter(player => player.status === 'confirmed' && participantIds.includes(player.id))
         : [];
-      const ranking = calculateSummerRanking(confirmedPlayers, Array.isArray(rankingData?.matches) ? rankingData.matches : []);
+      const ranking = calculateSummerRanking(confirmedPlayers, Array.isArray(rankingData?.matches) ? rankingData.matches : [], normalizeRulesConfig(rankingData?.rulesConfig));
       const myRanking = ranking.find(entry => entry.player.id === playerId);
       position = isInRanking && myRanking ? `${myRanking.rank}°` : '—';
       const myMatches = (rankingData?.matches ?? []).filter(match => match.player1Id === playerId || match.player2Id === playerId);
