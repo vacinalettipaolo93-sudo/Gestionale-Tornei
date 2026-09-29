@@ -5,6 +5,7 @@ import { type Event, type Player, type SummerRankingData } from '../types';
 import { removePlayerFromPadelIndividualMaster } from '../utils/padelIndividualRanking';
 import { removePlayerFromSummerRankingMaster } from '../utils/summerRanking';
 import { matchIncludesPlayer, normalizeRankingData, sanitizeRankingDataForFirestore } from '../utils/rankingEvent';
+import { removePlayerFromRankingEvent } from '../utils/eventPlayers.js';
 import { createInitialsAvatar } from '../utils/avatar';
 
 interface AdminPlayersViewProps {
@@ -12,6 +13,7 @@ interface AdminPlayersViewProps {
   events: Event[];
   rankingEvent: Event;
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
+  isOrganizer?: boolean;
 }
 
 const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
@@ -19,6 +21,7 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   events,
   rankingEvent,
   setEvents,
+  isOrganizer = false,
 }) => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerPhone, setNewPlayerPhone] = useState('');
@@ -36,6 +39,7 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   const [editPlayerPoints, setEditPlayerPoints] = useState('0');
   const [editLoading, setEditLoading] = useState(false);
   const [deletingPlayerId, setDeletingPlayerId] = useState<string | null>(null);
+  const [removingPlayerId, setRemovingPlayerId] = useState<string | null>(null);
 
   const sortedPlayers = useMemo(
     () => players.slice().sort((a, b) => a.name.localeCompare(b.name)),
@@ -57,6 +61,14 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
   const participantIdSet = useMemo(
     () => new Set(rankingParticipantIds),
     [rankingParticipantIds],
+  );
+  const currentRankingEvent = useMemo(
+    () => events.find(item => item.id === rankingEvent.id) ?? rankingEvent,
+    [events, rankingEvent],
+  );
+  const eventPlayerIdSet = useMemo(
+    () => new Set((currentRankingEvent.players ?? []).map(player => player.id)),
+    [currentRankingEvent.players],
   );
   const addPlayerToRankingEvent = async (player: Player, startPoints: number) => {
     const event = events.find(item => item.id === rankingEvent.id) ?? rankingEvent;
@@ -368,6 +380,66 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     }
   };
 
+  const handleRemovePlayerFromRankingEvent = async (player: Player) => {
+    if (!isOrganizer) {
+      setFeedback({ type: 'error', message: 'Solo l’organizzatore può rimuovere i giocatori dal torneo.' });
+      return;
+    }
+    if (removingPlayerId || deletingPlayerId) return;
+
+    const event = events.find(item => item.id === rankingEvent.id) ?? rankingEvent;
+    const result = removePlayerFromRankingEvent(event, player.id);
+
+    if (result.status === 'blocked') {
+      const reason = result.blockers.includes('matches')
+        ? 'ha già partite registrate in questo torneo'
+        : 'è già inserito in un girone di questo torneo';
+      setFeedback({
+        type: 'error',
+        message: `Impossibile rimuovere ${player.name}: ${reason}. Elimina prima i dati collegati per non perdere lo storico.`,
+      });
+      return;
+    }
+    if (result.status === 'not-associated') {
+      setFeedback({ type: 'success', message: `${player.name} non è più associato a questo torneo.` });
+      return;
+    }
+    if (!window.confirm(`Rimuovere ${player.name} solo da questo torneo? Il giocatore resterà nell’archivio globale e negli altri eventi.`)) return;
+
+    setRemovingPlayerId(player.id);
+    try {
+      const nextMaster = removePlayerFromSummerRankingMaster(result.rankingData?.master, player.id);
+      const nextPadelIndividualMaster = removePlayerFromPadelIndividualMaster(result.rankingData?.padelIndividualMaster, player.id);
+      const nextRankingData: SummerRankingData | undefined = result.rankingData
+        ? {
+          ...result.rankingData,
+          master: nextMaster,
+          padelIndividualMaster: nextPadelIndividualMaster,
+        }
+        : undefined;
+
+      await updateDoc(doc(db, 'events', event.id), {
+        players: result.players,
+        ...(nextRankingData ? { rankingData: sanitizeRankingDataForFirestore(nextRankingData, event.eventType) } : {}),
+      });
+
+      setEvents(prev =>
+        prev.map(item => item.id === event.id
+          ? { ...item, players: result.players, ...(nextRankingData ? { rankingData: nextRankingData } : {}) }
+          : item),
+      );
+      setFeedback({
+        type: 'success',
+        message: `${player.name} rimosso da questo torneo; resta disponibile nell’archivio globale.`,
+      });
+    } catch (error) {
+      console.error('Errore rimozione giocatore dal torneo', error);
+      setFeedback({ type: 'error', message: `Errore durante la rimozione di ${player.name} dal torneo.` });
+    } finally {
+      setRemovingPlayerId(null);
+    }
+  };
+
   const handleDeletePlayer = async (player: Player) => {
     if (!window.confirm(`Eliminare definitivamente ${player.name}?`)) return;
     setDeletingPlayerId(player.id);
@@ -620,8 +692,17 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                 </div>
               )}
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button onClick={() => openEditPlayer(player)} className="px-3 py-1.5 rounded bg-highlight text-white text-xs font-semibold">Modifica</button>
+                {isOrganizer && (participantIdSet.has(player.id) || eventPlayerIdSet.has(player.id)) && (
+                  <button
+                    onClick={() => void handleRemovePlayerFromRankingEvent(player)}
+                    disabled={removingPlayerId === player.id}
+                    className="px-3 py-1.5 rounded bg-tertiary text-text-primary text-xs font-semibold disabled:opacity-60"
+                  >
+                    {removingPlayerId === player.id ? 'Rimozione...' : 'Rimuovi dal torneo'}
+                  </button>
+                )}
                 <button onClick={() => void handleDeletePlayer(player)} disabled={deletingPlayerId === player.id} className="px-3 py-1.5 rounded bg-red-600 text-white text-xs font-semibold disabled:opacity-60">
                   {deletingPlayerId === player.id ? 'Eliminazione...' : 'Elimina'}
                 </button>
@@ -703,6 +784,15 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
                         >
                           Modifica
                         </button>
+                        {isOrganizer && (participantIdSet.has(player.id) || eventPlayerIdSet.has(player.id)) && (
+                          <button
+                            onClick={() => void handleRemovePlayerFromRankingEvent(player)}
+                            disabled={removingPlayerId === player.id}
+                            className="px-3 py-1 rounded bg-tertiary text-text-primary text-xs font-semibold disabled:opacity-60"
+                          >
+                            {removingPlayerId === player.id ? 'Rimozione...' : 'Rimuovi dal torneo'}
+                          </button>
+                        )}
                         <button
                           onClick={() => void handleDeletePlayer(player)}
                           disabled={deletingPlayerId === player.id}

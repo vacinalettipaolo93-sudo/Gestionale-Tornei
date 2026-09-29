@@ -783,6 +783,7 @@ const App: React.FC = () => {
           events={events}
           rankingEvent={currentEventState}
           setEvents={setEvents}
+          isOrganizer={isOrganizer}
         />
       );
     }
