@@ -334,7 +334,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     const s1 = Number(score1);
     const s2 = Number(score2);
     if (Number.isNaN(s1) || Number.isNaN(s2)) return;
-    const completedAt = match.completedAt || (match.status === 'completed' ? null : new Date().toISOString());
+    const completedAt = match.status === 'completed' ? match.completedAt : new Date().toISOString();
     const result = { score1: s1, score2: s2, status: 'completed' as const, ...(completedAt ? { completedAt } : {}) };
 
     // PLAYOFF
