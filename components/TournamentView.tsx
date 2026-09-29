@@ -334,6 +334,8 @@ const TournamentView: React.FC<TournamentViewProps> = ({
     const s1 = Number(score1);
     const s2 = Number(score2);
     if (Number.isNaN(s1) || Number.isNaN(s2)) return;
+    const completedAt = match.status === 'completed' ? match.completedAt : new Date().toISOString();
+    const result = { score1: s1, score2: s2, status: 'completed' as const, ...(completedAt ? { completedAt } : {}) };
 
     // PLAYOFF
     if (isPlayoffLeagueMatchId(match.id)) {
@@ -353,9 +355,9 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       // keep booking fields, set completed
       const currentIdx = playoffMatches.findIndex(m => m.id === match.id);
       if (currentIdx !== -1) {
-        playoffMatches[currentIdx] = { ...playoffMatches[currentIdx], score1: s1, score2: s2, status: 'completed' };
+        playoffMatches[currentIdx] = { ...playoffMatches[currentIdx], ...result };
       } else {
-        playoffMatches.push({ ...match, score1: s1, score2: s2, status: 'completed' });
+        playoffMatches.push({ ...match, ...result });
       }
 
       // ensure next exists if ready
@@ -420,9 +422,9 @@ const TournamentView: React.FC<TournamentViewProps> = ({
 
       const currentIdx = consolationMatches.findIndex(m => m.id === match.id);
       if (currentIdx !== -1) {
-        consolationMatches[currentIdx] = { ...consolationMatches[currentIdx], score1: s1, score2: s2, status: 'completed' };
+        consolationMatches[currentIdx] = { ...consolationMatches[currentIdx], ...result };
       } else {
-        consolationMatches.push({ ...match, score1: s1, score2: s2, status: 'completed' });
+        consolationMatches.push({ ...match, ...result });
       }
 
       const cm = bracketCopy.matches.find(m => m.id === consolationMatchId);
@@ -465,7 +467,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       if (g.id !== groupId) return g;
       return {
         ...g,
-        matches: g.matches.map(m => m.id === match.id ? { ...m, ...match, score1: s1, score2: s2, status: 'completed' } : m)
+        matches: g.matches.map(m => m.id === match.id ? { ...m, ...match, ...result } : m)
       };
     });
 
@@ -488,6 +490,10 @@ const TournamentView: React.FC<TournamentViewProps> = ({
   };
 
   async function deleteMatchResult(match: Match) {
+    const resetMatch = (current: Match): Match => {
+      const { completedAt, ...rest } = current;
+      return { ...rest, score1: null, score2: null, status: 'pending' };
+    };
     // PLAYOFF
     if (isPlayoffLeagueMatchId(match.id)) {
       const playoffMatchId = stripPrefix(match.id, 'po-');
@@ -502,7 +508,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       m.winnerId = null;
 
       let playoffMatches: Match[] = Array.isArray(t.playoffMatches) ? JSON.parse(JSON.stringify(t.playoffMatches)) : [];
-      playoffMatches = playoffMatches.map(x => x.id === match.id ? { ...x, score1: null, score2: null, status: 'pending' } : x);
+      playoffMatches = playoffMatches.map(x => x.id === match.id ? resetMatch(x) : x);
 
       const updatedTournaments = event.tournaments.map(t0 =>
         t0.id === tournament.id ? { ...t0, playoffs: bracketCopy, playoffMatches } : t0
@@ -529,7 +535,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       m.winnerId = null;
 
       let consolationMatches: Match[] = Array.isArray(t.consolationMatches) ? JSON.parse(JSON.stringify(t.consolationMatches)) : [];
-      consolationMatches = consolationMatches.map(x => x.id === match.id ? { ...x, score1: null, score2: null, status: 'pending' } : x);
+      consolationMatches = consolationMatches.map(x => x.id === match.id ? resetMatch(x) : x);
 
       const updatedTournaments = event.tournaments.map(t0 =>
         t0.id === tournament.id ? { ...t0, consolationBracket: bracketCopy, consolationMatches } : t0
@@ -550,7 +556,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({
       if (g.id !== container.groupId) return g;
       return {
         ...g,
-        matches: g.matches.map(m => m.id === match.id ? { ...m, score1: null, score2: null, status: 'pending' } : m)
+        matches: g.matches.map(m => m.id === match.id ? resetMatch(m) : m)
       };
     });
 

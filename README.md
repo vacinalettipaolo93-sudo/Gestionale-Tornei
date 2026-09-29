@@ -18,3 +18,9 @@ View your app in AI Studio: https://ai.studio/apps/drive/1xYaDNoPY15MB6XhxCwZHB0
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Archivio eventi amministratore
+
+Nella dashboard, scegli prima Tennis o Padel, poi consulta **In corso** o **Conclusi**. Il filtro tipo distingue i ranking (Summer Ranking per Tennis, Paitone Arena League per Padel) dai tornei standard. Nei conclusi, l'anno è ricavato dall'ultima partita completata con `completedAt`, oppure dalla sua `scheduledTime` nei record storici senza data di completamento. Gli eventi senza queste date restano visibili in **Anno non disponibile**. I filtri sono conservati nell'URL.
+
+Gli eventi legacy senza `eventType` sono considerati tornei Tennis, come nel resto dell'app. Lo schema non contiene un anno o una data di fine dell'evento: l'anno delle partite è quindi un'indicazione per la ricerca, non una data ufficiale di conclusione. Il listener Firestore degli eventi è condiviso con la vista partecipante e carica l'intera collezione; i filtri della dashboard organizzatore si applicano ai risultati ricevuti, senza modificare o perdere i documenti legacy.

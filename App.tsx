@@ -25,7 +25,10 @@ import {
   normalizeRankingData,
   sanitizeRankingDataForFirestore,
 } from './utils/rankingEvent';
-import { isEventConcluded } from './utils/eventStatus';
+import {
+  EVENT_SPORTS, filterAdminEvents, getConcludedYears, getEventYear,
+  type EventCategory, type EventPhase,
+} from './utils/adminEventFilters';
 import { clearPersistedAuthSession, getAuthSessionStorage, persistAuthSession, resolvePersistedAuthUser } from './utils/authSession.js';
 
 type View = 'dashboard' | 'event' | 'tournament' | 'playersAdmin';
@@ -45,8 +48,24 @@ type TournamentTab =
 
 const EMPTY_RANKING_DATA: SummerRankingData = createEmptyRankingData('ranking_singolare');
 
+const readAdminFilters = () => {
+  const params = new URLSearchParams(window.location.search);
+  const sport = params.get('sport');
+  const category = params.get('category');
+  const phase = params.get('phase');
+  return {
+    sport: EVENT_SPORTS.find(option => option.value === sport)?.value ?? null,
+    category: (category === 'ranking' || category === 'tournament' ? category : 'all') as EventCategory,
+    phase: (phase === 'concluded' ? 'concluded' : 'ongoing') as EventPhase,
+    year: params.get('year') ?? 'all',
+  };
+};
+
 const App: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
+  const [eventsLoaded, setEventsLoaded] = useState(false);
+  const [eventsError, setEventsError] = useState(false);
+  const [adminFilters, setAdminFilters] = useState(readAdminFilters);
   const [players, setPlayers] = useState<Player[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [legacySummerRanking, setLegacySummerRanking] = useState<SummerRankingData | null>(null);
@@ -77,6 +96,23 @@ const App: React.FC = () => {
 
   const isOrganizer = currentUser?.role === 'organizer';
   const loggedInPlayerId = currentUser?.playerId;
+
+  const changeAdminFilters = (next: typeof adminFilters) => {
+    setAdminFilters(next);
+    const url = new URL(window.location.href);
+    for (const key of ['sport', 'category', 'phase', 'year']) url.searchParams.delete(key);
+    if (next.sport) url.searchParams.set('sport', next.sport);
+    if (next.category !== 'all') url.searchParams.set('category', next.category);
+    if (next.phase !== 'ongoing') url.searchParams.set('phase', next.phase);
+    if (next.phase === 'concluded' && next.year !== 'all') url.searchParams.set('year', next.year);
+    window.history.pushState(null, '', url);
+  };
+
+  useEffect(() => {
+    const onPopState = () => setAdminFilters(readAdminFilters());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const resetNavigationState = useCallback(() => {
     setCurrentView('dashboard');
@@ -112,6 +148,12 @@ const App: React.FC = () => {
         } as Event;
       });
       setEvents(nextEvents);
+      setEventsError(false);
+      setEventsLoaded(true);
+    }, error => {
+      console.error('Errore lettura eventi', error);
+      setEventsError(true);
+      setEventsLoaded(true);
     });
     const unsubPlayers = onSnapshot(collection(db, "players"), snapshot => {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player)));
@@ -378,13 +420,20 @@ const App: React.FC = () => {
   const currentEventState = useMemo(() => events.find(e => e.id === selectedEvent?.id), [events, selectedEvent]);
   const currentTournamentState = useMemo(() => currentEventState?.tournaments.find(t => t.id === selectedTournament?.id), [currentEventState, selectedTournament]);
 
-  const filteredEventsForOrganizer = useMemo(() => {
-    if (isOrganizer) return events;
-    return [];
-  }, [events, isOrganizer]);
-
-  const ongoingEvents = useMemo(() => filteredEventsForOrganizer.filter(e => !isEventConcluded(e)), [filteredEventsForOrganizer]);
-  const concludedEvents = useMemo(() => filteredEventsForOrganizer.filter(e => isEventConcluded(e)), [filteredEventsForOrganizer]);
+  const filteredEventsForOrganizer = useMemo(() =>
+    isOrganizer && adminFilters.sport
+      ? filterAdminEvents(events, adminFilters.sport, adminFilters.category, adminFilters.phase)
+      : [],
+  [events, isOrganizer, adminFilters]);
+  const concludedYears = useMemo(() => getConcludedYears(filteredEventsForOrganizer), [filteredEventsForOrganizer]);
+  const visibleEvents = useMemo(() => filteredEventsForOrganizer.filter(event =>
+    adminFilters.phase !== 'concluded' || adminFilters.year === 'all'
+      || (adminFilters.year === 'unknown'
+        ? getEventYear(event) === null
+        : getEventYear(event) === Number(adminFilters.year))
+  ), [filteredEventsForOrganizer, adminFilters]);
+  const ongoingEvents = adminFilters.phase === 'ongoing' ? visibleEvents : [];
+  const concludedEvents = adminFilters.phase === 'concluded' ? visibleEvents : [];
 
   if (!isAuthBootstrapComplete) {
     return (
@@ -414,7 +463,7 @@ const App: React.FC = () => {
       }
       return (
         <div className="space-y-6 animate-fadeIn">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-3">
             <h2 className="text-3xl font-bold">I Miei Eventi</h2>
             {isOrganizer && (
               <div className="flex items-center gap-3">
@@ -438,14 +487,66 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {filteredEventsForOrganizer.length === 0 && (
-            <p className="text-text-secondary text-center py-8">Nessun evento creato.</p>
+          {isOrganizer && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2" aria-label="Disciplina">
+                {EVENT_SPORTS.map(option => (
+                  <button key={option.value} type="button" aria-pressed={adminFilters.sport === option.value}
+                    onClick={() => changeAdminFilters({ ...adminFilters, sport: option.value, year: 'all' })}
+                    className={`rounded-lg px-5 py-2 font-semibold transition-colors ${adminFilters.sport === option.value ? 'bg-accent text-primary' : 'bg-secondary text-text-secondary hover:text-text-primary'}`}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {adminFilters.sport && (
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex gap-2" aria-label="Stato eventi">
+                    {([['ongoing', 'In corso'], ['concluded', 'Conclusi']] as const).map(([value, label]) => (
+                      <button key={value} type="button" aria-pressed={adminFilters.phase === value}
+                        onClick={() => changeAdminFilters({ ...adminFilters, phase: value, year: 'all' })}
+                        className={`rounded-lg px-4 py-2 font-semibold ${adminFilters.phase === value ? 'bg-highlight text-white' : 'bg-secondary text-text-secondary hover:text-text-primary'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="text-sm text-text-secondary">
+                    Tipo
+                    <select value={adminFilters.category} onChange={e => changeAdminFilters({ ...adminFilters, category: e.target.value as EventCategory, year: 'all' })}
+                      className="block mt-1 bg-secondary border border-tertiary text-text-primary rounded-lg px-3 py-2">
+                      <option value="all">Tutti i tipi</option>
+                      <option value="ranking">{adminFilters.sport === 'tennis' ? 'Summer Ranking' : 'Paitone Arena League'}</option>
+                      <option value="tournament">Tornei standard</option>
+                    </select>
+                  </label>
+                  {adminFilters.phase === 'concluded' && (
+                    <label className="text-sm text-text-secondary">
+                      Anno di conclusione
+                      <select value={adminFilters.year} onChange={e => changeAdminFilters({ ...adminFilters, year: e.target.value })}
+                        className="block mt-1 bg-secondary border border-tertiary text-text-primary rounded-lg px-3 py-2">
+                        <option value="all">Tutti gli anni</option>
+                        {concludedYears.map(year => <option key={year} value={year}>{year}</option>)}
+                        {filteredEventsForOrganizer.some(event => getEventYear(event) === null) && <option value="unknown">Anno non disponibile</option>}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {isOrganizer && !adminFilters.sport && (
+            <p className="text-text-secondary text-center py-8">Scegli Tennis o Padel per visualizzare i tornei.</p>
+          )}
+          {isOrganizer && adminFilters.sport && !eventsLoaded && (
+            <p className="text-text-secondary text-center py-8" role="status">Caricamento eventi...</p>
+          )}
+          {isOrganizer && adminFilters.sport && eventsError && (
+            <p className="text-red-300 text-center py-8" role="alert">Impossibile caricare gli eventi. Riprova aggiornando la pagina.</p>
           )}
 
           {/* Sezione: In corso */}
-          {(ongoingEvents.length > 0 || concludedEvents.length > 0) && (
+          {isOrganizer && adminFilters.sport && eventsLoaded && !eventsError && (
             <div className="space-y-8">
-              <div>
+              {adminFilters.phase === 'ongoing' && <div>
                 <h3 className="text-lg font-semibold text-text-secondary mb-4 flex items-center gap-2">
                   <span className="inline-block w-2 h-2 rounded-full bg-green-400"></span>
                   In corso
@@ -487,9 +588,10 @@ const App: React.FC = () => {
                         let total = 0;
                         let completed = 0;
                         event.tournaments.forEach(tournament => {
-                          tournament.groups.forEach(group => {
-                            total += group.matches.length;
-                            completed += group.matches.filter(m => m.status === 'completed').length;
+                          (tournament.groups ?? []).forEach(group => {
+                            const matches = group.matches ?? [];
+                            total += matches.length;
+                            completed += matches.filter(m => m.status === 'completed').length;
                           });
                         });
                         return {
@@ -570,12 +672,12 @@ const App: React.FC = () => {
                     })}
                   </div>
                 ) : (
-                  <p className="text-text-secondary text-sm py-4">Nessun evento in corso.</p>
+                  <p className="text-text-secondary text-sm py-4">Nessun evento in corso per i filtri selezionati.</p>
                 )}
-              </div>
+              </div>}
 
               {/* Sezione: Conclusi */}
-              <div>
+              {adminFilters.phase === 'concluded' && <div>
                 <h3 className="text-lg font-semibold text-text-secondary mb-4 flex items-center gap-2">
                   <span className="inline-block w-2 h-2 rounded-full bg-tertiary"></span>
                   Conclusi
@@ -613,9 +715,10 @@ const App: React.FC = () => {
                         let total = 0;
                         let completed = 0;
                         event.tournaments.forEach(tournament => {
-                          tournament.groups.forEach(group => {
-                            total += group.matches.length;
-                            completed += group.matches.filter(m => m.status === 'completed').length;
+                          (tournament.groups ?? []).forEach(group => {
+                            const matches = group.matches ?? [];
+                            total += matches.length;
+                            completed += matches.filter(m => m.status === 'completed').length;
                           });
                         });
                         return { totalMatches: total, completedMatches: completed };
@@ -637,6 +740,9 @@ const App: React.FC = () => {
                                 : eventType === 'tournament_padel'
                                   ? `${event.tournaments.length} tornei • ${event.tournaments.reduce((total, tournament) => total + (tournament.padelTeams?.length ?? 0), 0)} squadre`
                                   : `${event.tournaments.length} tornei • ${event.players.length} giocatori`}
+                            </p>
+                            <p className="text-xs text-text-secondary mt-1">
+                              {getEventYear(event) ?? 'Anno non disponibile'}
                             </p>
                             {isRankingEventType(eventType) ? (
                               <div className="mt-4 pt-4 border-t border-tertiary/50">
@@ -689,9 +795,9 @@ const App: React.FC = () => {
                     })}
                   </div>
                 ) : (
-                  <p className="text-text-secondary text-sm py-4">Nessun evento concluso.</p>
+                  <p className="text-text-secondary text-sm py-4">Nessun evento concluso per i filtri selezionati.</p>
                 )}
-              </div>
+              </div>}
             </div>
           )}
         </div>
