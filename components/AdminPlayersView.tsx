@@ -391,9 +391,10 @@ const AdminPlayersView: React.FC<AdminPlayersViewProps> = ({
     const result = removePlayerFromRankingEvent(event, player.id);
 
     if (result.status === 'blocked') {
-      const reason = result.blockers.includes('matches')
-        ? 'ha già partite registrate in questo torneo'
-        : 'è già inserito in un girone di questo torneo';
+      const reason = [
+        result.blockers.includes('matches') ? 'ha già partite registrate in questo torneo' : null,
+        result.blockers.includes('groups') ? 'è già inserito in un girone di questo torneo' : null,
+      ].filter(Boolean).join(' e ');
       setFeedback({
         type: 'error',
         message: `Impossibile rimuovere ${player.name}: ${reason}. Elimina prima i dati collegati per non perdere lo storico.`,
