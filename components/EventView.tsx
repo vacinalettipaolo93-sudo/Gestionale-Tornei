@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { type Event, type Tournament, type Match } from '../types';
+import { type Event, type Player, type Tournament, type Match } from '../types';
 import RegolamentoGironiPanel from './RegolamentoGironiPanel';
+import EventPlayersView from './EventPlayersView';
 import { db } from "../firebase";
 import { updateDoc, doc } from "firebase/firestore";
 import { TrashIcon, PlusIcon } from './Icons';
@@ -17,11 +18,12 @@ interface EventViewProps {
   setEvents: React.Dispatch<React.SetStateAction<Event[]>>;
   isOrganizer: boolean;
   loggedInPlayerId?: string;
+  players: Player[];
 }
 
 const makeId = () => `${Date.now()}${Math.floor(Math.random() * 10000)}`;
 
-type AdminEventSection = 'tournaments' | 'rules' | 'groupRules' | 'matchControl';
+type AdminEventSection = 'tournaments' | 'players' | 'rules' | 'groupRules' | 'matchControl';
 
 const EventView: React.FC<EventViewProps> = ({
   event,
@@ -29,6 +31,7 @@ const EventView: React.FC<EventViewProps> = ({
   setEvents,
   isOrganizer,
   loggedInPlayerId,
+  players,
 }) => {
   const [rulesDraft, setRulesDraft] = useState(event.rules ?? "");
   const [rulesEdit, setRulesEdit] = useState(false);
@@ -260,6 +263,13 @@ const EventView: React.FC<EventViewProps> = ({
             </button>
 
             <button
+              className={`px-3 py-1 rounded text-text-primary text-sm transition-colors ${activeAdminSection === 'players' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90'}`}
+              onClick={() => setActiveAdminSection('players')}
+            >
+              Lista giocatori
+            </button>
+
+            <button
               className={`px-3 py-1 rounded text-text-primary text-sm transition-colors ${activeAdminSection === 'rules' ? 'bg-accent text-white' : 'bg-tertiary hover:bg-tertiary/90'}`}
               onClick={() => setActiveAdminSection('rules')}
             >
@@ -408,6 +418,15 @@ const EventView: React.FC<EventViewProps> = ({
           })}
         </div>
       </div>
+      )}
+
+      {isOrganizer && activeAdminSection === 'players' && (
+        <EventPlayersView
+          event={event}
+          players={players}
+          setEvents={setEvents}
+          isOrganizer={isOrganizer}
+        />
       )}
 
       {/* REGOLAMENTO (solo organizzatore) */}

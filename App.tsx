@@ -748,6 +748,7 @@ const App: React.FC = () => {
             setEvents={setEvents}
             isOrganizer={isOrganizer}
             loggedInPlayerId={loggedInPlayerId}
+            players={players}
           />
         </div>
       );
