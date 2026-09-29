@@ -35,8 +35,11 @@ export const getEventYear = (event: Event): number | null => {
       ]);
 
   const years = completedAt
-    .filter(match => match?.status === 'completed' && typeof match.completedAt === 'string')
-    .map(match => Date.parse(match.completedAt!))
+    .filter(match => match?.status === 'completed')
+    .map(match => {
+      const date = match.completedAt || match.scheduledTime;
+      return typeof date === 'string' ? Date.parse(date) : NaN;
+    })
     .filter(timestamp => Number.isFinite(timestamp));
   return years.length ? new Date(Math.max(...years)).getFullYear() : null;
 };

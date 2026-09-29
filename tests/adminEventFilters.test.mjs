@@ -62,6 +62,12 @@ test('historic years sort newest first and unknown years remain accessible', () 
   assert.equal(getEventYear(concluded.find(e => e.id === 'legacy')), null);
   assert.equal(getEventYear(event('invalid', 'tournament_singolare', completed('not-a-date'))), null);
   assert.equal(getEventYear({ ...event('incomplete', undefined), tournaments: [{ id: 't', groups: null }] }), null);
+  assert.equal(getEventYear(event('scheduled-legacy', 'tournament_singolare', {
+    ...completed(undefined), scheduledTime: '2022-07-01T18:00:00Z',
+  })), 2022);
+  assert.equal(getEventYear(event('unplayed', 'tournament_singolare', {
+    ...completed(undefined), status: 'pending', scheduledTime: '2022-07-01T18:00:00Z',
+  })), null);
   assert.equal(getEventYear({
     ...event('multiple', 'tournament_singolare'),
     tournaments: [tournament(completed('2023-01-01T00:00:00Z')), tournament(completed('2025-12-01T00:00:00Z'))],
